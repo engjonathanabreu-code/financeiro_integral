@@ -1,0 +1,68 @@
+/* Integral Financeiro V5 - agente IA conectado ao fluxo de caixa */
+(function(){
+  const activeNatures=()=>((db.natures||[]).filter(n=>n.active!==false).map(n=>n.name));
+  const natureOptions=(selected='')=>activeNatures().map(n=>`<option ${n===selected?'selected':''}>${esc(n)}</option>`).join('');
+
+  async function classifyWithAI(rows){
+    const response=await fetch('/api/ai-classify',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        natures:activeNatures(),
+        rows:rows.map(r=>({date:r.date,description:r.description,reference:r.reference,value:r.value,direction:r.direction}))
+      })
+    });
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.ok) throw new Error(data.details||data.error||'Falha ao consultar o agente IA.');
+    const byIndex=new Map((data.classifications||[]).map(c=>[c.index,c]));
+    return rows.map((r,i)=>{
+      const c=byIndex.get(i);
+      if(!c)return r;
+      return {...r,kind:c.nature||r.kind,description:c.normalized_description||r.description,confidence:c.confidence??r.confidence,reason:c.reason||r.reason,aiModel:data.model||'',aiReal:true};
+    });
+  }
+
+  function reviewAiRows(rows,fileName){
+    const x=v2modal('Revisar extrato analisado pela IA',`<div class="modal-body v3-review"><div class="page-intro"><div><span class="badge ok">Agente IA conectado</span><h3>${esc(fileName)}</h3><p>Nada entra no fluxo até você confirmar. Natureza e descrição podem ser alteradas.</p></div><strong>${rows.length} movimentações</strong></div><div class="v3-summary"><span><b>${rows.filter(r=>r.direction==='Entrada').length}</b> entradas</span><span><b>${rows.filter(r=>r.direction==='Saída').length}</b> saídas</span><span class="warn"><b>${rows.filter(r=>r.duplicate).length}</b> possíveis duplicidades</span></div><div class="v3-review-list">${rows.map((r,i)=>`<div class="v3-review-row ${r.duplicate?'duplicate':''}" data-airow="${i}"><label class="v3-check"><input type="checkbox" data-aisel="${i}" checked><span></span></label><div class="v3-main"><div class="v3-title"><b>${fmt(r.date)}</b><strong>${esc(r.description)}</strong><span class="badge ${r.direction==='Entrada'?'ok':'danger'}">${r.direction}</span></div><div class="muted">IA ${r.confidence||0}% • ${esc(r.reason||'Classificação automática')}</div>${r.duplicate?`<div class="notice warn compact">Possível duplicidade: <b>${esc(r.duplicate.type)}</b> — ${esc(r.duplicate.label)}. Desmarque se já estiver contabilizada.</div>`:''}</div><div class="v3-edit"><select data-aikind="${i}">${natureOptions(r.kind)}</select><input data-aidesc="${i}" value="${esc(r.description)}"><b>${money(r.value)}</b></div></div>`).join('')}</div></div><div class="modal-foot"><button class="btn ghost" data-v2close>Cancelar</button><button class="btn" data-aiconfirm>Adicionar selecionados ao fluxo</button></div>`);
+    x.querySelectorAll('[data-aisel]').forEach(el=>el.onchange=()=>rows[+el.dataset.aisel].selected=el.checked);
+    x.querySelectorAll('[data-aikind]').forEach(el=>el.onchange=()=>rows[+el.dataset.aikind].kind=el.value);
+    x.querySelectorAll('[data-aidesc]').forEach(el=>el.oninput=()=>rows[+el.dataset.aidesc].description=el.value);
+    x.querySelector('[data-aiconfirm]').onclick=()=>{
+      const selected=rows.filter(r=>r.selected!==false).map(r=>({id:v2uid(),date:r.date,description:r.description,kind:r.kind,direction:r.direction,value:r.value,source:'Extrato bancário + IA',reference:r.reference,importedAt:new Date().toISOString(),aiConfidence:r.confidence,aiModel:r.aiModel||''}));
+      db.cashflow=db.cashflow||[];db.cashflow.push(...selected);
+      db.bankImports=db.bankImports||[];db.bankImports.push({id:v2uid(),fileName,createdAt:new Date().toISOString(),rows:rows.length,imported:selected.length,duplicates:rows.filter(r=>r.duplicate).length,ai:true,model:rows.find(r=>r.aiModel)?.aiModel||''});
+      save();x.remove();cashflow();
+    };
+  }
+
+  function openAiImporter(){
+    if(!window.IntegralBankImporter){alert('Leitor de extrato indisponível.');return;}
+    const x=v2modal('Importar extrato com Agente IA',`<div class="modal-body"><div class="dropzone"><span class="badge ok">OpenAI</span><h3>Selecione o extrato da conta</h3><p>O arquivo será lido no navegador e as movimentações serão enviadas ao agente financeiro para classificação. O arquivo completo não é armazenado pela interface.</p><input id="aiBankFile" type="file" accept=".csv,text/csv"></div><div class="notice">Após a IA classificar, o sistema ainda verifica possíveis duplicidades com Contas, Orçamentos e lançamentos existentes.</div><div id="aiStatus" class="muted" style="margin-top:12px"></div></div><div class="modal-foot"><button class="btn ghost" data-v2close>Cancelar</button><button class="btn" id="aiAnalyze" disabled>Analisar com IA</button></div>`);
+    const file=x.querySelector('#aiBankFile'),btn=x.querySelector('#aiAnalyze'),status=x.querySelector('#aiStatus');let chosen=null;
+    file.onchange=()=>{chosen=file.files?.[0]||null;btn.disabled=!chosen};
+    btn.onclick=()=>{
+      if(!chosen)return;btn.disabled=true;status.textContent='Lendo extrato...';
+      const rd=new FileReader();
+      rd.onload=async()=>{
+        try{
+          let rows=window.IntegralBankImporter.parseIntegralCsv(rd.result);
+          if(!rows.length)throw new Error('Nenhuma movimentação válida encontrada.');
+          status.textContent=`Agente IA analisando ${rows.length} movimentações...`;
+          rows=await classifyWithAI(rows);
+          rows=rows.map(r=>({...r,duplicate:window.IntegralBankImporter.possibleDuplicate(r),selected:true}));
+          x.remove();reviewAiRows(rows,chosen.name);
+        }catch(err){status.innerHTML=`<span class="kpi-negative">${esc(err.message||String(err))}</span>`;btn.disabled=false;}
+      };
+      rd.readAsText(chosen,'UTF-8');
+    };
+  }
+
+  const baseCashflow=cashflow;
+  cashflow=function(){
+    baseCashflow();
+    const btn=$('#v3ImportBank');
+    if(btn){btn.textContent='Importar extrato com IA';btn.onclick=openAiImporter;}
+  };
+
+  window.IntegralFinanceAI={classifyWithAI,openAiImporter};
+})();
