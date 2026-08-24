@@ -1,10 +1,9 @@
-/* Integral Financeiro - sincronização ERP no login + botão manual + Planejamento responsivo */
+/* Integral Financeiro - sincronização ERP somente manual + Planejamento responsivo */
 (function(){
 'use strict';
 
 const q=(s,r=document)=>r.querySelector(s);
 const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-let autoSyncUserKey=null;
 let syncing=false;
 
 function currentUserObj(){
@@ -15,7 +14,6 @@ function currentDb(){
 }
 function isAuthenticated(){return !!currentUserObj()&&!!q('.shell')}
 function isAdmin(){return currentUserObj()?.role==='Administrador'}
-function userKey(){const u=currentUserObj()||{};return String(u.erpId||u.email||u.name||'usuario')}
 function currentViewName(){try{return window.view||(typeof view!=='undefined'?view:'')}catch{return ''}}
 function persist(){try{if(typeof save==='function')save()}catch(e){console.warn('Financeiro ERP persist:',e)}}
 function rerenderCurrent(){
@@ -26,25 +24,25 @@ function rerenderCurrent(){
   }catch(e){console.warn('Financeiro ERP rerender:',e)}
 }
 
-async function syncERP({button=null,automatic=false}={}){
+async function syncERP(button){
   if(syncing)return;
   syncing=true;
-  const oldText=button?.textContent||'';
+  const oldText=button?.textContent||'Sincronizar ERP';
   if(button){button.disabled=true;button.textContent='Sincronizando...';}
   try{
     if(!window.IntegralERP?.sync)throw new Error('Integração com o ERP ainda não está disponível.');
     await window.IntegralERP.sync();
     if(window.IntegralFinanceERPPlanning?.sync)await window.IntegralFinanceERPPlanning.sync();
     const d=currentDb();
-    if(d){d.lastErpManualSync=new Date().toISOString();d.lastErpSyncReason=automatic?'login':'manual';persist();}
+    if(d){d.lastErpManualSync=new Date().toISOString();d.lastErpSyncReason='manual';persist();}
     if(button)button.textContent='ERP sincronizado';
     updateSyncCaption();
     rerenderCurrent();
-    if(button)setTimeout(()=>{if(document.body.contains(button)){button.disabled=false;button.textContent=oldText||'Sincronizar ERP';}},1200);
+    if(button)setTimeout(()=>{if(document.body.contains(button)){button.disabled=false;button.textContent=oldText;}},1200);
   }catch(e){
     console.error('Sincronização ERP:',e);
-    if(button){button.disabled=false;button.textContent='Falha ao sincronizar';setTimeout(()=>{if(document.body.contains(button))button.textContent=oldText||'Sincronizar ERP';},1800);}
-    if(!automatic)alert(`Não foi possível sincronizar com o ERP: ${e.message||e}`);
+    if(button){button.disabled=false;button.textContent='Falha ao sincronizar';setTimeout(()=>{if(document.body.contains(button))button.textContent=oldText;},1800);}
+    alert(`Não foi possível sincronizar com o ERP: ${e.message||e}`);
   }finally{syncing=false;}
 }
 
@@ -53,13 +51,12 @@ function updateSyncCaption(){
   const el=q('#erpSyncCaption');
   if(!el)return;
   const when=d?.lastErpManualSync;
-  el.textContent=when?`Última sincronização: ${new Date(when).toLocaleString('pt-BR')}`:'Sincroniza automaticamente ao entrar';
+  el.textContent=when?`Última sincronização: ${new Date(when).toLocaleString('pt-BR')}`:'Sincronização somente manual';
 }
 
 function installSyncButton(){
   const foot=q('.sidebar-foot');
   if(!foot||!isAuthenticated())return;
-  // Mantém a regra administrativa definida para a sincronização manual.
   if(!isAdmin()){q('#erpSyncControl')?.remove();return;}
   if(q('#erpSyncControl')){updateSyncCaption();return;}
   const wrap=document.createElement('div');
@@ -68,25 +65,8 @@ function installSyncButton(){
   wrap.innerHTML=`<button type="button" class="btn secondary wide" id="erpSyncButton">Sincronizar ERP</button><small class="muted" id="erpSyncCaption"></small>`;
   const userMini=foot.querySelector('.user-mini');
   foot.insertBefore(wrap,userMini||foot.firstChild);
-  q('#erpSyncButton',wrap).onclick=()=>syncERP({button:q('#erpSyncButton',wrap),automatic:false});
+  q('#erpSyncButton',wrap).onclick=()=>syncERP(q('#erpSyncButton',wrap));
   updateSyncCaption();
-}
-
-function maybeAutoSyncAfterLogin(){
-  if(!isAuthenticated())return;
-  const key=userKey();
-  if(!key||autoSyncUserKey===key)return;
-  autoSyncUserKey=key;
-  // Dá tempo para os módulos IntegralERP/Planning terminarem de carregar após autenticação.
-  setTimeout(async()=>{
-    if(!isAuthenticated()||userKey()!==key){autoSyncUserKey=null;return;}
-    await syncERP({automatic:true});
-    installSyncButton();
-  },150);
-}
-
-function resetWhenLoginVisible(){
-  if(q('#erpFinLogin')||q('.login-wrap'))autoSyncUserKey=null;
 }
 
 function decoratePlanningModal(){
@@ -133,9 +113,7 @@ function injectStyles(){
 
 function reconcile(){
   injectStyles();
-  resetWhenLoginVisible();
   installSyncButton();
-  maybeAutoSyncAfterLogin();
   decoratePlanningModal();
 }
 
