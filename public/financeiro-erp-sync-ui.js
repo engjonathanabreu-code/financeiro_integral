@@ -5,6 +5,7 @@
 const q=(s,r=document)=>r.querySelector(s);
 const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 let syncing=false;
+let reconcileScheduled=false;
 
 function currentUserObj(){
   try{return window.user||(typeof user!=='undefined'?user:null)}catch{return null}
@@ -51,7 +52,8 @@ function updateSyncCaption(){
   const el=q('#erpSyncCaption');
   if(!el)return;
   const when=d?.lastErpManualSync;
-  el.textContent=when?`Última sincronização: ${new Date(when).toLocaleString('pt-BR')}`:'Sincronização somente manual';
+  const text=when?`Última sincronização: ${new Date(when).toLocaleString('pt-BR')}`:'Sincronização somente manual';
+  if(el.textContent!==text)el.textContent=text;
 }
 
 function installSyncButton(){
@@ -117,9 +119,25 @@ function reconcile(){
   decoratePlanningModal();
 }
 
-const observer=new MutationObserver(()=>reconcile());
-observer.observe(document.documentElement,{childList:true,subtree:true});
-window.addEventListener('load',reconcile);
-setTimeout(reconcile,0);
+function scheduleReconcile(){
+  if(reconcileScheduled)return;
+  reconcileScheduled=true;
+  requestAnimationFrame(()=>{
+    reconcileScheduled=false;
+    reconcile();
+  });
+}
+
+window.addEventListener('load',scheduleReconcile,{once:true});
+window.addEventListener('click',()=>setTimeout(scheduleReconcile,0),true);
+window.addEventListener('popstate',scheduleReconcile);
+setTimeout(scheduleReconcile,0);
+
+// Observa somente mudanças estruturais do app e agrupa tudo em um único frame.
+const appRoot=q('#app');
+if(appRoot){
+  const observer=new MutationObserver(scheduleReconcile);
+  observer.observe(appRoot,{childList:true,subtree:true});
+}
 
 })();
