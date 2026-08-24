@@ -1,4 +1,4 @@
-/* Integral Financeiro V8 - setores ERP e escopo por usuário/setor */
+/* Integral Financeiro V8.1 - setores ERP e escopo por usuário/setor */
 (function(){
   const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
   const isAdm=()=>user?.role==='Administrador';
@@ -10,7 +10,21 @@
     const names=[...new Set(profiles.map(p=>p.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
     if(!names.length)return;
     db.sectors=names.map((name,i)=>({id:i+1,name,active:true,source:'ERP'}));
+    normalizeAssignments();
     save();
+  }
+
+  function sectorUserIds(sector){
+    return (db.usersMvp||[]).filter(u=>u.active!==false&&sameSector(u.sector,sector)).map(u=>u.id);
+  }
+
+  function normalizeAssignments(){
+    db.trips=(db.trips||[]).map(t=>({...t,assigned:Array.isArray(t.assigned)?t.assigned:[],sector:t.sector||''}));
+    db.budgetRecords=(db.budgetRecords||[]).map(b=>{
+      const direct=Array.isArray(b.assignedDirect)?b.assignedDirect:(Array.isArray(b.assigned)?b.assigned:[]);
+      const effective=[...new Set([...direct,...sectorUserIds(b.sector)])];
+      return {...b,assignedDirect:direct,assigned:effective};
+    });
   }
 
   function canAccessBudget(b){
@@ -25,38 +39,25 @@
     return (t.assigned||[]).includes(u?.id)||sameSector(t.sector,user?.sector);
   }
 
-  function normalizeAssignments(){
-    db.trips=(db.trips||[]).map(t=>({...t,assigned:Array.isArray(t.assigned)?t.assigned:[],sector:t.sector||''}));
-    db.budgetRecords=(db.budgetRecords||[]).map(b=>({...b,assigned:Array.isArray(b.assigned)?b.assigned:[]}));
-  }
-
   function enforceLimitedNav(){
     if(!user||isAdm())return;
     const nav=document.querySelector('.nav');
     if(!nav)return;
-    nav.querySelectorAll('button[data-view]').forEach(btn=>{
-      btn.style.display=['budgets','trips'].includes(btn.dataset.view)?'':'none';
-    });
+    nav.querySelectorAll('button[data-view]').forEach(btn=>{btn.style.display=['budgets','trips'].includes(btn.dataset.view)?'':'none'});
   }
 
   const baseApp=app;
   app=function(){
     if(user&&!isAdm()&&!['budgets','trips'].includes(view))view='budgets';
-    baseApp();
     normalizeAssignments();
-    syncSectorsFromERP();
+    baseApp();
+    if(window.IntegralERP?.loaded)syncSectorsFromERP();
     setTimeout(enforceLimitedNav,0);
   };
 
   const baseBudgets=budgets;
   budgets=function(){
     normalizeAssignments();
-    const original=db.budgetRecords;
-    if(!isAdm()){
-      db.budgetRecords=original.filter(canAccessBudget);
-      try{return baseBudgets();}
-      finally{db.budgetRecords=original;}
-    }
     return baseBudgets();
   };
 
@@ -90,13 +91,26 @@
     const t=(db.trips||[]).find(x=>String(x.id)===String(id));if(!t)return;
     const sectors=(db.sectors||[]).filter(s=>s.active!==false).map(s=>s.name);
     const users=(db.usersMvp||[]).filter(u=>u.active!==false);
-    const x=v2modal('Atribuir viagem',`<form id="v8TripAssign"><div class="modal-body"><div class="field"><label>Setor com acesso</label><select name="sector"><option value="">Nenhum setor</option>${options(sectors,t.sector||'')}</select></div><div class="field"><label>Usuários com acesso</label>${users.map(u=>`<label class="check-line"><input type="checkbox" name="assigned" value="${u.id}" ${(t.assigned||[]).includes(u.id)?'checked':''}>${esc(u.name)} <small>${esc(u.sector||'')}</small></label>`).join('')}</div><div class="muted">O usuário poderá acessar a viagem se estiver atribuído diretamente ou se pertencer ao setor selecionado.</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);
+    const x=v2modal('Atribuir viagem',`<form id="v8TripAssign"><div class="modal-body"><div class="field"><label>Setor com acesso</label><select name="sector"><option value="">Nenhum setor</option>${options(sectors,t.sector||'')}</select></div><div class="field"><label>Usuários com acesso</label>${users.map(u=>`<label class="check-line"><input type="checkbox" name="assigned" value="${u.id}" ${(t.assigned||[]).includes(u.id)?'checked':''}>${esc(u.name)} <small>${esc(u.sector||'')}</small></label>`).join('')}</div><div class="muted">O acesso é liberado se o usuário estiver atribuído diretamente ou pertencer ao setor selecionado.</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);
     x.querySelector('#v8TripAssign').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);t.sector=f.get('sector')||'';t.assigned=f.getAll('assigned').map(Number);save();x.remove();trips()};
+  }
+
+  function hookBudgetAssignmentForm(form){
+    if(form.dataset.v8Hook)return;form.dataset.v8Hook='1';
+    form.addEventListener('submit',()=>{
+      const fd=new FormData(form),name=String(fd.get('name')||''),sector=String(fd.get('sector')||''),selected=fd.getAll('assigned').map(Number);
+      const direct=selected.filter(id=>{const u=(db.usersMvp||[]).find(x=>x.id===id);return !u||!sameSector(u.sector,sector)});
+      setTimeout(()=>{
+        const matches=(db.budgetRecords||[]).filter(b=>b.name===name&&b.sector===sector),b=matches[matches.length-1];
+        if(!b)return;b.assignedDirect=direct;b.assigned=[...new Set([...direct,...sectorUserIds(sector)])];save();
+      },50);
+    },true);
   }
 
   const obs=new MutationObserver(()=>{
     if(window.IntegralERP?.loaded)syncSectorsFromERP();
     enforceLimitedNav();
+    document.querySelectorAll('#bf').forEach(hookBudgetAssignmentForm);
   });
   obs.observe(document.documentElement,{childList:true,subtree:true});
 
