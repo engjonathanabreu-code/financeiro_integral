@@ -1,0 +1,20 @@
+/* Integral Financeiro V10 */
+.user-select-grid,.assignment-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;width:100%}
+.user-select-card,.assignment-grid .check-line{display:flex!important;align-items:center!important;gap:12px!important;min-height:64px;padding:12px 14px!important;border:1px solid #d9e3e2;border-radius:12px;background:#fff;cursor:pointer;text-align:left!important;justify-content:flex-start!important}
+.user-select-card:hover,.assignment-grid .check-line:hover{border-color:#87aaa7;background:#f7fbfa}
+.user-select-card input,.assignment-grid .check-line input{width:18px!important;height:18px!important;min-width:18px!important;margin:0!important;accent-color:#0f7a74}
+.user-select-text,.assignment-grid .check-line span{display:flex!important;flex-direction:column!important;gap:2px!important;min-width:0;text-align:left!important}
+.user-select-text b,.assignment-grid .check-line b{font-size:14px;line-height:1.25;color:#385856}
+.user-select-text small,.assignment-grid .check-line small{font-size:12px;color:#768c8a}
+.form-section{padding:16px;border:1px solid #e1e9e8;border-radius:14px;background:#fbfdfd;margin-bottom:14px}
+.form-section h4{margin:0 0 4px;font-size:15px;color:#2f504e}.form-section>p{margin:0 0 14px}
+.planning-month-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0 24px}
+.planning-month-card{text-align:left!important;display:flex;flex-direction:column;gap:7px;cursor:pointer}.planning-month-card>span{font-weight:700;color:#51706d}.planning-month-card>b{font-size:20px}.planning-month-card small{display:block;line-height:1.35}
+.hr-month-strip{display:grid;grid-template-columns:repeat(6,minmax(135px,1fr));gap:10px;overflow-x:auto;padding:3px 0 16px}.hr-month-card{min-width:135px;text-align:left!important;display:flex;flex-direction:column;gap:6px}.hr-month-card span{font-weight:700;color:#55726f}.hr-month-card b{font-size:17px}
+.employee-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.employee-card{text-align:left!important;display:block!important}.employee-card>div:first-child{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.employee-card h3{margin:0}.employee-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}.employee-facts span{display:flex;flex-direction:column;gap:3px}.employee-facts small{color:#718784}
+.mini-row.readonly{cursor:default;background:#fbfdfd}
+.account-master-card small{display:block;margin-top:6px;color:#647b78}
+.table td small{display:block;margin-top:3px;color:#788c89}
+@media(max-width:1000px){.planning-month-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.hr-month-strip{grid-template-columns:repeat(3,minmax(150px,1fr))}.employee-grid{grid-template-columns:1fr}}
+@media(max-width:720px){.user-select-grid,.assignment-grid{grid-template-columns:1fr!important}.planning-month-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hr-month-strip{display:flex}.employee-facts{grid-template-columns:1fr 1fr}.form-section{padding:12px}.modal .grid.cols-4{grid-template-columns:1fr 1fr!important}}
+@media(max-width:480px){.planning-month-grid{grid-template-columns:1fr}.employee-facts{grid-template-columns:1fr}.modal .grid.cols-4{grid-template-columns:1fr!important}}
