@@ -50,8 +50,47 @@ function renderDashboardFinal(){
     </div>`;
 }
 
+function fileDataUrl(file){return new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('Não foi possível ler o arquivo.'));r.readAsDataURL(file);});}
+function normalizeText(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();}
+function makeId(){return Date.now()+Math.floor(Math.random()*100000);}
+
+function openActiveBillsAiModal(){
+  const d=D();
+  const modal=document.createElement('div');modal.className='modal-backdrop';
+  modal.innerHTML=`<div class="modal"><div class="modal-head"><h3>Leitura de boletos por IA</h3><button class="btn ghost small" type="button" data-ai-close>Fechar</button></div><form id="activeAiBillsForm"><div class="modal-body"><div class="dropzone"><h3>Envie todos os boletos da conta</h3><p>A IA irá identificar vencimento, valor, código e competência e separar cada pagamento no mês correto.</p><input id="activeAiBillsFiles" type="file" multiple accept=".pdf,image/*" required><div style="margin-top:14px"><button class="btn" id="activeAiBillsSend" type="submit" disabled>Enviar para análise da IA</button></div></div><div id="activeAiBillsStatus" class="notice">Selecione um ou mais boletos para habilitar o envio.</div></div></form></div>`;
+  document.body.appendChild(modal);
+  const input=modal.querySelector('#activeAiBillsFiles'),send=modal.querySelector('#activeAiBillsSend'),status=modal.querySelector('#activeAiBillsStatus');
+  const close=()=>modal.remove();modal.querySelector('[data-ai-close]').onclick=close;modal.onclick=ev=>{if(ev.target===modal)close();};
+  input.onchange=()=>{const n=input.files.length;send.disabled=!n;status.textContent=n?`${n} arquivo(s) selecionado(s). Clique em Enviar para análise da IA.`:'Selecione um ou mais boletos para habilitar o envio.';};
+  modal.querySelector('#activeAiBillsForm').onsubmit=async ev=>{
+    ev.preventDefault();const files=[...input.files];if(!files.length)return;send.disabled=true;send.textContent='Enviando para IA...';
+    d.accountMasters=d.accountMasters||[];d.accountPayments=d.accountPayments||[];let done=0,newMasters=0,newPayments=0,duplicates=0;
+    try{
+      for(const file of files){
+        status.textContent=`Analisando ${done+1} de ${files.length}: ${file.name}`;
+        const image=await fileDataUrl(file);
+        const existing=d.accountMasters.map(a=>({id:a.id,name:a.name||'',supplier:a.supplier||'',registration:a.registration||'',category:a.category||'',sector:a.sector||''}));
+        const response=await fetch('/api/ai-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,accounts:existing})});
+        const ai=await response.json();if(!response.ok||!ai.ok)throw new Error(ai.details||ai.error||'Falha na análise da IA.');
+        let master=d.accountMasters.find(a=>String(a.id)===String(ai.matchedAccountId));
+        if(!master&&ai.registration)master=d.accountMasters.find(a=>normalizeText(a.registration)===normalizeText(ai.registration)&&normalizeText(a.supplier)===normalizeText(ai.supplier));
+        if(!master){master={id:makeId(),name:ai.name||ai.supplier||'Conta',supplier:ai.supplier||'',registration:ai.registration||'',recurrence:ai.recurrence||'Não identificada',category:ai.category||'Outros',sector:ai.sector||'Administrativo',method:ai.paymentMethod||'Boleto',active:true,createdByAI:true};d.accountMasters.push(master);newMasters++;}
+        else{if(ai.registration&&!master.registration)master.registration=ai.registration;if(ai.recurrence)master.recurrence=ai.recurrence;if(ai.paymentMethod)master.method=ai.paymentMethod;}
+        const due=ai.dueDate||new Date().toISOString().slice(0,10),value=Number(ai.value||0);
+        const duplicate=d.accountPayments.find(p=>String(p.accountId)===String(master.id)&&p.due===due&&Math.abs(Number(p.value||0)-value)<0.01);
+        if(duplicate)duplicates++;else{d.accountPayments.push({id:makeId(),accountId:master.id,value,due,status:'A vencer',barcode:ai.paymentCode||'',competence:ai.competence||String(due).slice(0,7),source:'IA • Conta enviada',file:{name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString()}});newPayments++;}
+        done++;
+      }
+      if(typeof save==='function')save();close();if(typeof accounts==='function')accounts();alert(`${done} arquivo(s) analisado(s). ${newMasters} nova(s) conta(s), ${newPayments} pagamento(s) incluído(s)${duplicates?` e ${duplicates} duplicado(s) ignorado(s)`:''}.`);
+    }catch(err){status.textContent=err?.message||String(err);send.disabled=false;send.textContent='Enviar para análise da IA';}
+  };
+}
+
 window.renderFinanceDashboardFinal=renderDashboardFinal;
 try{dashboard=renderDashboardFinal;window.dashboard=renderDashboardFinal}catch{window.dashboard=renderDashboardFinal}
+
+// Intercepta o botao legado de IA em Contas antes do onclick antigo sem envio.
+document.addEventListener('click',ev=>{const btn=ev.target.closest?.('#v2AiBills');if(!btn)return;ev.preventDefault();ev.stopImmediatePropagation();openActiveBillsAiModal();},true);
 
 // Se algum patch antigo limpar a tela depois do boot, restaura somente quando a view atual for dashboard.
 setTimeout(()=>{try{if((typeof view!=='undefined'?view:window.view)==='dashboard')renderDashboardFinal()}catch(e){console.error('Dashboard final:',e)}},900);
