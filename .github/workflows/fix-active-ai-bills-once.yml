@@ -1,0 +1,72 @@
+name: Fix active AI bills once
+on:
+  push:
+    paths:
+      - '.github/workflows/fix-active-ai-bills-once.yml'
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Corrigir modal ativo de boletos por IA
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('public/financeiro.bundle.js')
+          s=p.read_text()
+          pattern=r"\$\('#v2AiBills'\)\.onclick=\(\)=>v2modal\('Leitura de boletos por IA',`<div class=\\\"modal-body\\\"><div class=\\\"dropzone\\\"><h3>Envie todos os boletos da conta</h3><p>A IA irá identificar vencimento, valor, código e competência e separar cada pagamento no mês correto\.</p><input type=\\\"file\\\" multiple accept=\\\"\.pdf,image/\*\\\"></div></div><div class=\\\"modal-foot\\\"><button class=\\\"btn\\\" data-v2close>Fechar</button></div>`\);"
+          s,n=re.subn(pattern,"$('#v2AiBills').onclick=()=>openAiBillsUpload();",s)
+          if n<1:
+              raise SystemExit('Modal ativo de boletos por IA não encontrado')
+          helper=r'''
+async function openAiBillsUpload(){
+  const modal=document.createElement('div');
+  modal.className='modal-backdrop';
+  modal.innerHTML=`<div class="modal"><div class="modal-head"><h3>Leitura de boletos por IA</h3><button class="btn ghost small" type="button" data-close>Fechar</button></div><form id="aiBillsForm"><div class="modal-body"><div class="dropzone"><h3>Envie todos os boletos da conta</h3><p>A IA irá identificar vencimento, valor, código e competência e separar cada pagamento no mês correto.</p><input id="aiBillsFiles" type="file" multiple accept=".pdf,image/*" required><div style="margin-top:14px"><button id="aiBillsSubmit" class="btn" type="submit" disabled>Enviar para análise da IA</button></div></div><div id="aiBillsStatus" class="notice">Selecione um ou mais boletos para habilitar o envio.</div></div></form></div>`;
+  document.body.appendChild(modal);
+  const input=modal.querySelector('#aiBillsFiles'),submit=modal.querySelector('#aiBillsSubmit'),status=modal.querySelector('#aiBillsStatus'),form=modal.querySelector('#aiBillsForm');
+  const close=()=>modal.remove();modal.querySelector('[data-close]').onclick=close;modal.addEventListener('click',e=>{if(e.target===modal)close()});
+  input.onchange=()=>{const n=input.files.length;submit.disabled=!n;status.textContent=n?`${n} arquivo(s) selecionado(s). Clique em Enviar para análise da IA.`:'Selecione um ou mais boletos para habilitar o envio.';};
+  const readFile=file=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)});
+  const normalize=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  form.onsubmit=async e=>{
+    e.preventDefault();const files=[...input.files];if(!files.length)return;submit.disabled=true;submit.textContent='Enviando para IA...';
+    let done=0,newAccounts=0,newPayments=0,duplicates=0;
+    try{
+      db.accountMasters=db.accountMasters||[];db.accountPayments=db.accountPayments||[];
+      for(const file of files){
+        status.textContent=`Analisando ${done+1} de ${files.length}: ${file.name}`;
+        const image=await readFile(file);
+        const existing=db.accountMasters.map(a=>({id:a.id,name:a.name||'',supplier:a.supplier||'',registration:a.registration||'',category:a.category||'',sector:a.sector||''}));
+        const res=await fetch('/api/ai-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,accounts:existing})});
+        const ai=await res.json();if(!res.ok||!ai.ok)throw new Error(ai.details||ai.error||'Falha ao analisar boleto');
+        let master=db.accountMasters.find(a=>String(a.id)===String(ai.matchedAccountId));
+        if(!master&&ai.registration)master=db.accountMasters.find(a=>normalize(a.registration)===normalize(ai.registration)&&normalize(a.supplier)===normalize(ai.supplier));
+        if(!master){master={id:Date.now()+Math.floor(Math.random()*100000),name:ai.name||ai.supplier||'Conta',supplier:ai.supplier||'',registration:ai.registration||'',recurrence:ai.recurrence||'Não identificada',category:ai.category||'Outros',sector:ai.sector||'Administrativo',method:ai.paymentMethod||'Boleto',active:true,createdByAI:true};db.accountMasters.push(master);newAccounts++;}
+        else{if(ai.registration&&!master.registration)master.registration=ai.registration;if(ai.recurrence)master.recurrence=ai.recurrence;if(ai.paymentMethod)master.method=ai.paymentMethod;}
+        const due=ai.dueDate||new Date().toISOString().slice(0,10),value=Number(ai.value||0);
+        const duplicate=db.accountPayments.find(p=>String(p.accountId)===String(master.id)&&p.due===due&&Math.abs(Number(p.value||0)-value)<0.01);
+        if(duplicate)duplicates++;else{db.accountPayments.push({id:Date.now()+Math.floor(Math.random()*100000),accountId:master.id,value,due,status:'A vencer',barcode:ai.paymentCode||'',competence:ai.competence||String(due).slice(0,7),source:'IA • Conta enviada',file:{name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString()}});newPayments++;}
+        done++;
+      }
+      save();close();if(typeof accounts==='function')accounts();alert(`${done} arquivo(s) analisado(s). ${newAccounts} nova(s) conta(s), ${newPayments} pagamento(s) incluído(s)${duplicates?` e ${duplicates} duplicado(s) ignorado(s)`:''}.`);
+    }catch(err){status.textContent=err.message||String(err);submit.disabled=false;submit.textContent='Enviar para análise da IA';}
+  };
+}
+'''
+          if 'async function openAiBillsUpload()' not in s:
+              s += '\n'+helper+'\n'
+          p.write_text(s)
+          i=Path('public/index.html');t=i.read_text();t=re.sub(r'financeiro\.bundle\.js\?v=\d+','financeiro.bundle.js?v=5',t);i.write_text(t)
+          PY
+          node --check public/financeiro.bundle.js
+          grep -q 'Enviar para análise da IA' public/financeiro.bundle.js
+          rm -f .github/workflows/fix-active-ai-bills-once.yml
+          git config user.name 'Integral Financeiro Source Fix'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: conectar modal ativo de boletos à IA'
+          git push
