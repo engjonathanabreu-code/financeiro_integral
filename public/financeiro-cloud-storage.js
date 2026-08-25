@@ -34,16 +34,14 @@ function itemKey(x){
 }
 function mergeArray(local,cloud){
   const result=[],seen=new Set();
-  // Nuvem vence em registros com a mesma identidade; local acrescenta o que ainda nao chegou ao banco.
   for(const x of Array.isArray(cloud)?cloud:[]){const k=itemKey(x);if(!seen.has(k)){seen.add(k);result.push(clone(x))}}
   for(const x of Array.isArray(local)?local:[]){const k=itemKey(x);if(!seen.has(k)){seen.add(k);result.push(clone(x))}}
   return result;
 }
 function mergeValue(local,cloud,cloudExists){
-  if(!cloudExists)return clone(local);
-  if(Array.isArray(local)||Array.isArray(cloud))return mergeArray(local,cloud);
-  if(local&&cloud&&typeof local==='object'&&typeof cloud==='object')return {...clone(local),...clone(cloud)};
-  return clone(cloud);
+  // Migracao inicial: se a nuvem ainda nao possui a chave, aproveita o dado local legado.
+  // Depois da primeira gravacao, Supabase passa a ser a fonte oficial e o cache local nao ressuscita dados removidos.
+  return cloudExists?clone(cloud):clone(local);
 }
 function mergeLocalSources(sources){
   const out={};
@@ -91,7 +89,7 @@ async function initialize(){
       const cloudExists=cloud.has(k);
       const value=mergeValue(local[k],cloud.get(k),cloudExists);
       merged[k]=value;
-      if(!cloudExists||json(value)!==json(cloud.get(k)))rows.push({chave:k,dados:value,updated_by:s.user.id,updated_at:now});
+      if(!cloudExists)rows.push({chave:k,dados:value,updated_by:s.user.id,updated_at:now});
     }
     // Nunca substitui a referencia global: modulos antigos mantem o mesmo objeto db.
     const d=state();if(d){for(const k of Object.keys(d))if(validKey(k)&&!(k in merged))delete d[k];Object.assign(d,merged)}
