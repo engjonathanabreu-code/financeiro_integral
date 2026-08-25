@@ -1478,7 +1478,7 @@ const monthLabel=(m)=>{const [y,mm]=String(m).split('-');return new Date(Number(
 const mny=(v)=>money(Number(v||0));
 let selectedHrMonth=monthNow();
 
-function hrValueForMonth(person,month){
+function hrBaseValueForMonth(person,month){
   const first=`${month}-01`, last=`${month}-31`;
   if(person.start&&person.start>last)return 0;
   if(person.end&&person.end<first)return 0;
@@ -1486,8 +1486,41 @@ function hrValueForMonth(person,month){
   const item=hist.length?hist[hist.length-1]:null;
   return Number(item?.value ?? person.currentValue ?? person.value ?? 0);
 }
-function hrPeopleForMonth(month){return (db.hrPeople||[]).filter(p=>hrValueForMonth(p,month)>0)}
+function hrMonthlyVariable(person,month){
+  db.hrMonthlyVariables=db.hrMonthlyVariables||[];
+  return db.hrMonthlyVariables.find(x=>String(x.personId)===String(person.id)&&x.month===month)||null;
+}
+function hrValueForMonth(person,month){
+  const base=hrBaseValueForMonth(person,month);
+  if(!base)return 0;
+  const variable=hrMonthlyVariable(person,month);
+  return base+Number(variable?.overtime||0)+Number(variable?.bonus||0);
+}
+function hrPeopleForMonth(month){return (db.hrPeople||[]).filter(p=>hrBaseValueForMonth(p,month)>0)}
 function hrPayment(person,month){return (db.hrPayments||[]).find(x=>String(x.personId)===String(person.id)&&x.month===month)}
+function hrMonthlyVariableModal(person,month){
+  if(!person||!month)return;
+  db.hrMonthlyVariables=db.hrMonthlyVariables||[];
+  const current=hrMonthlyVariable(person,month);
+  const base=hrBaseValueForMonth(person,month);
+  const overtime=Number(current?.overtime||0), bonus=Number(current?.bonus||0);
+  const modal=v2modal(`RH • ${person.name} • ${monthLabel(month)}`,`<form id="hrMonthlyVariableForm"><div class="modal-body"><div class="notice">Estes valores valem somente para <b>${monthLabel(month)}</b> e não serão repetidos nos meses seguintes.</div><div class="form-grid"><div class="field"><label>Valor base do mês</label><input id="hrMonthBase" type="number" step="0.01" value="${base}" readonly></div><div class="field"><label>Horas extras — valor total</label><input id="hrMonthOvertime" name="overtime" type="number" step="0.01" min="0" value="${overtime}"></div><div class="field"><label>Bônus / Comissões — valor total</label><input id="hrMonthBonus" name="bonus" type="number" step="0.01" min="0" value="${bonus}"></div><div class="field"><label>Total do mês</label><input id="hrMonthTotal" type="text" value="${mny(base+overtime+bonus)}" readonly></div></div></div><div class="modal-foot"><button type="button" class="btn ghost" data-v2close>Cancelar</button><button class="btn">Salvar variáveis do mês</button></div></form>`);
+  const form=modal.querySelector('#hrMonthlyVariableForm');
+  const overtimeInput=modal.querySelector('#hrMonthOvertime'),bonusInput=modal.querySelector('#hrMonthBonus'),totalInput=modal.querySelector('#hrMonthTotal');
+  const refreshTotal=()=>{totalInput.value=mny(base+Number(overtimeInput.value||0)+Number(bonusInput.value||0))};
+  overtimeInput.oninput=refreshTotal;bonusInput.oninput=refreshTotal;
+  form.onsubmit=e=>{
+    e.preventDefault();
+    const overtimeValue=Math.max(0,Number(overtimeInput.value||0));
+    const bonusValue=Math.max(0,Number(bonusInput.value||0));
+    const existing=hrMonthlyVariable(person,month);
+    if(existing){Object.assign(existing,{overtime:overtimeValue,bonus:bonusValue,updatedAt:new Date().toISOString(),by:user?.name||''});}
+    else db.hrMonthlyVariables.push({id:uid(),personId:person.id,month,overtime:overtimeValue,bonus:bonusValue,updatedAt:new Date().toISOString(),by:user?.name||''});
+    const payment=hrPayment(person,month);
+    if(payment?.status==='Pago')payment.value=base+overtimeValue+bonusValue;
+    save();modal.remove();renderHr20();
+  };
+}
 
 function closeModal(el){if(el&&el.parentNode)el.remove()}
 
@@ -1531,11 +1564,12 @@ function renderHr20(){
   const total=people.reduce((s,p)=>s+hrValueForMonth(p,selectedHrMonth),0);
   const paid=people.reduce((s,p)=>{const x=hrPayment(p,selectedHrMonth);return s+(x?.status==='Pago'?Number(x.value||hrValueForMonth(p,selectedHrMonth)):0)},0);
   const content=q('#content'); if(!content)return;
-  content.innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Projeção dos pagamentos para os próximos 6 meses.</div></div><button class="btn" id="hr20New">+ Colaborador</button></div><section class="card hr17-month-panel"><div class="section-head"><div><h3>Próximos 6 meses</h3><p class="muted">Clique em um mês para visualizar a projeção da folha.</p></div></div><div class="hr17-months">${months.map(m=>{const ps=hrPeopleForMonth(m),v=ps.reduce((s,p)=>s+hrValueForMonth(p,m),0);return`<button class="hr17-month ${m===selectedHrMonth?'active':''}" data-hr20-month="${m}"><span>${monthLabel(m)}</span><b>${mny(v)}</b><small>${ps.length} colaborador(es)</small></button>`}).join('')}</div></section><section class="hr17-payroll"><div class="page-intro"><div><h3>${monthLabel(selectedHrMonth)}</h3><p>${selectedHrMonth===start?'Folha do mês vigente':'Projeção de pagamentos futuros'}</p></div><div class="hr17-summary"><span><small>Previsto</small><b>${mny(total)}</b></span><span><small>Quitado</small><b>${mny(paid)}</b></span><span><small>Em aberto</small><b>${mny(Math.max(0,total-paid))}</b></span></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>Vigência</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${people.map(p=>{const x=hrPayment(p,selectedHrMonth),done=x?.status==='Pago';return`<tr><td><b>${esc(p.name||'')}</b></td><td>${p.start?fmt(p.start):'—'} → ${p.end?fmt(p.end):'Indeterminado'}</td><td><b>${mny(hrValueForMonth(p,selectedHrMonth))}</b></td><td>${done?badgeStatus('Pago'):(selectedHrMonth===start?'Pendente':'Previsto')}</td><td>${selectedHrMonth===start&&!done?`<button class="btn small" data-hr20-pay="${p.id}">Marcar pago</button>`:(done?'Quitado':'—')}</td></tr>`}).join('')||'<tr><td colspan="5"><div class="empty">Nenhum colaborador vigente neste mês.</div></td></tr>'}</tbody></table></div></section><h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-hr20-person="${p.id}"><div><h3>${esc(p.name||'')}</h3></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${mny(p.currentValue??p.value)}</b></span><span><small>Arquivos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div>`;
+  content.innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Projeção dos pagamentos para os próximos 6 meses.</div></div><button class="btn" id="hr20New">+ Colaborador</button></div><section class="card hr17-month-panel"><div class="section-head"><div><h3>Próximos 6 meses</h3><p class="muted">Clique em um mês para visualizar a projeção da folha.</p></div></div><div class="hr17-months">${months.map(m=>{const ps=hrPeopleForMonth(m),v=ps.reduce((s,p)=>s+hrValueForMonth(p,m),0);return`<button class="hr17-month ${m===selectedHrMonth?'active':''}" data-hr20-month="${m}"><span>${monthLabel(m)}</span><b>${mny(v)}</b><small>${ps.length} colaborador(es)</small></button>`}).join('')}</div></section><section class="hr17-payroll"><div class="page-intro"><div><h3>${monthLabel(selectedHrMonth)}</h3><p>${selectedHrMonth===start?'Folha do mês vigente':'Projeção de pagamentos futuros'}</p></div><div class="hr17-summary"><span><small>Previsto</small><b>${mny(total)}</b></span><span><small>Quitado</small><b>${mny(paid)}</b></span><span><small>Em aberto</small><b>${mny(Math.max(0,total-paid))}</b></span></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>Vigência</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${people.map(p=>{const x=hrPayment(p,selectedHrMonth),done=x?.status==='Pago';return`<tr><td><button type="button" class="linklike" data-hr20-variable="${p.id}"><b>${esc(p.name||'')}</b></button></td><td>${p.start?fmt(p.start):'—'} → ${p.end?fmt(p.end):'Indeterminado'}</td><td><b>${mny(hrValueForMonth(p,selectedHrMonth))}</b>${(()=>{const v=hrMonthlyVariable(p,selectedHrMonth),extra=Number(v?.overtime||0)+Number(v?.bonus||0);return extra?`<div class="muted">Base ${mny(hrBaseValueForMonth(p,selectedHrMonth))} + variáveis ${mny(extra)}</div>`:''})()}</td><td>${done?badgeStatus('Pago'):(selectedHrMonth===start?'Pendente':'Previsto')}</td><td>${selectedHrMonth===start&&!done?`<button class="btn small" data-hr20-pay="${p.id}">Marcar pago</button>`:(done?'Quitado':'—')}</td></tr>`}).join('')||'<tr><td colspan="5"><div class="empty">Nenhum colaborador vigente neste mês.</div></td></tr>'}</tbody></table></div></section><h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-hr20-person="${p.id}"><div><h3>${esc(p.name||'')}</h3></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${mny(p.currentValue??p.value)}</b></span><span><small>Arquivos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div>`;
   q('#hr20New').onclick=()=>hrEmployeeModal();
   qa('[data-hr20-person]').forEach(b=>b.onclick=()=>hrEmployeeModal(b.dataset.hr20Person));
   qa('[data-hr20-month]').forEach(b=>b.onclick=()=>{selectedHrMonth=b.dataset.hr20Month;renderHr20()});
-  qa('[data-hr20-pay]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr20Pay));if(!p)return;db.hrPayments=db.hrPayments||[];let x=hrPayment(p,start);const value=hrValueForMonth(p,start);if(x)Object.assign(x,{status:'Pago',paidAt:today(),value});else db.hrPayments.push({id:Date.now()+Math.floor(Math.random()*10000),personId:p.id,month:start,value,status:'Pago',paidAt:today()});save();renderHr20()});
+  qa('[data-hr20-variable]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr20Variable));if(p)hrMonthlyVariableModal(p,selectedHrMonth)});
+  qa('[data-hr20-pay]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr20Pay));if(!p)return;db.hrPayments=db.hrPayments||[];let x=hrPayment(p,selectedHrMonth);const value=hrValueForMonth(p,selectedHrMonth);if(x)Object.assign(x,{status:'Pago',paidAt:today(),value});else db.hrPayments.push({id:Date.now()+Math.floor(Math.random()*10000),personId:p.id,month:selectedHrMonth,value,status:'Pago',paidAt:today()});save();renderHr20()});
 }
 
 // Última definição do RH: elimina dependência de employeeForm de patches anteriores.
