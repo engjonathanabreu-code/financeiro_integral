@@ -1,5 +1,5 @@
 /* Integral Financeiro - sincronização ERP resiliente
-   Garante que previsões financeiras sejam atualizadas mesmo se módulos auxiliares do ERP falharem. */
+   Garante que previsões financeiras sejam atualizadas com os nomes reais dos projetos. */
 (function(){
 'use strict';
 
@@ -18,21 +18,19 @@ async function robustPlanningSync(){
   const d=getDb();
   if(!sb||!d||!getUser())return {ok:false,reason:'not-ready'};
 
+  // O Financeiro resolve os nomes diretamente no ERP antes de montar as previsões.
+  // Assim não depende de uma lista de projetos em memória estar previamente carregada.
+  const projectResponse=await sb.from('projetos').select('id,nome,status').order('nome');
   let projects=[];
-  try{
-    const pr=await sb.from('projetos').select('id,nome,status').order('nome');
-    if(!pr.error){
-      projects=pr.data||[];
-      erp.projects=projects;
-      d.erpProjects=projects.map(p=>({id:p.id,name:p.nome,status:p.status}));
-    }else{
-      console.warn('ERP sync: projetos indisponíveis, previsões continuarão sem nome do projeto.',pr.error);
-      projects=erp.projects||[];
-    }
-  }catch(e){
-    console.warn('ERP sync: falha ao ler projetos; continuando previsões.',e);
-    projects=erp.projects||[];
+  if(projectResponse.error){
+    console.warn('ERP sync: falha ao consultar projetos; usando cache como contingência.',projectResponse.error);
+    projects=(erp.projects||d.erpProjects||[]).map(p=>({id:p.id,nome:p.nome||p.name||'',status:p.status||''}));
+  }else{
+    projects=projectResponse.data||[];
+    erp.projects=projects;
+    d.erpProjects=projects.map(p=>({id:p.id,name:p.nome,status:p.status}));
   }
+  const projectMap=new Map(projects.map(p=>[String(p.id),p.nome||p.name||'']));
 
   const pay=await sb.from('pagamentos')
     .select('id,projeto_id,nome_etapa,valor_previsto,valor_recebido,vencimento,status,data_pagamento,created_at')
@@ -43,12 +41,12 @@ async function robustPlanningSync(){
     const total=Number(p.valor_previsto||0);
     const received=Number(p.valor_recebido||0);
     const remaining=Math.max(0,total-received);
-    const project=projects.find(x=>String(x.id)===String(p.projeto_id));
+    const projectName=projectMap.get(String(p.projeto_id||''));
     return {
       id:`erp-${p.id}`,
       erpPaymentId:p.id,
       projectId:p.projeto_id||'',
-      project:project?.nome||'Projeto ERP',
+      project:projectName||'Projeto ERP',
       origin:p.nome_etapa||'Recebimento ERP',
       total,received,remaining,
       dueDate:p.vencimento||'',
@@ -60,7 +58,7 @@ async function robustPlanningSync(){
 
   d.lastErpFinancialSync=new Date().toISOString();
   persist();
-  window.dispatchEvent(new CustomEvent('integral:erp-planning-synced',{detail:{count:d.erpPlannedRevenues.length}}));
+  window.dispatchEvent(new CustomEvent('integral:erp-planning-synced',{detail:{count:d.erpPlannedRevenues.length,projects:projects.length}}));
   return {ok:true,count:d.erpPlannedRevenues.length,projects:projects.length};
 }
 
@@ -68,7 +66,6 @@ function install(){
   const erp=window.IntegralERP;
   if(!erp?.sb){setTimeout(install,250);return;}
 
-  // A sincronização cadastral pode ficar parcial, mas não deve bloquear o Financeiro.
   if(erp.sync&&!erp.__financeiroSafeWrapped){
     const original=erp.sync.bind(erp);
     erp.sync=async function(){
@@ -84,6 +81,9 @@ function install(){
   }
 
   window.IntegralFinanceERPPlanning={sync:robustPlanningSync};
+  // Substitui também a rota antiga usada pelo Planejamento canônico.
+  try{syncERPReceivables=robustPlanningSync}catch{}
+  window.syncERPReceivables=robustPlanningSync;
 }
 
 install();
