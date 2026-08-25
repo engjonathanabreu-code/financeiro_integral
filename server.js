@@ -1,8 +1,15 @@
 const http=require('http'),fs=require('fs'),path=require('path');
+const aiAccountHandler=require('./api/ai-account');
+const aiHealthHandler=require('./api/ai-health');
 const root=path.join(__dirname,'public');
 const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml'};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data))};
-const readJson=req=>new Promise((resolve,reject)=>{let body='';req.on('data',c=>{body+=c;if(body.length>2_000_000)req.destroy()});req.on('end',()=>{try{resolve(body?JSON.parse(body):{})}catch(e){reject(e)}});req.on('error',reject)});
+const readJson=req=>new Promise((resolve,reject)=>{let body='';req.on('data',c=>{body+=c;if(body.length>12_000_000){const e=new Error('PAYLOAD_TOO_LARGE');e.statusCode=413;reject(e);req.destroy()}});req.on('end',()=>{try{resolve(body?JSON.parse(body):{})}catch(e){reject(e)}});req.on('error',reject)});
+function vercelResponseCompat(res){
+  if(typeof res.status!=='function')res.status=function(code){this.statusCode=code;return this};
+  if(typeof res.json!=='function')res.json=function(data){if(!this.headersSent)this.setHeader('Content-Type','application/json; charset=utf-8');this.end(JSON.stringify(data));return this};
+  return res;
+}
 async function aiClassify(req,res){
  if(req.method!=='POST')return json(res,405,{ok:false,error:'METHOD_NOT_ALLOWED'});
  if(!process.env.OPENAI_API_KEY)return json(res,500,{ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
@@ -22,11 +29,18 @@ async function aiClassify(req,res){
   const out=data.output_text||(data.output||[]).flatMap(i=>i.content||[]).filter(i=>i.type==='output_text').map(i=>i.text).join('');
   const parsed=JSON.parse(out||'{}');
   return json(res,200,{ok:true,model:data.model||model,...parsed});
- }catch(e){console.error('ai-classify error',e);return json(res,500,{ok:false,error:'INTERNAL_ERROR',details:String(e?.message||e)})}
+ }catch(e){console.error('ai-classify error',e);return json(res,e.statusCode||500,{ok:false,error:e.statusCode===413?'PAYLOAD_TOO_LARGE':'INTERNAL_ERROR',details:String(e?.message||e)})}
+}
+async function aiAccount(req,res){
+  if(req.method!=='POST')return aiAccountHandler(req,vercelResponseCompat(res));
+  try{req.body=await readJson(req);return aiAccountHandler(req,vercelResponseCompat(res));}
+  catch(e){return json(res,e.statusCode||400,{ok:false,error:e.statusCode===413?'PAYLOAD_TOO_LARGE':'INVALID_JSON',details:String(e?.message||e)})}
 }
 http.createServer((req,res)=>{
  const pathname=(req.url||'/').split('?')[0];
  if(pathname==='/api/ai-classify')return aiClassify(req,res);
+ if(pathname==='/api/ai-account')return aiAccount(req,res);
+ if(pathname==='/api/ai-health')return aiHealthHandler(req,vercelResponseCompat(res));
  const url=pathname==='/'?'/index.html':pathname;
  const file=path.join(root,url);
  if(!file.startsWith(root))return res.end();
