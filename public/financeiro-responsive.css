@@ -1,0 +1,248 @@
+/* Integral Financeiro — responsividade isolada para tablets e smartphones.
+   Regras de desktop permanecem intactas: os ajustes abaixo so entram em telas
+   menores e, no intervalo de tablet, somente em dispositivos de toque. */
+
+/* Evita estouro horizontal causado por conteudos dinamicos. */
+@media (max-width: 740px), (max-width: 1180px) and (pointer: coarse) {
+  html, body, #app, .shell, .main, .content { max-width: 100%; }
+  body { overflow-x: hidden; }
+  img, svg, canvas { max-width: 100%; }
+  .card, .table-wrap, .page-intro, .dashboard-finance-panel,
+  .contracts-due-card, .planning-source-card { min-width: 0; }
+  .table-wrap { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+  .toolbar, .toolbar .left, .toolbar .right { min-width: 0; }
+  input, select, textarea { max-width: 100%; }
+}
+
+/* Tablet: aplicado apenas quando o dispositivo principal e touch/coarse.
+   Assim notebooks e PCs com a mesma largura nao mudam de layout. */
+@media (min-width: 741px) and (max-width: 1180px) and (pointer: coarse) {
+  .shell { grid-template-columns: 205px minmax(0,1fr); }
+  .sidebar { padding: 16px 10px; }
+  .brand { padding-bottom: 14px; }
+  .brand img { width: 102px; height: 56px; }
+  .nav { gap: 4px; }
+  .nav button { padding: 9px 10px; font-size: 13px; }
+  .topbar { height: 64px; padding: 0 18px; }
+  .topbar h2 { font-size: 20px; }
+  .content { padding: 18px; }
+  .card { padding: 16px; }
+  .cols-4 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .cols-3 { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .folder-grid, .month-folders { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .planning-refined .planning-month-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .dashboard-finance-panels, .planning-detail-grid { grid-template-columns: 1fr; }
+  .toolbar { gap: 8px; }
+  .toolbar .left, .toolbar .right { gap: 8px; }
+  .btn, button, input, select, textarea { min-height: 40px; }
+  .btn.small { min-height: 34px; }
+  .table th, .table td { padding: 10px; }
+  .modal { width: min(720px,94vw); }
+}
+
+/* Smartphone: barra de navegacao horizontal compacta e fixa no topo. */
+@media (max-width: 740px) {
+  .shell { display: block; min-height: 100vh; }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: auto;
+    min-height: 0;
+    padding: 7px 8px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 7px;
+    box-shadow: 0 5px 18px rgba(9,53,50,.18);
+  }
+  .brand { display: none; }
+  .nav {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: row;
+    gap: 5px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav .sep { display: none; }
+  .nav button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 40px;
+    padding: 8px 11px;
+    white-space: nowrap;
+    font-size: 12px;
+    border-radius: 9px;
+  }
+  .sidebar-foot {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .sidebar-foot .user-mini { display: none; }
+  .sidebar-foot .btn,
+  .sidebar-foot button {
+    width: auto;
+    min-width: 42px;
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 54px;
+    z-index: 20;
+    min-height: 58px;
+    height: auto;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .topbar h2 {
+    min-width: 0;
+    font-size: 18px;
+    line-height: 1.2;
+  }
+  .topbar > * { min-width: 0; }
+
+  .content { padding: 12px; }
+  .card { padding: 14px; border-radius: 13px; }
+  .grid { gap: 12px; }
+  .cols-4, .cols-3, .cols-2,
+  .folder-grid, .month-folders,
+  .planning-summary-grid,
+  .planning-refined .planning-month-grid,
+  .planning-detail-grid,
+  .planning-automatic-grid { grid-template-columns: minmax(0,1fr); }
+
+  .metric b { font-size: 24px; }
+  .section-title { margin-top: 18px; }
+
+  .toolbar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+  }
+  .toolbar .left, .toolbar .right {
+    width: 100%;
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .toolbar .left > *, .toolbar .right > * { min-width: 0; }
+  .toolbar .btn { flex: 1 1 auto; }
+
+  .page-intro {
+    padding: 14px;
+    margin-bottom: 12px;
+    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .page-intro > strong { font-size: 18px; }
+
+  .segmented {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .segmented button {
+    flex: 1 0 auto;
+    min-height: 40px;
+    white-space: nowrap;
+  }
+
+  button, .btn, input, select, textarea { min-height: 44px; }
+  .btn.small { min-height: 38px; padding: 7px 10px; }
+  input, select, textarea { font-size: 16px; }
+
+  .table-wrap {
+    width: 100%;
+    border-radius: 12px;
+    overflow-x: auto;
+  }
+  .table { min-width: 680px; }
+  .table th, .table td { padding: 10px; }
+  .actions { min-width: max-content; }
+
+  .cash-row { grid-template-columns: minmax(0,1fr); gap: 8px; }
+  .cash-group-head { align-items: flex-start; }
+  .mini-row { grid-template-columns: minmax(0,1fr); }
+  .timeline-item { grid-template-columns: minmax(0,1fr); }
+  .trip-meta { grid-template-columns: minmax(0,1fr); }
+  .trip-values { flex-wrap: wrap; }
+
+  .dashboard-finance-panels { grid-template-columns: minmax(0,1fr); }
+  .dashboard-finance-panel .fin-panel-head { padding: 14px; }
+  .fin-list { padding: 4px 8px; }
+  .fin-row { grid-template-columns: minmax(0,1fr); gap: 8px; padding: 11px 6px; }
+  .fin-row-value { text-align: left; white-space: normal; }
+  .fin-panel-total { padding: 12px 14px; }
+
+  .contracts-due-head { padding: 14px; gap: 10px; }
+  .contracts-due-head h3 { font-size: 17px; }
+  .contracts-due-count { min-width: 62px; }
+  .contracts-due-list { padding: 2px 9px 7px; }
+  .contract-due-row {
+    grid-template-columns: minmax(0,1fr) auto;
+    gap: 9px;
+    padding: 11px 3px;
+  }
+  .contract-due-date { grid-column: 1/2; padding-left: 45px; }
+  .contract-due-pill { grid-column: 2/3; grid-row: 1/3; }
+
+  .planning-refined .planning-refined-head { display: block; }
+  .planning-refined-head .right { margin-top: 10px; }
+  .planning-refined .planning-month-card { min-height: 0; }
+
+  .modal-backdrop {
+    padding: 10px;
+    align-items: end;
+  }
+  .modal {
+    width: 100%;
+    max-width: none;
+    max-height: 92dvh;
+    border-radius: 18px 18px 10px 10px;
+  }
+  .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+  .modal-foot { gap: 8px; flex-wrap: wrap; }
+  .modal-foot .btn { flex: 1 1 130px; }
+  .form-grid { grid-template-columns: minmax(0,1fr); }
+  .full { grid-column: auto; }
+
+  .dropzone { padding: 20px 14px; }
+  .chart { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .bar-col { min-width: 48px; }
+}
+
+/* Telefones estreitos. */
+@media (max-width: 430px) {
+  .content { padding: 10px; }
+  .topbar { padding-left: 10px; padding-right: 10px; }
+  .topbar h2 { font-size: 17px; }
+  .card { padding: 12px; }
+  .toolbar .left, .toolbar .right { flex-direction: column; }
+  .toolbar .btn, .toolbar button, .toolbar input, .toolbar select { width: 100%; }
+  .contracts-due-head { align-items: flex-start; }
+  .contract-due-row { grid-template-columns: minmax(0,1fr); }
+  .contract-due-date { grid-column: 1; padding-left: 45px; }
+  .contract-due-pill { grid-column: 1; grid-row: auto; justify-self:start; margin-left: 45px; }
+  .account-payment-line-with-delete { padding-right: 74px !important; }
+}
+
+/* Respeita areas seguras de iPhone/iPad sem interferir em desktop. */
+@supports (padding: max(0px)) {
+  @media (max-width: 740px) {
+    .sidebar { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+    .content { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  }
+}
