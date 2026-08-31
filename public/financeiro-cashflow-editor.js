@@ -1,7 +1,11 @@
-/* Integral Financeiro — Fluxo de Caixa editável
-   Permite adicionar Entradas/Saídas e editar qualquer linha exibida.
+/* Integral Financeiro — Fluxo de Caixa editável e consolidável
+   Permite adicionar Entradas/Saídas, editar qualquer linha exibida,
+   consolidar automaticamente entradas importadas com o mesmo nome
+   e somar manualmente entradas por arrastar-e-soltar.
+
    Linhas derivadas de outros módulos recebem override apenas no Fluxo,
-   preservando o cadastro original e a origem do lançamento. */
+   preservando o cadastro original. Consolidações preservam o detalhamento
+   interno dos lançamentos que compõem a soma. */
 (function(){
 'use strict';
 
@@ -14,10 +18,57 @@ const kinds=()=>{
   return list.length?list:['Despesa fixa','Despesa variável','Folha e encargos','Retirada e distribuição aos sócios','Tributos','Tarifas bancárias','Receita parcelada de clientes','Receita de contratos públicos','Receita avulsa de contratos privados','Outras receitas'];
 };
 const kindOptions=selected=>kinds().map(k=>`<option ${k===selected?'selected':''}>${esc(k)}</option>`).join('');
+const normName=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();
+const isImported=r=>/extrato banc[aá]rio/i.test(String(r?.source||''));
 
 function ensure(){
   db.cashflow=db.cashflow||[];
   db.cashflowOverrides=db.cashflowOverrides||{};
+}
+
+function asPart(r){
+  if(Array.isArray(r?.mergedItems)&&r.mergedItems.length)return r.mergedItems.map(x=>({...x}));
+  return [{id:r?.id,date:r?.date,description:r?.description,kind:r?.kind,direction:r?.direction,value:+r?.value||0,source:r?.source||'Manual',reference:r?.reference||'',importedAt:r?.importedAt||null}];
+}
+
+function mergeCashRows(target,source,mode='manual'){
+  const parts=[...asPart(target),...asPart(source)];
+  target.value=parts.reduce((s,x)=>s+(+x.value||0),0);
+  target.mergedItems=parts;
+  target.mergedCount=parts.length;
+  target.mergedAt=new Date().toISOString();
+  target.mergeMode=mode;
+  target.date=parts.map(x=>x.date).filter(Boolean).sort().at(-1)||target.date;
+  if(mode==='manual')target.source=target.source||source.source||'Manual';
+  return target;
+}
+
+/* Consolida entradas importadas de mesmo nome, dentro do mesmo mês.
+   O primeiro registro vira o agregador; os demais entram em mergedItems. */
+function autoConsolidateImportedEntries(){
+  ensure();
+  const groups=new Map();
+  for(const r of db.cashflow){
+    if(r?.direction!=='Entrada'||!isImported(r)||r._autoConsolidatedChild)continue;
+    const key=`${monthOf(r.date)}|${normName(r.description)}`;
+    if(!normName(r.description))continue;
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(r);
+  }
+  let changed=false;
+  for(const rows of groups.values()){
+    if(rows.length<2)continue;
+    rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const target=rows[0];
+    const others=rows.slice(1);
+    for(const source of others){mergeCashRows(target,source,'automatic');source._autoConsolidatedChild=true;source._mergedInto=target.id;changed=true;}
+    target.description=rows[0].description;
+    target.autoConsolidated=true;
+  }
+  if(changed){
+    db.cashflow=db.cashflow.filter(r=>!r._autoConsolidatedChild);
+    save();
+  }
 }
 
 function applyOverride(row,key){
@@ -45,7 +96,6 @@ function manualRows(){
 }
 
 function allRows(){return [...manualRows(),...paidRows(),...budgetRows()]}
-
 function findDisplayed(key){return allRows().find(r=>r._sourceKey===key)}
 
 function saveRow(key,data){
@@ -65,7 +115,7 @@ function editModal(key,direction){
   ensure();
   const r=key?findDisplayed(key):null;
   const fixedDirection=direction||r?.direction||'Entrada';
-  const x=v2modal(r?'Editar lançamento':`Nova ${fixedDirection.toLowerCase()}`,`<form id="cashEditForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Data</label><input name="date" type="date" value="${r?.date||new Date().toISOString().slice(0,10)}" required></div><div class="field"><label>Tipo</label><select name="direction"><option ${fixedDirection==='Entrada'?'selected':''}>Entrada</option><option ${fixedDirection==='Saída'?'selected':''}>Saída</option></select></div><div class="field full"><label>Descrição</label><input name="description" value="${esc(r?.description||'')}" required></div><div class="field"><label>Natureza</label><select name="kind">${kindOptions(r?.kind||'')}</select></div><div class="field"><label>Valor</label><input name="value" type="number" min="0" step="0.01" value="${r?.value??''}" required></div><div class="field full"><label>Origem</label><input value="${esc(r?.source||'Manual')}" readonly></div>${r?`<div class="full notice">${r._derived?'Esta linha veio de outro módulo. A edição será aplicada somente no Fluxo de Caixa e não modificará o cadastro original.':'Esta linha pode ter sido criada manualmente ou importada. As alterações serão salvas diretamente no lançamento.'}</div>`:''}</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);
+  const x=v2modal(r?'Editar lançamento':`Nova ${fixedDirection.toLowerCase()}`,`<form id="cashEditForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Data</label><input name="date" type="date" value="${r?.date||new Date().toISOString().slice(0,10)}" required></div><div class="field"><label>Tipo</label><select name="direction"><option ${fixedDirection==='Entrada'?'selected':''}>Entrada</option><option ${fixedDirection==='Saída'?'selected':''}>Saída</option></select></div><div class="field full"><label>Descrição</label><input name="description" value="${esc(r?.description||'')}" required></div><div class="field"><label>Natureza</label><select name="kind">${kindOptions(r?.kind||'')}</select></div><div class="field"><label>Valor</label><input name="value" type="number" min="0" step="0.01" value="${r?.value??''}" required></div><div class="field full"><label>Origem</label><input value="${esc(r?.source||'Manual')}" readonly></div>${r?.mergedCount>1?`<div class="full notice"><b>${r.mergedCount} lançamentos consolidados.</b> O total pode ser editado, mas o detalhamento original permanece registrado internamente.</div>`:''}${r?`<div class="full notice">${r._derived?'Esta linha veio de outro módulo. A edição será aplicada somente no Fluxo de Caixa e não modificará o cadastro original.':'Esta linha pode ter sido criada manualmente ou importada. As alterações serão salvas diretamente no lançamento.'}</div>`:''}</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);
   x.querySelector('#cashEditForm').onsubmit=e=>{
     e.preventDefault();const f=new FormData(e.target);const value=Math.abs(Number(f.get('value')||0));
     if(!value)return alert('Informe um valor maior que zero.');
@@ -74,28 +124,60 @@ function editModal(key,direction){
   };
 }
 
-function renderTable(rows){
-  return `<div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Data</th><th>Descrição</th><th>Natureza</th><th>Origem</th><th class="num">Valor</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr><td>${fmt(r.date)}</td><td><b>${esc(r.description)}</b>${db.cashflowOverrides?.[r._sourceKey]?'<small class="muted">Ajustado no Fluxo</small>':''}</td><td>${esc(r.kind||'')}</td><td>${esc(r.source||'Manual')}</td><td class="num ${r.direction==='Entrada'?'kpi-positive':'kpi-negative'}">${money(r.value)}</td><td><button class="icon-btn" title="Editar" data-cash-edit="${esc(r._sourceKey)}">✎</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Sem lançamentos.</div></td></tr>'}</tbody></table></div>`;
+function mergeByKeys(targetKey,sourceKey){
+  if(!targetKey||!sourceKey||targetKey===sourceKey)return;
+  const target=findDisplayed(targetKey),source=findDisplayed(sourceKey);
+  if(!target||!source||target.direction!=='Entrada'||source.direction!=='Entrada')return;
+  if(!targetKey.startsWith('cash:')||!sourceKey.startsWith('cash:')){
+    alert('A soma por arrastar está disponível para entradas manuais ou importadas. Linhas originadas diretamente de outros módulos continuam editáveis individualmente.');
+    return;
+  }
+  const tid=targetKey.slice(5),sid=sourceKey.slice(5);
+  const t=db.cashflow.find(r=>String(r.id)===String(tid)),s=db.cashflow.find(r=>String(r.id)===String(sid));
+  if(!t||!s)return;
+  const ok=confirm(`Somar “${s.description}” (${money(s.value)}) em “${t.description}” (${money(t.value)})?`);
+  if(!ok)return;
+  mergeCashRows(t,s,'manual');
+  db.cashflow=db.cashflow.filter(r=>String(r.id)!==String(s.id));
+  save();cashflow();
+}
+
+function renderTable(rows,direction){
+  const draggable=direction==='Entrada';
+  return `<div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Data</th><th>Descrição</th><th>Natureza</th><th>Origem</th><th class="num">Valor</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr ${draggable?`draggable="true" data-cash-drag="${esc(r._sourceKey)}"`:''}><td>${fmt(r.date)}</td><td><b>${esc(r.description)}</b>${r.mergedCount>1?`<small class="muted">${r.mergedCount} lançamentos somados</small>`:''}${db.cashflowOverrides?.[r._sourceKey]?'<small class="muted">Ajustado no Fluxo</small>':''}</td><td>${esc(r.kind||'')}</td><td>${esc(r.source||'Manual')}</td><td class="num ${r.direction==='Entrada'?'kpi-positive':'kpi-negative'}">${money(r.value)}</td><td><button class="icon-btn" title="Editar" data-cash-edit="${esc(r._sourceKey)}">✎</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Sem lançamentos.</div></td></tr>'}</tbody></table></div>`;
+}
+
+function bindDragMerge(){
+  let dragging='';
+  $$('[data-cash-drag]').forEach(tr=>{
+    tr.style.cursor='grab';
+    tr.ondragstart=e=>{dragging=tr.dataset.cashDrag;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragging);tr.style.opacity='.45'};
+    tr.ondragend=()=>{tr.style.opacity='';dragging='';$$('[data-cash-drag]').forEach(x=>x.style.outline='')};
+    tr.ondragover=e=>{e.preventDefault();if((dragging||e.dataTransfer.getData('text/plain'))!==tr.dataset.cashDrag){e.dataTransfer.dropEffect='move';tr.style.outline='2px solid currentColor';tr.style.outlineOffset='-2px'}};
+    tr.ondragleave=()=>{tr.style.outline=''};
+    tr.ondrop=e=>{e.preventDefault();tr.style.outline='';const source=dragging||e.dataTransfer.getData('text/plain');mergeByKeys(tr.dataset.cashDrag,source)};
+  });
 }
 
 function editableCashflow(){
   if(!isAdmin())return documents();
-  ensure();title('Fluxo de Caixa');
+  ensure();autoConsolidateImportedEntries();title('Fluxo de Caixa');
   const m=v2state?.cashMonth||nowMonth();
   const rs=allRows().filter(r=>monthOf(r.date)===m).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   const incoming=rs.filter(r=>r.direction==='Entrada'),outgoing=rs.filter(r=>r.direction==='Saída');
   const iv=incoming.reduce((s,r)=>s+(+r.value||0),0),ov=outgoing.reduce((s,r)=>s+(+r.value||0),0),bal=iv-ov;
   const prev=allRows().filter(r=>monthOf(r.date)<m).reduce((s,r)=>s+(r.direction==='Entrada'?+r.value:-r.value),0);
   const pct=iv?bal/iv*100:0;
-  $('#content').innerHTML=`<div class="toolbar"><div>${v2picker(m,'cashEditMonth')}</div><button class="btn" id="v3ImportBank">Importar extrato com IA</button></div><div class="grid cols-4"><div class="card metric"><h3>Entradas</h3><b>${money(iv)}</b></div><div class="card metric"><h3>Saídas</h3><b>${money(ov)}</b></div><div class="card metric"><h3>Saldo</h3><b>${money(bal)}</b><small>${pct.toFixed(1)}% de sobra</small></div><div class="card metric"><h3>Acumulado</h3><b>${money(prev+bal)}</b><small>${money(prev)} mês anterior</small></div></div><div class="toolbar" style="margin-top:18px"><h3 class="section-title cash-in-title" style="margin:0">Entradas</h3><button class="btn small" id="cashAddIn">+ Adicionar entrada</button></div>${renderTable(incoming)}<div class="toolbar" style="margin-top:22px"><h3 class="section-title cash-out-title" style="margin:0">Saídas</h3><button class="btn small" id="cashAddOut">+ Adicionar saída</button></div>${renderTable(outgoing)}`;
+  $('#content').innerHTML=`<div class="toolbar"><div>${v2picker(m,'cashEditMonth')}</div><button class="btn" id="v3ImportBank">Importar extrato com IA</button></div><div class="grid cols-4"><div class="card metric"><h3>Entradas</h3><b>${money(iv)}</b></div><div class="card metric"><h3>Saídas</h3><b>${money(ov)}</b></div><div class="card metric"><h3>Saldo</h3><b>${money(bal)}</b><small>${pct.toFixed(1)}% de sobra</small></div><div class="card metric"><h3>Acumulado</h3><b>${money(prev+bal)}</b><small>${money(prev)} mês anterior</small></div></div><div class="notice" style="margin-top:14px">Entradas importadas com o mesmo nome são somadas automaticamente por mês. Você também pode arrastar uma entrada sobre outra para consolidá-las manualmente.</div><div class="toolbar" style="margin-top:18px"><h3 class="section-title cash-in-title" style="margin:0">Entradas</h3><button class="btn small" id="cashAddIn">+ Adicionar entrada</button></div>${renderTable(incoming,'Entrada')}<div class="toolbar" style="margin-top:22px"><h3 class="section-title cash-out-title" style="margin:0">Saídas</h3><button class="btn small" id="cashAddOut">+ Adicionar saída</button></div>${renderTable(outgoing,'Saída')}`;
   $('#cashEditMonth').onchange=e=>{v2state.cashMonth=e.target.value;editableCashflow()};
   $('#cashAddIn').onclick=()=>editModal(null,'Entrada');
   $('#cashAddOut').onclick=()=>editModal(null,'Saída');
   const imp=$('#v3ImportBank');if(imp)imp.onclick=()=>window.IntegralFinanceAI?.openAiImporter?.();
   $$('[data-cash-edit]').forEach(b=>b.onclick=()=>editModal(b.dataset.cashEdit));
+  bindDragMerge();
 }
 
 cashflow=editableCashflow;
 window.cashflow=editableCashflow;
-window.IntegralFinanceCashflowEditor={render:editableCashflow,edit:editModal,allRows};
+window.IntegralFinanceCashflowEditor={render:editableCashflow,edit:editModal,allRows,mergeByKeys,autoConsolidateImportedEntries};
 })();
