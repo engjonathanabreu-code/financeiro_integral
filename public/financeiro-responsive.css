@@ -57,7 +57,8 @@
     border: 0;
     box-shadow: 0 -5px 18px rgba(9,53,50,.18);
   }
-  .brand, .sidebar-foot { display: none !important; }
+  .brand { display: none !important; }
+  .sidebar-foot { display: none !important; }
   .nav {
     width: 100%;
     display: flex !important;
@@ -85,6 +86,32 @@
     font-size: 12px;
     border-radius: 9px;
   }
+
+  /* A sincronizacao ERP continua disponivel no mobile sem reabrir o rodape inteiro. */
+  .sidebar-foot:has(#erpSyncControl) {
+    display: block !important;
+    position: fixed;
+    right: 10px;
+    bottom: 66px;
+    z-index: 1001;
+    width: min(210px,52vw);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .sidebar-foot:has(#erpSyncControl) > *:not(#erpSyncControl) { display: none !important; }
+  #erpSyncControl {
+    display: grid !important;
+    gap: 3px !important;
+    margin: 0 !important;
+    padding: 7px;
+    border-radius: 11px;
+    background: rgba(255,255,255,.97);
+    box-shadow: 0 4px 16px rgba(9,53,50,.18);
+  }
+  #erpSyncButton { min-height: 40px !important; padding: 7px 10px !important; font-size: 12px !important; }
+  #erpSyncCaption { font-size: 9px !important; line-height: 1.15 !important; text-align: center !important; }
 
   .topbar {
     position: sticky;
@@ -180,6 +207,10 @@
       padding-left: max(8px, env(safe-area-inset-left));
       padding-right: max(8px, env(safe-area-inset-right));
       padding-bottom: max(7px, env(safe-area-inset-bottom));
+    }
+    .sidebar-foot:has(#erpSyncControl) {
+      right: max(10px, env(safe-area-inset-right));
+      bottom: calc(66px + env(safe-area-inset-bottom));
     }
     .main { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
     .content {
