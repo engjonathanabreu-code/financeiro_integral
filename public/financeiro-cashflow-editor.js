@@ -20,180 +20,28 @@ const kinds=()=>{
 const kindOptions=selected=>kinds().map(k=>`<option ${k===selected?'selected':''}>${esc(k)}</option>`).join('');
 const normName=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();
 const isImported=r=>/extrato banc[aá]rio/i.test(String(r?.source||''));
+const cashSort={Entrada:{key:'date',dir:'asc'},Saída:{key:'date',dir:'asc'}};
 
-function ensure(){
-  db.cashflow=db.cashflow||[];
-  db.cashflowOverrides=db.cashflowOverrides||{};
-}
-
-function asPart(r){
-  if(Array.isArray(r?.mergedItems)&&r.mergedItems.length)return r.mergedItems.map(x=>({...x}));
-  return [{id:r?.id,date:r?.date,description:r?.description,kind:r?.kind,direction:r?.direction,value:+r?.value||0,source:r?.source||'Manual',reference:r?.reference||'',importedAt:r?.importedAt||null}];
-}
-
-function mergeCashRows(target,source,mode='manual'){
-  const parts=[...asPart(target),...asPart(source)];
-  target.value=parts.reduce((s,x)=>s+(+x.value||0),0);
-  target.mergedItems=parts;
-  target.mergedCount=parts.length;
-  target.mergedAt=new Date().toISOString();
-  target.mergeMode=mode;
-  target.date=parts.map(x=>x.date).filter(Boolean).sort().at(-1)||target.date;
-  if(mode==='manual')target.source=target.source||source.source||'Manual';
-  return target;
-}
-
-function expenseFamily(description){
-  const n=normName(description);
-  if(!n)return null;
-  const tariff=/TARIFA|TARIF|BAIXA/.test(n);
-  const collection=/COBRANCA|BOLETO|PIX|LIQUIDACAO/.test(n);
-  if(tariff&&collection)return {key:'TARIFAS_COBRANCA_BOLETOS',label:'Tarifas de cobrança e boletos',kind:'Tarifas bancárias'};
-  return null;
-}
-
-function automaticGroupKey(r){
-  const month=monthOf(r.date),name=normName(r.description);
-  if(!month||!name)return null;
-  if(r.direction==='Saída'){
-    const family=expenseFamily(r.description);
-    if(family)return {key:`${month}|SAIDA|${family.key}`,...family};
-    return {key:`${month}|SAIDA|NOME|${name}`,label:r.description,kind:r.kind};
-  }
-  return {key:`${month}|ENTRADA|NOME|${name}`,label:r.description,kind:r.kind};
-}
-
-/* Consolida movimentações importadas no mesmo mês.
-   Entradas: mesmo nome normalizado.
-   Saídas: mesmo nome normalizado e, adicionalmente, famílias claras de tarifa bancária. */
-function autoConsolidateImportedRows(){
-  ensure();
-  const groups=new Map();
-  for(const r of db.cashflow){
-    if(!isImported(r)||r._autoConsolidatedChild)continue;
-    const g=automaticGroupKey(r);if(!g)continue;
-    if(!groups.has(g.key))groups.set(g.key,{meta:g,rows:[]});
-    groups.get(g.key).rows.push(r);
-  }
-  let changed=false;
-  for(const {meta,rows} of groups.values()){
-    if(rows.length<2)continue;
-    rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-    const target=rows[0],others=rows.slice(1);
-    for(const source of others){mergeCashRows(target,source,'automatic');source._autoConsolidatedChild=true;source._mergedInto=target.id;changed=true;}
-    target.description=meta.label||target.description;
-    if(meta.kind)target.kind=meta.kind;
-    target.autoConsolidated=true;
-    target.autoGroupKey=meta.key;
-  }
-  if(changed){db.cashflow=db.cashflow.filter(r=>!r._autoConsolidatedChild);save();}
-}
-
-function applyOverride(row,key){
-  const o=db.cashflowOverrides?.[key];
-  return o?{...row,...o,id:row.id,_sourceKey:key,_derived:true}:{...row,_sourceKey:key,_derived:true};
-}
-
-function paidRows(){
-  return (db.accountPayments||[]).filter(p=>p.status==='Paga').map(p=>{
-    const m=(db.accountMasters||[]).find(a=>String(a.id)===String(p.accountId));
-    const row={id:`a${p.id}`,date:p.paidAt?.slice(0,10)||p.due,description:m?.name||'Conta paga',kind:m?.category||'Despesa fixa',direction:'Saída',value:+p.value||0,source:'Conta paga'};
-    return applyOverride(row,`account:${p.id}`);
-  });
-}
-
-function budgetRows(){
-  return (db.budgetExpenses||[]).map(e=>{
-    const row={id:`b${e.id}`,date:e.date,description:e.description,kind:'Despesa variável',direction:'Saída',value:+e.value||0,source:'Orçamento'};
-    return applyOverride(row,`budget:${e.id}`);
-  });
-}
-
-function manualRows(){
-  return (db.cashflow||[]).filter(r=>!['Conta paga','Orçamento'].includes(r.source)).map(r=>({...r,_sourceKey:`cash:${r.id}`,_derived:false}));
-}
+function ensure(){db.cashflow=db.cashflow||[];db.cashflowOverrides=db.cashflowOverrides||{}}
+function asPart(r){if(Array.isArray(r?.mergedItems)&&r.mergedItems.length)return r.mergedItems.map(x=>({...x}));return [{id:r?.id,date:r?.date,description:r?.description,kind:r?.kind,direction:r?.direction,value:+r?.value||0,source:r?.source||'Manual',reference:r?.reference||'',importedAt:r?.importedAt||null}]}
+function mergeCashRows(target,source,mode='manual'){const parts=[...asPart(target),...asPart(source)];target.value=parts.reduce((s,x)=>s+(+x.value||0),0);target.mergedItems=parts;target.mergedCount=parts.length;target.mergedAt=new Date().toISOString();target.mergeMode=mode;target.date=parts.map(x=>x.date).filter(Boolean).sort().at(-1)||target.date;if(mode==='manual')target.source=target.source||source.source||'Manual';return target}
+function expenseFamily(description){const n=normName(description);if(!n)return null;const tariff=/TARIFA|TARIF|BAIXA/.test(n),collection=/COBRANCA|BOLETO|PIX|LIQUIDACAO/.test(n);if(tariff&&collection)return {key:'TARIFAS_COBRANCA_BOLETOS',label:'Tarifas de cobrança e boletos',kind:'Tarifas bancárias'};return null}
+function automaticGroupKey(r){const month=monthOf(r.date),name=normName(r.description);if(!month||!name)return null;if(r.direction==='Saída'){const family=expenseFamily(r.description);if(family)return {key:`${month}|SAIDA|${family.key}`,...family};return {key:`${month}|SAIDA|NOME|${name}`,label:r.description,kind:r.kind}}return {key:`${month}|ENTRADA|NOME|${name}`,label:r.description,kind:r.kind}}
+function autoConsolidateImportedRows(){ensure();const groups=new Map();for(const r of db.cashflow){if(!isImported(r)||r._autoConsolidatedChild)continue;const g=automaticGroupKey(r);if(!g)continue;if(!groups.has(g.key))groups.set(g.key,{meta:g,rows:[]});groups.get(g.key).rows.push(r)}let changed=false;for(const {meta,rows} of groups.values()){if(rows.length<2)continue;rows.sort((a,b)=>String(a.date).localeCompare(String(b.date)));const target=rows[0],others=rows.slice(1);for(const source of others){mergeCashRows(target,source,'automatic');source._autoConsolidatedChild=true;source._mergedInto=target.id;changed=true}target.description=meta.label||target.description;if(meta.kind)target.kind=meta.kind;target.autoConsolidated=true;target.autoGroupKey=meta.key}if(changed){db.cashflow=db.cashflow.filter(r=>!r._autoConsolidatedChild);save()}}
+function applyOverride(row,key){const o=db.cashflowOverrides?.[key];return o?{...row,...o,id:row.id,_sourceKey:key,_derived:true}:{...row,_sourceKey:key,_derived:true}}
+function paidRows(){return (db.accountPayments||[]).filter(p=>p.status==='Paga').map(p=>{const m=(db.accountMasters||[]).find(a=>String(a.id)===String(p.accountId));const row={id:`a${p.id}`,date:p.paidAt?.slice(0,10)||p.due,description:m?.name||'Conta paga',kind:m?.category||'Despesa fixa',direction:'Saída',value:+p.value||0,source:'Conta paga'};return applyOverride(row,`account:${p.id}`)})}
+function budgetRows(){return (db.budgetExpenses||[]).map(e=>{const row={id:`b${e.id}`,date:e.date,description:e.description,kind:'Despesa variável',direction:'Saída',value:+e.value||0,source:'Orçamento'};return applyOverride(row,`budget:${e.id}`)})}
+function manualRows(){return (db.cashflow||[]).filter(r=>!['Conta paga','Orçamento'].includes(r.source)).map(r=>({...r,_sourceKey:`cash:${r.id}`,_derived:false}))}
 function allRows(){return [...manualRows(),...paidRows(),...budgetRows()]}
 function findDisplayed(key){return allRows().find(r=>r._sourceKey===key)}
-
-function saveRow(key,data){
-  ensure();
-  if(key?.startsWith('cash:')){
-    const id=key.slice(5),r=db.cashflow.find(x=>String(x.id)===String(id));
-    if(r)Object.assign(r,data);
-  }else if(key){
-    db.cashflowOverrides[key]={...(db.cashflowOverrides[key]||{}),...data,editedAt:new Date().toISOString(),editedBy:user?.name||''};
-  }else{
-    db.cashflow.push({id:uid(),...data,source:'Manual',createdAt:new Date().toISOString(),createdBy:user?.name||''});
-  }
-  save();
-}
-
-function editModal(key,direction){
-  ensure();
-  const r=key?findDisplayed(key):null;
-  const fixedDirection=direction||r?.direction||'Entrada';
-  const x=v2modal(r?'Editar lançamento':`Nova ${fixedDirection.toLowerCase()}`,`<form id="cashEditForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Data</label><input name="date" type="date" value="${r?.date||new Date().toISOString().slice(0,10)}" required></div><div class="field"><label>Tipo</label><select name="direction"><option ${fixedDirection==='Entrada'?'selected':''}>Entrada</option><option ${fixedDirection==='Saída'?'selected':''}>Saída</option></select></div><div class="field full"><label>Descrição</label><input name="description" value="${esc(r?.description||'')}" required></div><div class="field"><label>Natureza</label><select name="kind">${kindOptions(r?.kind||'')}</select></div><div class="field"><label>Valor</label><input name="value" type="number" min="0" step="0.01" value="${r?.value??''}" required></div><div class="field full"><label>Origem</label><input value="${esc(r?.source||'Manual')}" readonly></div>${r?.mergedCount>1?`<div class="full notice"><b>${r.mergedCount} lançamentos consolidados.</b> O total pode ser editado, mas o detalhamento original permanece registrado internamente.</div>`:''}${r?`<div class="full notice">${r._derived?'Esta linha veio de outro módulo. A edição será aplicada somente no Fluxo de Caixa e não modificará o cadastro original.':'Esta linha pode ter sido criada manualmente ou importada. As alterações serão salvas diretamente no lançamento.'}</div>`:''}</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);
-  x.querySelector('#cashEditForm').onsubmit=e=>{
-    e.preventDefault();const f=new FormData(e.target);const value=Math.abs(Number(f.get('value')||0));
-    if(!value)return alert('Informe um valor maior que zero.');
-    saveRow(key,{date:String(f.get('date')||''),description:String(f.get('description')||'').trim(),kind:String(f.get('kind')||''),direction:String(f.get('direction')||fixedDirection),value});
-    x.remove();cashflow();
-  };
-}
-
-function mergeByKeys(targetKey,sourceKey){
-  if(!targetKey||!sourceKey||targetKey===sourceKey)return;
-  const target=findDisplayed(targetKey),source=findDisplayed(sourceKey);
-  if(!target||!source||target.direction!==source.direction)return;
-  if(!targetKey.startsWith('cash:')||!sourceKey.startsWith('cash:')){
-    alert('A soma por arrastar está disponível para linhas manuais ou importadas. Linhas originadas diretamente de outros módulos continuam editáveis individualmente.');
-    return;
-  }
-  const tid=targetKey.slice(5),sid=sourceKey.slice(5);
-  const t=db.cashflow.find(r=>String(r.id)===String(tid)),s=db.cashflow.find(r=>String(r.id)===String(sid));
-  if(!t||!s)return;
-  const ok=confirm(`Somar “${s.description}” (${money(s.value)}) em “${t.description}” (${money(t.value)})?`);
-  if(!ok)return;
-  mergeCashRows(t,s,'manual');
-  db.cashflow=db.cashflow.filter(r=>String(r.id)!==String(s.id));
-  save();cashflow();
-}
-
-function renderTable(rows,direction){
-  return `<div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Data</th><th>Descrição</th><th>Natureza</th><th>Origem</th><th class="num">Valor</th><th></th></tr></thead><tbody>${rows.map(r=>`<tr draggable="true" data-cash-drag="${esc(r._sourceKey)}"><td>${fmt(r.date)}</td><td><b>${esc(r.description)}</b>${r.mergedCount>1?`<small class="muted">${r.mergedCount} lançamentos somados</small>`:''}${db.cashflowOverrides?.[r._sourceKey]?'<small class="muted">Ajustado no Fluxo</small>':''}</td><td>${esc(r.kind||'')}</td><td>${esc(r.source||'Manual')}</td><td class="num ${r.direction==='Entrada'?'kpi-positive':'kpi-negative'}">${money(r.value)}</td><td><button class="icon-btn" title="Editar" data-cash-edit="${esc(r._sourceKey)}">✎</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Sem lançamentos.</div></td></tr>'}</tbody></table></div>`;
-}
-
-function bindDragMerge(){
-  let dragging='';
-  $$('[data-cash-drag]').forEach(tr=>{
-    tr.style.cursor='grab';
-    tr.ondragstart=e=>{dragging=tr.dataset.cashDrag;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragging);tr.style.opacity='.45'};
-    tr.ondragend=()=>{tr.style.opacity='';dragging='';$$('[data-cash-drag]').forEach(x=>x.style.outline='')};
-    tr.ondragover=e=>{e.preventDefault();const src=dragging||e.dataTransfer.getData('text/plain'),a=findDisplayed(src),b=findDisplayed(tr.dataset.cashDrag);if(src!==tr.dataset.cashDrag&&a&&b&&a.direction===b.direction){e.dataTransfer.dropEffect='move';tr.style.outline='2px solid currentColor';tr.style.outlineOffset='-2px'}};
-    tr.ondragleave=()=>{tr.style.outline=''};
-    tr.ondrop=e=>{e.preventDefault();tr.style.outline='';const source=dragging||e.dataTransfer.getData('text/plain');mergeByKeys(tr.dataset.cashDrag,source)};
-  });
-}
-
-function editableCashflow(){
-  if(!isAdmin())return documents();
-  ensure();autoConsolidateImportedRows();title('Fluxo de Caixa');
-  const m=v2state?.cashMonth||nowMonth();
-  const rs=allRows().filter(r=>monthOf(r.date)===m).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
-  const incoming=rs.filter(r=>r.direction==='Entrada'),outgoing=rs.filter(r=>r.direction==='Saída');
-  const iv=incoming.reduce((s,r)=>s+(+r.value||0),0),ov=outgoing.reduce((s,r)=>s+(+r.value||0),0),bal=iv-ov;
-  const prev=allRows().filter(r=>monthOf(r.date)<m).reduce((s,r)=>s+(r.direction==='Entrada'?+r.value:-r.value),0);
-  const pct=iv?bal/iv*100:0;
-  $('#content').innerHTML=`<div class="toolbar"><div>${v2picker(m,'cashEditMonth')}</div><button class="btn" id="v3ImportBank">Importar extrato com IA</button></div><div class="grid cols-4"><div class="card metric"><h3>Entradas</h3><b>${money(iv)}</b></div><div class="card metric"><h3>Saídas</h3><b>${money(ov)}</b></div><div class="card metric"><h3>Saldo</h3><b>${money(bal)}</b><small>${pct.toFixed(1)}% de sobra</small></div><div class="card metric"><h3>Acumulado</h3><b>${money(prev+bal)}</b><small>${money(prev)} mês anterior</small></div></div><div class="notice" style="margin-top:14px">A IA consolida movimentações importadas equivalentes por mês. Entradas com o mesmo nome são somadas; nas saídas, tarifas de cobrança, PIX, boleto, liquidação e baixa de boleto também são agrupadas. Você pode arrastar uma linha sobre outra do mesmo tipo para somar manualmente.</div><div class="toolbar" style="margin-top:18px"><h3 class="section-title cash-in-title" style="margin:0">Entradas</h3><button class="btn small" id="cashAddIn">+ Adicionar entrada</button></div>${renderTable(incoming,'Entrada')}<div class="toolbar" style="margin-top:22px"><h3 class="section-title cash-out-title" style="margin:0">Saídas</h3><button class="btn small" id="cashAddOut">+ Adicionar saída</button></div>${renderTable(outgoing,'Saída')}`;
-  $('#cashEditMonth').onchange=e=>{v2state.cashMonth=e.target.value;editableCashflow()};
-  $('#cashAddIn').onclick=()=>editModal(null,'Entrada');
-  $('#cashAddOut').onclick=()=>editModal(null,'Saída');
-  const imp=$('#v3ImportBank');if(imp)imp.onclick=()=>window.IntegralFinanceAI?.openAiImporter?.();
-  $$('[data-cash-edit]').forEach(b=>b.onclick=()=>editModal(b.dataset.cashEdit));
-  bindDragMerge();
-}
-
-cashflow=editableCashflow;
-window.cashflow=editableCashflow;
-window.IntegralFinanceCashflowEditor={render:editableCashflow,edit:editModal,allRows,mergeByKeys,autoConsolidateImportedRows};
+function saveRow(key,data){ensure();if(key?.startsWith('cash:')){const id=key.slice(5),r=db.cashflow.find(x=>String(x.id)===String(id));if(r)Object.assign(r,data)}else if(key){db.cashflowOverrides[key]={...(db.cashflowOverrides[key]||{}),...data,editedAt:new Date().toISOString(),editedBy:user?.name||''}}else{db.cashflow.push({id:uid(),...data,source:'Manual',createdAt:new Date().toISOString(),createdBy:user?.name||''})}save()}
+function editModal(key,direction){ensure();const r=key?findDisplayed(key):null,fixedDirection=direction||r?.direction||'Entrada',x=v2modal(r?'Editar lançamento':`Nova ${fixedDirection.toLowerCase()}`,`<form id="cashEditForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Data</label><input name="date" type="date" value="${r?.date||new Date().toISOString().slice(0,10)}" required></div><div class="field"><label>Tipo</label><select name="direction"><option ${fixedDirection==='Entrada'?'selected':''}>Entrada</option><option ${fixedDirection==='Saída'?'selected':''}>Saída</option></select></div><div class="field full"><label>Descrição</label><input name="description" value="${esc(r?.description||'')}" required></div><div class="field"><label>Natureza</label><select name="kind">${kindOptions(r?.kind||'')}</select></div><div class="field"><label>Valor</label><input name="value" type="number" min="0" step="0.01" value="${r?.value??''}" required></div><div class="field full"><label>Origem</label><input value="${esc(r?.source||'Manual')}" readonly></div>${r?.mergedCount>1?`<div class="full notice"><b>${r.mergedCount} lançamentos consolidados.</b> O total pode ser editado, mas o detalhamento original permanece registrado internamente.</div>`:''}${r?`<div class="full notice">${r._derived?'Esta linha veio de outro módulo. A edição será aplicada somente no Fluxo de Caixa e não modificará o cadastro original.':'Esta linha pode ter sido criada manualmente ou importada. As alterações serão salvas diretamente no lançamento.'}</div>`:''}</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);x.querySelector('#cashEditForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),value=Math.abs(Number(f.get('value')||0));if(!value)return alert('Informe um valor maior que zero.');saveRow(key,{date:String(f.get('date')||''),description:String(f.get('description')||'').trim(),kind:String(f.get('kind')||''),direction:String(f.get('direction')||fixedDirection),value});x.remove();cashflow()}}
+function mergeByKeys(targetKey,sourceKey){if(!targetKey||!sourceKey||targetKey===sourceKey)return;const target=findDisplayed(targetKey),source=findDisplayed(sourceKey);if(!target||!source||target.direction!==source.direction)return;if(!targetKey.startsWith('cash:')||!sourceKey.startsWith('cash:')){alert('A soma por arrastar está disponível para linhas manuais ou importadas. Linhas originadas diretamente de outros módulos continuam editáveis individualmente.');return}const tid=targetKey.slice(5),sid=sourceKey.slice(5),t=db.cashflow.find(r=>String(r.id)===String(tid)),s=db.cashflow.find(r=>String(r.id)===String(sid));if(!t||!s)return;if(!confirm(`Somar “${s.description}” (${money(s.value)}) em “${t.description}” (${money(t.value)})?`))return;mergeCashRows(t,s,'manual');db.cashflow=db.cashflow.filter(r=>String(r.id)!==String(s.id));save();cashflow()}
+function sortRows(rows,direction){const cfg=cashSort[direction]||cashSort.Entrada,key=cfg.key,m=cfg.dir==='asc'?1:-1;return [...rows].sort((a,b)=>{if(key==='value')return ((+a.value||0)-(+b.value||0))*m;if(key==='date')return String(a.date||'').localeCompare(String(b.date||''))*m;const map={description:'description',kind:'kind',source:'source'},f=map[key]||key;return String(a[f]||'').localeCompare(String(b[f]||''),'pt-BR',{sensitivity:'base',numeric:true})*m})}
+function sortHead(label,key,direction,cls=''){const cfg=cashSort[direction],mark=cfg.key===key?(cfg.dir==='asc'?' ▲':' ▼'):'';return `<th class="${cls}" data-cash-sort="${key}" data-cash-sort-direction="${direction}" style="cursor:pointer;user-select:none" title="Ordenar por ${label}">${label}${mark}</th>`}
+function renderTable(rows,direction){const sorted=sortRows(rows,direction);return `<div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr>${sortHead('Data','date',direction)}${sortHead('Descrição','description',direction)}${sortHead('Natureza','kind',direction)}${sortHead('Origem','source',direction)}${sortHead('Valor','value',direction,'num')}<th></th></tr></thead><tbody>${sorted.map(r=>`<tr draggable="true" data-cash-drag="${esc(r._sourceKey)}"><td>${fmt(r.date)}</td><td><b>${esc(r.description)}</b>${r.mergedCount>1?`<small class="muted">${r.mergedCount} lançamentos somados</small>`:''}${db.cashflowOverrides?.[r._sourceKey]?'<small class="muted">Ajustado no Fluxo</small>':''}</td><td>${esc(r.kind||'')}</td><td>${esc(r.source||'Manual')}</td><td class="num ${r.direction==='Entrada'?'kpi-positive':'kpi-negative'}">${money(r.value)}</td><td><button class="icon-btn" title="Editar" data-cash-edit="${esc(r._sourceKey)}">✎</button></td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Sem lançamentos.</div></td></tr>'}</tbody></table></div>`}
+function bindDragMerge(){let dragging='';$$('[data-cash-drag]').forEach(tr=>{tr.style.cursor='grab';tr.ondragstart=e=>{dragging=tr.dataset.cashDrag;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragging);tr.style.opacity='.45'};tr.ondragend=()=>{tr.style.opacity='';dragging='';$$('[data-cash-drag]').forEach(x=>x.style.outline='')};tr.ondragover=e=>{e.preventDefault();const src=dragging||e.dataTransfer.getData('text/plain'),a=findDisplayed(src),b=findDisplayed(tr.dataset.cashDrag);if(src!==tr.dataset.cashDrag&&a&&b&&a.direction===b.direction){e.dataTransfer.dropEffect='move';tr.style.outline='2px solid currentColor';tr.style.outlineOffset='-2px'}};tr.ondragleave=()=>{tr.style.outline=''};tr.ondrop=e=>{e.preventDefault();tr.style.outline='';const source=dragging||e.dataTransfer.getData('text/plain');mergeByKeys(tr.dataset.cashDrag,source)}})}
+function bindSort(){$$('[data-cash-sort]').forEach(h=>h.onclick=()=>{const direction=h.dataset.cashSortDirection,key=h.dataset.cashSort,cfg=cashSort[direction];cashSort[direction]={key,dir:cfg.key===key&&cfg.dir==='asc'?'desc':'asc'};editableCashflow()})}
+function editableCashflow(){if(!isAdmin())return documents();ensure();autoConsolidateImportedRows();title('Fluxo de Caixa');const m=v2state?.cashMonth||nowMonth(),rs=allRows().filter(r=>monthOf(r.date)===m),incoming=rs.filter(r=>r.direction==='Entrada'),outgoing=rs.filter(r=>r.direction==='Saída'),iv=incoming.reduce((s,r)=>s+(+r.value||0),0),ov=outgoing.reduce((s,r)=>s+(+r.value||0),0),bal=iv-ov,prev=allRows().filter(r=>monthOf(r.date)<m).reduce((s,r)=>s+(r.direction==='Entrada'?+r.value:-r.value),0),pct=iv?bal/iv*100:0;$('#content').innerHTML=`<div class="toolbar"><div>${v2picker(m,'cashEditMonth')}</div><button class="btn" id="v3ImportBank">Importar extrato com IA</button></div><div class="grid cols-4"><div class="card metric"><h3>Entradas</h3><b>${money(iv)}</b></div><div class="card metric"><h3>Saídas</h3><b>${money(ov)}</b></div><div class="card metric"><h3>Saldo</h3><b>${money(bal)}</b><small>${pct.toFixed(1)}% de sobra</small></div><div class="card metric"><h3>Acumulado</h3><b>${money(prev+bal)}</b><small>${money(prev)} mês anterior</small></div></div><div class="notice" style="margin-top:14px">A IA consolida movimentações importadas equivalentes por mês. Entradas com o mesmo nome são somadas; nas saídas, tarifas de cobrança, PIX, boleto, liquidação e baixa de boleto também são agrupadas. Você pode arrastar uma linha sobre outra do mesmo tipo para somar manualmente.</div><div class="toolbar" style="margin-top:18px"><h3 class="section-title cash-in-title" style="margin:0">Entradas</h3><button class="btn small" id="cashAddIn">+ Adicionar entrada</button></div>${renderTable(incoming,'Entrada')}<div class="toolbar" style="margin-top:22px"><h3 class="section-title cash-out-title" style="margin:0">Saídas</h3><button class="btn small" id="cashAddOut">+ Adicionar saída</button></div>${renderTable(outgoing,'Saída')}`;$('#cashEditMonth').onchange=e=>{v2state.cashMonth=e.target.value;editableCashflow()};$('#cashAddIn').onclick=()=>editModal(null,'Entrada');$('#cashAddOut').onclick=()=>editModal(null,'Saída');const imp=$('#v3ImportBank');if(imp)imp.onclick=()=>window.IntegralFinanceAI?.openAiImporter?.();$$('[data-cash-edit]').forEach(b=>b.onclick=()=>editModal(b.dataset.cashEdit));bindSort();bindDragMerge()}
+cashflow=editableCashflow;window.cashflow=editableCashflow;window.IntegralFinanceCashflowEditor={render:editableCashflow,edit:editModal,allRows,mergeByKeys,autoConsolidateImportedRows};
 })();
