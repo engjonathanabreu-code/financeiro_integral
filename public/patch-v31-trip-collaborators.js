@@ -23,7 +23,13 @@ function enhance(){
   const content=q('#content');if(!content)return;
   const titleText=q('#title')?.textContent||'';
   if(titleText==='Viagens'){
-    const toolbar=q('.toolbar',content);if(toolbar&&!q('#trip31New',toolbar)){const b=document.createElement('button');b.className='btn';b.id='trip31New';b.textContent='+ Nova viagem';b.onclick=()=>modalTrip();toolbar.appendChild(b);}
+    const toolbar=q('.toolbar',content);
+    const canonicalNew=q('#trip26New',toolbar);
+    const collaboratorNew=q('#trip31New',toolbar);
+    if(canonicalNew&&collaboratorNew) collaboratorNew.remove();
+    if(toolbar&&!canonicalNew&&!q('#trip31New',toolbar)){
+      const b=document.createElement('button');b.className='btn';b.id='trip31New';b.textContent='+ Nova viagem';b.onclick=()=>modalTrip();toolbar.appendChild(b);
+    }
   }
   if(/^Viagem\s*•/.test(titleText)){
     const right=q('.toolbar .right',content);if(right&&!q('#trip31Edit',right)){const b=document.createElement('button');b.className='btn ghost';b.id='trip31Edit';b.textContent='Editar viagem';const current=(db.trips||[]).find(t=>String(t.city||'')===titleText.replace(/^Viagem\s*•\s*/,''));b.onclick=()=>current&&modalTrip(current.id);right.insertBefore(b,right.firstChild);}
