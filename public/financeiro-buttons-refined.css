@@ -1,0 +1,66 @@
+/* Refinamento global de botões - Financeiro Integral
+   Mantém navegação e cards clicáveis com suas dimensões originais. */
+
+.btn{
+  min-height:30px;
+  padding:6px 11px;
+  border-radius:8px;
+  gap:5px;
+  font-size:12px;
+  line-height:1.15;
+  font-weight:700;
+  letter-spacing:-.01em;
+  box-shadow:none;
+  transition:background-color .15s ease,border-color .15s ease,color .15s ease,transform .12s ease;
+}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(0)}
+.btn.small{min-height:26px;padding:4px 8px;border-radius:7px;font-size:11px}
+.btn.icon{width:28px;height:28px;min-height:28px;padding:0;border-radius:7px;font-size:12px}
+.btn.wide{min-height:34px}
+
+/* Ações em barras, tabelas e rodapés de modal ficam compactas. */
+.toolbar .btn,
+.actions .btn,
+.modal-foot .btn,
+.section-head .btn,
+.card-topline .btn,
+.payment-mini-actions .btn{
+  min-height:29px;
+  padding:5px 10px;
+  font-size:11.5px;
+  border-radius:8px;
+}
+
+/* Controles segmentados continuam confortáveis, mas menos volumosos. */
+.segmented{padding:2px;border-radius:9px}
+.segmented button{
+  min-height:27px;
+  padding:5px 9px;
+  border-radius:7px;
+  font-size:11.5px;
+  line-height:1.15;
+}
+
+/* Botões utilitários específicos. */
+.account-payment-line-delete{
+  min-height:25px;
+  padding:4px 7px;
+  border-radius:7px;
+  font-size:10.5px;
+}
+
+/* Não compactar navegação, cards que são botões nem áreas principais de login. */
+.nav button,
+.month-folder,
+.planning-month-card,
+.account-master-card,
+.trip-card,
+.clickable{
+  font-size:inherit;
+}
+.login-card .btn.wide{min-height:40px;padding:9px 14px;font-size:13px;border-radius:9px}
+
+@media(max-width:740px){
+  .toolbar .btn,.actions .btn,.modal-foot .btn{min-height:31px;padding:6px 10px}
+}
