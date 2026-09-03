@@ -1,0 +1,3 @@
+-- Estrutura de Recebimentos / Boletos. Aplicada ao Supabase do ERP/Financeiro em 03/09/2026.
+-- Tabelas: fin_receb_municipios, fin_receb_remessas, fin_receb_clientes, fin_receb_parcelas, fin_receb_importacoes.
+-- A migration oficial foi aplicada via Supabase com RLS habilitado para usuários autenticados.
