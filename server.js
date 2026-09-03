@@ -1,6 +1,7 @@
 const http=require('http'),fs=require('fs'),path=require('path');
 const aiAccountHandler=require('./api/ai-account');
 const aiHealthHandler=require('./api/ai-health');
+const aiReceivablesHandler=require('./api/ai-receivables');
 const root=path.join(__dirname,'public');
 const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml'};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data))};
@@ -31,15 +32,18 @@ async function aiClassify(req,res){
   return json(res,200,{ok:true,model:data.model||model,...parsed});
  }catch(e){console.error('ai-classify error',e);return json(res,e.statusCode||500,{ok:false,error:e.statusCode===413?'PAYLOAD_TOO_LARGE':'INTERNAL_ERROR',details:String(e?.message||e)})}
 }
-async function aiAccount(req,res){
-  if(req.method!=='POST')return aiAccountHandler(req,vercelResponseCompat(res));
-  try{req.body=await readJson(req);return aiAccountHandler(req,vercelResponseCompat(res));}
+async function withJsonBody(req,res,handler){
+  if(req.method!=='POST')return handler(req,vercelResponseCompat(res));
+  try{req.body=await readJson(req);return handler(req,vercelResponseCompat(res));}
   catch(e){return json(res,e.statusCode||400,{ok:false,error:e.statusCode===413?'PAYLOAD_TOO_LARGE':'INVALID_JSON',details:String(e?.message||e)})}
 }
+async function aiAccount(req,res){return withJsonBody(req,res,aiAccountHandler)}
+async function aiReceivables(req,res){return withJsonBody(req,res,aiReceivablesHandler)}
 http.createServer((req,res)=>{
  const pathname=(req.url||'/').split('?')[0];
  if(pathname==='/api/ai-classify')return aiClassify(req,res);
  if(pathname==='/api/ai-account')return aiAccount(req,res);
+ if(pathname==='/api/ai-receivables')return aiReceivables(req,res);
  if(pathname==='/api/ai-health')return aiHealthHandler(req,vercelResponseCompat(res));
  const url=pathname==='/'?'/index.html':pathname;
  const file=path.join(root,url);
