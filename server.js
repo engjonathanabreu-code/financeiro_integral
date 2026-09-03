@@ -1,6 +1,7 @@
 const http=require('http'),fs=require('fs'),path=require('path');
 const aiAccountHandler=require('./api/ai-account');
 const aiHealthHandler=require('./api/ai-health');
+const aiReceiptHandler=require('./api/ai-receipt');
 const aiReceivablesHandler=require('./api/ai-receivables');
 const root=path.join(__dirname,'public');
 const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml'};
@@ -38,11 +39,13 @@ async function withJsonBody(req,res,handler){
   catch(e){return json(res,e.statusCode||400,{ok:false,error:e.statusCode===413?'PAYLOAD_TOO_LARGE':'INVALID_JSON',details:String(e?.message||e)})}
 }
 async function aiAccount(req,res){return withJsonBody(req,res,aiAccountHandler)}
+async function aiReceipt(req,res){return withJsonBody(req,res,aiReceiptHandler)}
 async function aiReceivables(req,res){return withJsonBody(req,res,aiReceivablesHandler)}
 http.createServer((req,res)=>{
  const pathname=(req.url||'/').split('?')[0];
  if(pathname==='/api/ai-classify')return aiClassify(req,res);
  if(pathname==='/api/ai-account')return aiAccount(req,res);
+ if(pathname==='/api/ai-receipt')return aiReceipt(req,res);
  if(pathname==='/api/ai-receivables')return aiReceivables(req,res);
  if(pathname==='/api/ai-health')return aiHealthHandler(req,vercelResponseCompat(res));
  const url=pathname==='/'?'/index.html':pathname;
