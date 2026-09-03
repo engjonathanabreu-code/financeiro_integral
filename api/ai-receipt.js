@@ -13,9 +13,11 @@ module.exports = async function handler(req,res){
       :`Você é o agente financeiro interno da Integral Soluções em Engenharia. Leia o comprovante anexado e extraia valor total pago, tipo da despesa, origem/fornecedor/favorecido, descrição curta e data em YYYY-MM-DD. Compare com os registros existentes. Só marque duplicidade quando houver forte coincidência de valor e origem/descrição, preferencialmente com data próxima. Setor do orçamento: ${sector||'não informado'}. Arquivo: ${fileName}. Registros existentes: ${JSON.stringify(clean)}`;
     const isPdf=/^data:application\/pdf[;,]/i.test(image)||/\.pdf$/i.test(fileName);
     const filePart=isPdf?{type:'input_file',file_data:image,filename:fileName||'documento.pdf'}:{type:'input_image',image_url:image};
-    const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:process.env.OPENAI_FINANCE_MODEL||'gpt-5.6-luna',input:[{role:'user',content:[{type:'input_text',text:prompt},filePart]}],text:{format:{type:'json_schema',name:'integral_receipt_analysis',strict:true,schema}}})});
-    const data=await response.json();if(!response.ok)return res.status(response.status).json({ok:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI'});
+    const configured=String(process.env.OPENAI_FINANCE_MODEL||'').trim();
+    const model=!configured||configured==='gpt-5.6-luna'?'gpt-5-mini':configured;
+    const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,input:[{role:'user',content:[{type:'input_text',text:prompt},filePart]}],text:{format:{type:'json_schema',name:'integral_receipt_analysis',strict:true,schema}}})});
+    const data=await response.json();if(!response.ok)return res.status(response.status).json({ok:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI',model});
     const outputText=data.output_text||(data.output||[]).flatMap(i=>i.content||[]).filter(i=>i.type==='output_text').map(i=>i.text).join('');
-    return res.status(200).json({ok:true,model:data.model,...JSON.parse(outputText||'{}')});
+    return res.status(200).json({ok:true,model:data.model||model,...JSON.parse(outputText||'{}')});
   }catch(error){console.error('ai-receipt error',error);return res.status(500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});}
 };
