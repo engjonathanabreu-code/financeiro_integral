@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="financeiro-planning-canonical.css?v=2">
   <link rel="stylesheet" href="financeiro-responsive.css?v=4">
   <link rel="stylesheet" href="financeiro-buttons-refined.css?v=20260902-1532">
-  <link rel="stylesheet" href="financeiro-recebimentos.css?v=20260903-1">
+  <link rel="stylesheet" href="financeiro-recebimentos.css?v=20260904-1">
 </head>
 <body>
   <canvas id="matrix"></canvas>
@@ -23,18 +23,13 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"></script>
-
-  <!-- Núcleo principal -->
   <script src="supabase-config.js?v=24"></script>
   <script src="financeiro.bundle.js?v=7"></script>
   <script src="financeiro-current-month.js?v=20260903-1"></script>
-  <!-- Bloqueia o RH legado imediatamente após o bundle -->
   <script src="financeiro-disable-legacy-rh.js?v=1"></script>
   <script src="financeiro-cloud-storage.js?v=3"></script>
   <script src="financeiro-erp-sync-ui.js?v=6"></script>
   <script src="financeiro-erp-sync-fix.js?v=3"></script>
-
-  <!-- Implementações canônicas: carregadas ANTES da restauração da sessão -->
   <script src="financeiro-planning-canonical.js?v=4"></script>
   <script src="patch-v24-account-payment-delete.js?v=2"></script>
   <script src="patch-v25-account-delete.js?v=2"></script>
@@ -51,12 +46,8 @@
   <script src="financeiro-cashflow-delete.js?v=2"></script>
   <script src="financeiro-cashflow-nature-summary.js?v=4"></script>
   <script src="patch-v32-accounts-sort.js?v=20260902-0854"></script>
-  <script src="financeiro-recebimentos.js?v=20260903-1"></script>
-
-  <!-- Roteador canônico precisa existir antes de qualquer app() automático -->
+  <script src="financeiro-recebimentos.js?v=20260904-1"></script>
   <script src="financeiro-canonical-router.js?v=2"></script>
-
-  <!-- Restauração de sessão por último: evita renderizar telas legadas durante o boot -->
   <script src="financeiro-auth-session-fix.js?v=3"></script>
 </body>
 </html>
