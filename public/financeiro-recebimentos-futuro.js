@@ -20,16 +20,32 @@ function ensureCss(){if(document.getElementById('recebFutureCss'))return;const s
 `;document.head.appendChild(s)}
 function close(){document.querySelector('#recebFutureModal')?.remove()}
 function addButton(){if(document.querySelector('#futureReceb')||document.querySelector('#title')?.textContent?.trim()!=='Recebimentos')return;const right=document.querySelector('.receb-toolbar .right');if(!right)return;const b=document.createElement('button');b.id='futureReceb';b.className='btn secondary';b.textContent='Futuro';b.onclick=openFuture;right.prepend(b)}
+async function fetchAllFutureRows(start){
+ const pageSize=1000,all=[];
+ for(let from=0;;from+=pageSize){
+   const r=await sb.from('fin_receb_parcelas')
+     .select('cliente_id,vencimento,valor_previsto,status')
+     .gte('vencimento',`${start}-01`)
+     .neq('status','Cancelado')
+     .order('vencimento',{ascending:true})
+     .order('id',{ascending:true})
+     .range(from,from+pageSize-1);
+   if(r.error)throw r.error;
+   const batch=r.data||[];all.push(...batch);
+   if(batch.length<pageSize)break;
+ }
+ return all;
+}
 async function openFuture(){ensureCss();try{
  const start=document.querySelector('#recebMonth')?.value||new Date().toISOString().slice(0,7);
- const [pr,cr,mr]=await Promise.all([
-   sb.from('fin_receb_parcelas').select('cliente_id,vencimento,valor_previsto,status').gte('vencimento',`${start}-01`).neq('status','Cancelado').order('vencimento'),
+ const [parcelas,cr,mr]=await Promise.all([
+   fetchAllFutureRows(start),
    sb.from('fin_receb_clientes').select('id,municipio_id,ativo'),
    sb.from('fin_receb_municipios').select('id,nome,ativo')
  ]);
- const err=[pr,cr,mr].find(x=>x.error);if(err?.error)throw err.error;
+ const err=[cr,mr].find(x=>x.error);if(err?.error)throw err.error;
  const clients=new Map((cr.data||[]).filter(c=>c.ativo!==false).map(c=>[c.id,c]));const munis=new Map((mr.data||[]).filter(m=>m.ativo!==false).map(m=>[m.id,m]));
- const rows=(pr.data||[]).filter(p=>clients.has(p.cliente_id));if(!rows.length){alert('Não há parcelas futuras cadastradas.');return}
+ const rows=parcelas.filter(p=>clients.has(p.cliente_id));if(!rows.length){alert('Não há parcelas futuras cadastradas.');return}
  const totals=new Map(),muniLast=new Map(),muniMonthValue=new Map();
  for(const p of rows){const mo=p.vencimento.slice(0,7),v=Number(p.valor_previsto||0),c=clients.get(p.cliente_id);totals.set(mo,(totals.get(mo)||0)+v);const mid=c?.municipio_id;if(mid){if(!muniLast.has(mid)||mo>muniLast.get(mid))muniLast.set(mid,mo);const k=`${mid}|${mo}`;muniMonthValue.set(k,(muniMonthValue.get(k)||0)+v)}}
  const months=[...totals.keys()].sort();const max=Math.max(...months.map(m=>totals.get(m)||0),1);
