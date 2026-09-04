@@ -21,11 +21,47 @@ function ensureStyles(){
  .receb-status{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#eef4f2;color:#325f56;white-space:nowrap}
  .receb-status.Pago{background:#e8f5ec;color:#257042}.receb-status.Inadimplente{background:#fff0ed;color:#a43a2c}.receb-status.Pendente{background:#fff7df;color:#8a6a16}
  .receb-card-actions{display:flex;gap:6px;margin-top:12px}.receb-card-actions .btn{flex:1}
- .receb-history-summary{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px;margin-bottom:14px}.receb-history-summary .card{padding:12px}
+ .receb-history-summary{display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:10px;margin-bottom:14px}.receb-history-summary .card{padding:12px}
  .receb-history-summary small{display:block;color:#6e817d;margin-bottom:4px}.receb-history-summary b{font-size:18px;color:#173a34}
- .receb-history-table td,.receb-history-table th{white-space:nowrap}.receb-history-row-ref{background:#f1f8f6}
+ #recebHistoryModal .modal{width:min(1180px,calc(100vw - 32px));max-width:none!important}
+ #recebHistoryModal .modal-body{overflow-x:hidden}
+ .receb-history-wrap{overflow-x:hidden!important}
+ .receb-history-table{width:100%;table-layout:fixed}
+ .receb-history-table th,.receb-history-table td{white-space:normal!important;overflow-wrap:anywhere;vertical-align:middle;padding:10px 9px}
+ .receb-history-table th:nth-child(1),.receb-history-table td:nth-child(1){width:13%}
+ .receb-history-table th:nth-child(2),.receb-history-table td:nth-child(2){width:9%}
+ .receb-history-table th:nth-child(3),.receb-history-table td:nth-child(3){width:16%}
+ .receb-history-table th:nth-child(4),.receb-history-table td:nth-child(4){width:15%}
+ .receb-history-table th:nth-child(5),.receb-history-table td:nth-child(5){width:16%}
+ .receb-history-table th:nth-child(6),.receb-history-table td:nth-child(6){width:15%}
+ .receb-history-table th:nth-child(7),.receb-history-table td:nth-child(7){width:16%}
+ .receb-history-row-ref{background:#f1f8f6}
  .receb-search-wrap{position:relative;min-width:290px}.receb-search-box{display:flex;align-items:center;gap:8px;border:1px solid #cfddda;border-radius:10px;background:#fff;padding:0 10px}.receb-search-box input{border:0!important;outline:0!important;box-shadow:none!important;min-width:240px;background:transparent}.receb-search-results{position:absolute;z-index:10050;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #d4e0dd;border-radius:12px;box-shadow:0 14px 35px rgba(12,49,43,.16);max-height:360px;overflow:auto;padding:6px}.receb-search-item{display:block;width:100%;text-align:left;border:0;background:transparent;padding:10px;border-radius:8px;cursor:pointer;color:#173a34}.receb-search-item:hover{background:#f1f7f5}.receb-search-item small{display:block;color:#728b86;margin-top:2px}
- @media(max-width:800px){.receb-history-summary{grid-template-columns:repeat(2,1fr)}.receb-search-wrap{min-width:100%;width:100%}.receb-search-box input{min-width:0;width:100%}}
+ @media(max-width:950px){
+   #recebHistoryModal .modal{width:calc(100vw - 20px)}
+   .receb-history-table{font-size:13px}
+   .receb-history-table th,.receb-history-table td{padding:8px 6px}
+   .receb-history-table .receb-status{font-size:11px;padding:3px 6px}
+ }
+ @media(max-width:720px){
+   .receb-history-summary{grid-template-columns:repeat(2,1fr)}.receb-search-wrap{min-width:100%;width:100%}.receb-search-box input{min-width:0;width:100%}
+   #recebHistoryModal .modal{width:calc(100vw - 12px);max-height:calc(100vh - 12px)}
+   #recebHistoryModal .modal-body{padding:12px}
+   .receb-history-wrap{border:0!important;overflow:visible!important}
+   .receb-history-table,.receb-history-table tbody,.receb-history-table tr,.receb-history-table td{display:block;width:100%!important}
+   .receb-history-table thead{display:none}
+   .receb-history-table tr{border:1px solid #dbe6e3;border-radius:12px;margin-bottom:10px;padding:8px 10px;background:#fff}
+   .receb-history-table tr.receb-history-row-ref{background:#f1f8f6}
+   .receb-history-table td{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;align-items:center;border:0!important;border-bottom:1px solid #edf2f0!important;padding:7px 2px!important;text-align:right;overflow-wrap:normal}
+   .receb-history-table td:last-child{border-bottom:0!important}
+   .receb-history-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:#728b86;text-transform:uppercase;letter-spacing:.02em;text-align:left}
+   .receb-history-table td>*{justify-self:end}
+   .receb-history-table td b{justify-self:end}
+ }
+ @media(max-width:430px){
+   .receb-history-summary{grid-template-columns:1fr 1fr;gap:7px}.receb-history-summary .card{padding:9px}.receb-history-summary b{font-size:16px}
+   .receb-history-table td{grid-template-columns:98px minmax(0,1fr);font-size:13px}
+ }
  `;document.head.appendChild(s);
 }
 
@@ -42,7 +78,7 @@ function currentReferenceMonth(){return document.querySelector('#recebMonth')?.v
 function makeModal(title,body){
  document.querySelector('#recebHistoryModal')?.remove();
  const d=document.createElement('div');d.id='recebHistoryModal';d.className='modal-backdrop';d.style.zIndex='10020';
- d.innerHTML=`<section class="modal" style="max-width:1050px"><header class="modal-head"><h3>${esc(title)}</h3><button class="btn icon ghost" data-history-close>×</button></header><div class="modal-body">${body}</div><footer class="modal-foot"><button class="btn ghost" data-history-close>Fechar</button></footer></section>`;
+ d.innerHTML=`<section class="modal"><header class="modal-head"><h3>${esc(title)}</h3><button class="btn icon ghost" data-history-close>×</button></header><div class="modal-body">${body}</div><footer class="modal-foot"><button class="btn ghost" data-history-close>Fechar</button></footer></section>`;
  document.body.appendChild(d);d.querySelectorAll('[data-history-close]').forEach(b=>b.onclick=()=>d.remove());return d;
 }
 
@@ -53,9 +89,9 @@ async function showHistory(clientId){
   const r=await sb.from('fin_receb_parcelas').select('*').eq('cliente_id',clientId).order('vencimento');if(r.error)throw r.error;
   const ps=r.data||[],paid=ps.filter(p=>p.status==='Pago'),late=ps.filter(p=>p.status==='Inadimplente'),open=ps.filter(p=>!['Pago','Inadimplente','Cancelado'].includes(p.status));
   const ref=currentReferenceMonth();
-  const body=`<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px"><div><b>${esc(client.nome)}</b><div class="muted">${esc(client.codigo||client.cpf_cnpj||'')}</div></div><div class="receb-status">Competência selecionada ${competence(ref+'-01')}</div></div>
+  const body=`<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap"><div><b>${esc(client.nome)}</b><div class="muted">${esc(client.codigo||client.cpf_cnpj||'')}</div></div><div class="receb-status">Competência selecionada ${competence(ref+'-01')}</div></div>
   <div class="receb-history-summary"><div class="card"><small>Total de parcelas</small><b>${ps.length}</b></div><div class="card"><small>Pagas</small><b>${paid.length}</b></div><div class="card"><small>Em aberto</small><b>${open.length}</b></div><div class="card"><small>Inadimplentes</small><b>${late.length}</b></div></div>
-  <div class="table-wrap"><table class="table receb-history-table"><thead><tr><th>Competência</th><th>Parcela</th><th>Vencimento</th><th>Status</th><th>Valor previsto</th><th>Pago em</th><th>Valor pago</th></tr></thead><tbody>${ps.map(p=>`<tr class="${p.vencimento?.slice(0,7)===ref?'receb-history-row-ref':''}"><td><b>${competence(p.vencimento)}</b></td><td>#${p.numero}</td><td>${br(p.vencimento)}</td><td><span class="receb-status ${esc(p.status)}">${esc(p.status||'Pendente')}</span></td><td>${money(p.valor_previsto)}</td><td>${br(p.pago_em)}</td><td>${p.status==='Pago'?money(p.valor_liquidado||p.valor_previsto):'—'}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma parcela cadastrada para este cliente.</td></tr>'}</tbody></table></div>`;
+  <div class="table-wrap receb-history-wrap"><table class="table receb-history-table"><thead><tr><th>Competência</th><th>Parcela</th><th>Vencimento</th><th>Status</th><th>Valor previsto</th><th>Pago em</th><th>Valor pago</th></tr></thead><tbody>${ps.map(p=>`<tr class="${p.vencimento?.slice(0,7)===ref?'receb-history-row-ref':''}"><td data-label="Competência"><b>${competence(p.vencimento)}</b></td><td data-label="Parcela">#${p.numero}</td><td data-label="Vencimento">${br(p.vencimento)}</td><td data-label="Status"><span class="receb-status ${esc(p.status)}">${esc(p.status||'Pendente')}</span></td><td data-label="Valor previsto">${money(p.valor_previsto)}</td><td data-label="Pago em">${br(p.pago_em)}</td><td data-label="Valor pago">${p.status==='Pago'?money(p.valor_liquidado||p.valor_previsto):'—'}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma parcela cadastrada para este cliente.</td></tr>'}</tbody></table></div>`;
   makeModal(`Histórico — ${client.nome}`,body);
  }catch(e){alert('Não foi possível carregar o histórico: '+(e.message||e));}
 }
