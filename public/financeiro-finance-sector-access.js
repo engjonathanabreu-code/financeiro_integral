@@ -82,6 +82,20 @@ if(typeof originalApp==='function'){
   window.app=wrapped;try{app=wrapped}catch{}
 }
 
+/* Compatibilidade com ações legadas de Recebimentos.
+   Alguns handlers ainda consultam user.role === Administrador no momento do clique.
+   Para um colaborador Financeiro, elevamos apenas a representação local durante o
+   mesmo ciclo do evento; a autorização real continua sendo validada pela RLS. */
+document.addEventListener('click',e=>{
+  if(!isFinance())return;
+  const t=e.target.closest?.('#importClients,#importReport,#newMuni,#newClient,#recebModal button,#recebImportFixModal button');
+  const inReceb=['recebimentos','receipts'].includes(getView());
+  if(!t&&!inReceb)return;
+  const u=getUser();if(!u)return;
+  const old=u.role;u.role='Administrador';
+  queueMicrotask(()=>{if(getUser()===u&&u.role==='Administrador')u.role=old});
+},true);
+
 /* Captura a navegação para impedir que o guard legado redirecione o setor Financeiro. */
 document.addEventListener('click',e=>{
   if(!isFinance())return;
