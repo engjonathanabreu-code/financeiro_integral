@@ -1,7 +1,7 @@
 (function(){
 'use strict';
 
-const CITY_BY_PREFIX={AGM:'Águas Mornas',AUR:'Aurora',BDN:'Benedito Novo',DRP:'Doutor Pedrinho',IBI:'Ibirama',ILH:'Ilhota'};
+const CITY_BY_PREFIX={AGM:'Águas Mornas',AUR:'Aurora',BDN:'Benedito Novo',DRP:'Doutor Pedrinho',IBI:'Ibirama',ILH:'Ilhota',TAI:'Taió'};
 const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'');
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
