@@ -1,0 +1,106 @@
+/* Integral Financeiro — permissões do setor Financeiro
+   Financeiro: Contas, Documentos Fiscais e Recebimentos completos.
+   Orçamentos e Viagens: somente cards atribuídos individualmente ao usuário. */
+(function(){
+'use strict';
+const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
+const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+const allowedFinanceViews=new Set(['accounts','documents','recebimentos','receipts','budgets','trips']);
+function getUser(){try{return typeof user!=='undefined'?user:window.user}catch{return window.user}}
+function getView(){try{return typeof view!=='undefined'?view:window.view}catch{return window.view}}
+function setView(v){try{view=v}catch{}window.view=v}
+function isAdmin(){return norm(getUser()?.role||getUser()?.tipo||getUser()?.type)==='administrador'}
+function isFinance(){const u=getUser();return !!u&&!isAdmin()&&(norm(u.setor||u.sector)==='financeiro'||norm(u.tipo||u.type)==='financeiro'||norm(u.role)==='financeiro')}
+function currentLocalUser(){const u=getUser();const list=(()=>{try{return db?.usersMvp||[]}catch{return window.db?.usersMvp||[]}})();return list.find(x=>x.erpId===u?.erpId||norm(x.email)===norm(u?.email)||x.name===u?.name)}
+function directIds(row){return Array.isArray(row?.assignedDirect)?row.assignedDirect:(Array.isArray(row?.assigned)?row.assigned:[])}
+function directlyAssigned(row){const local=currentLocalUser();if(!local)return false;return directIds(row).map(String).includes(String(local.id))}
+
+async function hydrateProfile(){
+  const u=getUser(),sb=window.IntegralERP?.sb;if(!u||!sb)return;
+  try{
+    const {data:{user:authUser}}=await sb.auth.getUser();if(!authUser)return;
+    const {data,error}=await sb.from('profiles').select('id,nome,email,tipo,setor,ativo').eq('id',authUser.id).maybeSingle();
+    if(error||!data)return;
+    u.erpId=data.id;u.tipo=data.tipo||u.tipo;u.setor=data.setor||'';u.sector=data.setor||data.tipo||u.sector;u.email=data.email||authUser.email||u.email;
+    if(norm(data.tipo)==='administrador')u.role='Administrador';
+  }catch(e){console.warn('Financeiro: não foi possível atualizar o perfil de acesso.',e)}
+}
+
+function ensureButton(nav,id,label,beforeId){
+  let b=nav.querySelector(`[data-view="${id}"]`);if(b)return b;
+  b=document.createElement('button');b.dataset.view=id;b.textContent=label;
+  const before=beforeId?nav.querySelector(`[data-view="${beforeId}"]`):null;
+  if(before)nav.insertBefore(b,before);else nav.appendChild(b);
+  return b;
+}
+function enforceNav(){
+  if(!isFinance())return;
+  const nav=q('.nav');if(!nav)return;
+  ensureButton(nav,'accounts','Contas','documents');
+  ensureButton(nav,'documents','Documentos Fiscais','budgets');
+  ensureButton(nav,'recebimentos','Recebimentos','budgets');
+  ensureButton(nav,'budgets','Orçamentos','trips');
+  ensureButton(nav,'trips','Viagens');
+  qa('button[data-view]',nav).forEach(b=>{
+    const ok=allowedFinanceViews.has(b.dataset.view);
+    b.hidden=!ok;b.style.setProperty('display',ok?'':'none',ok?'':'important');
+    if(ok)b.style.removeProperty('display');
+  });
+  const badge=q('.topbar .badge');if(badge)badge.textContent='Financeiro';
+  const mini=q('.user-mini');if(mini){const strong=mini.querySelector('strong');mini.innerHTML='';if(strong)mini.appendChild(strong);mini.append(document.createTextNode('Financeiro'));}
+}
+
+function invokeWithRole(fn,role){const u=getUser();if(!u||typeof fn!=='function')return;const old=u.role;u.role=role;try{return fn()}finally{u.role=old}}
+function invokeDirectOnly(fn){const u=getUser();if(!u||typeof fn!=='function')return;const oldSector=u.sector,oldSetor=u.setor;u.sector='__acesso_individual__';u.setor='__acesso_individual__';try{return fn()}finally{u.sector=oldSector;u.setor=oldSetor}}
+
+const originalBudgets=typeof budgets==='function'?budgets:window.budgets;
+if(typeof originalBudgets==='function'){
+  const wrapped=function(){return isFinance()?invokeDirectOnly(originalBudgets):originalBudgets.apply(this,arguments)};
+  window.budgets=wrapped;try{budgets=wrapped}catch{}
+}
+const originalTrips=typeof trips==='function'?trips:window.trips;
+if(typeof originalTrips==='function'){
+  const wrapped=function(){
+    if(!isFinance())return originalTrips.apply(this,arguments);
+    const d=(()=>{try{return db}catch{return window.db}})();if(!d)return invokeDirectOnly(originalTrips);
+    const all=d.trips||[];d.trips=all.filter(directlyAssigned);
+    try{return invokeDirectOnly(originalTrips)}finally{d.trips=all}
+  };
+  window.trips=wrapped;try{trips=wrapped}catch{}
+}
+
+const originalApp=typeof app==='function'?app:window.app;
+if(typeof originalApp==='function'){
+  const wrapped=function(){
+    if(!isFinance())return originalApp.apply(this,arguments);
+    let v=getView();if(!allowedFinanceViews.has(v)){v='documents';setView(v)}
+    let out;
+    if(['accounts','documents','recebimentos','receipts'].includes(v))out=invokeWithRole(()=>originalApp.apply(this,arguments),'Administrador');
+    else out=originalApp.apply(this,arguments);
+    queueMicrotask(enforceNav);return out;
+  };
+  window.app=wrapped;try{app=wrapped}catch{}
+}
+
+/* Captura a navegação para impedir que o guard legado redirecione o setor Financeiro. */
+document.addEventListener('click',e=>{
+  if(!isFinance())return;
+  const b=e.target.closest?.('.nav [data-view]');if(!b)return;
+  const id=b.dataset.view;if(!allowedFinanceViews.has(id)){e.preventDefault();e.stopImmediatePropagation();return}
+  if(id==='budgets'||id==='trips')return;
+  e.preventDefault();e.stopImmediatePropagation();setView(id);
+  if(id==='accounts')invokeWithRole(()=>window.accounts?.(),'Administrador');
+  else if(id==='documents')invokeWithRole(()=>window.documents?.(),'Administrador');
+  else {
+    /* Recebimentos possui seu próprio roteador; refaz o app como admin somente durante o ciclo de render. */
+    invokeWithRole(()=>window.app?.(),'Administrador');
+  }
+  qa('.nav [data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===id));
+  enforceNav();
+},true);
+
+let scheduled=false;function reconcile(){if(scheduled)return;scheduled=true;queueMicrotask(async()=>{scheduled=false;await hydrateProfile();enforceNav()})}
+new MutationObserver(reconcile).observe(document.documentElement,{childList:true,subtree:true});
+window.addEventListener('load',reconcile,{once:true});setTimeout(reconcile,0);
+window.IntegralFinanceSectorAccess={isFinance,directlyAssigned,enforceNav,hydrateProfile};
+})();
