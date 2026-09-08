@@ -1,4 +1,4 @@
-/* Integral Financeiro — revisão por IA e edição dos documentos fiscais */
+/* Integral Financeiro — revisão por IA, edição e exclusão dos documentos fiscais */
 (function(){
 'use strict';
 const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -33,14 +33,35 @@ function editDoc(doc){
  const f=q('#fiscalEdit',x);q('#reviewInside',x).onclick=async e=>{x.remove();await reviewDoc(doc,e.currentTarget)};
  f.onsubmit=async e=>{e.preventDefault();const o=Object.fromEntries(new FormData(f));Object.assign(doc,o,{value:Number(o.value||0),manualEditedAt:new Date().toISOString()});persist();await sync();x.remove();redraw()};
 }
+async function deleteDoc(doc,button){
+ if(!doc)return;
+ const label=String(doc.name||'este documento').trim()||'este documento';
+ if(!confirm(`Excluir o documento fiscal "${label}"?\n\nEsta ação removerá o documento da lista de Documentos Fiscais.`))return;
+ const d=data();if(!d||!Array.isArray(d.docs))return alert('Não foi possível localizar a base de documentos fiscais.');
+ const index=d.docs.indexOf(doc);
+ if(index<0)return alert('Este documento não foi localizado para exclusão.');
+ const old=button?.textContent||'×';if(button){button.disabled=true;button.textContent='…'}
+ try{
+  d.docs.splice(index,1);
+  persist();
+  await sync();
+  redraw();
+ }catch(e){
+  console.error(e);
+  if(!d.docs.includes(doc))d.docs.splice(Math.min(index,d.docs.length),0,doc);
+  persist();
+  alert(`Não foi possível excluir o documento: ${e.message||e}`);
+  if(button){button.disabled=false;button.textContent=old}
+ }
+}
 function decorate(){
  if((q('#title')?.textContent||'').trim()!=='Documentos Fiscais')return;
  const table=qa('#content table').find(t=>/DOCUMENTO/i.test(q('thead',t)?.textContent||'')&&/FORNECEDOR/i.test(q('thead',t)?.textContent||''));if(!table)return;
  const hr=q('thead tr',table);if(hr&&!q('[data-fiscal-actions-head]',hr)){const th=document.createElement('th');th.dataset.fiscalActionsHead='1';th.textContent='Ações';hr.append(th)}
  qa('tbody tr',table).forEach(tr=>{
   if(q('[data-fiscal-actions]',tr))return;const name=(q('td b',tr)?.textContent||q('td',tr)?.textContent||'').trim(),doc=getDocByName(name);if(!doc)return;
-  const td=document.createElement('td');td.dataset.fiscalActions='1';td.className='actions';td.style.whiteSpace='nowrap';td.innerHTML=`<button class="btn small ghost" data-ai>Revisar IA</button> <button class="btn small ghost" data-edit>Editar</button>`;tr.append(td);
-  q('[data-ai]',td).onclick=e=>reviewDoc(doc,e.currentTarget);q('[data-edit]',td).onclick=()=>editDoc(doc);
+  const td=document.createElement('td');td.dataset.fiscalActions='1';td.className='actions';td.style.whiteSpace='nowrap';td.innerHTML=`<button class="btn small ghost" data-ai>Revisar IA</button> <button class="btn small ghost" data-edit>Editar</button> <button type="button" data-delete title="Excluir documento" aria-label="Excluir documento" style="border:0;background:transparent;color:#dc2626;font-size:18px;font-weight:800;line-height:1;padding:2px 5px;cursor:pointer;vertical-align:middle">×</button>`;tr.append(td);
+  q('[data-ai]',td).onclick=e=>reviewDoc(doc,e.currentTarget);q('[data-edit]',td).onclick=()=>editDoc(doc);q('[data-delete]',td).onclick=e=>deleteDoc(doc,e.currentTarget);
   const badge=qa('.badge',tr).find(b=>/Revisar IA/i.test(b.textContent||''));if(badge){badge.style.cursor='pointer';badge.title='Clique para pedir uma nova revisão da IA';badge.onclick=()=>reviewDoc(doc,badge)}
  });
 }
