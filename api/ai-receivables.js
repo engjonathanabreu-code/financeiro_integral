@@ -17,16 +17,34 @@ module.exports=async function handler(req,res){
    /* Relatórios bancários podem conter centenas de liquidações. O modelo devolve linhas compactas
       para reduzir drasticamente tokens de saída e evitar timeout da função Vercel. */
    model='gpt-5-mini';
-   const row={type:'array',prefixItems:[{type:'string'},{type:'string'},{type:'string'},{type:'string'},{type:'number'},{type:'number'}],minItems:6,maxItems:6};
-   schema={type:'object',additionalProperties:false,properties:{rows:{type:'array',items:row}},required:['rows']};name='integral_receivables_report_compact';
-   prompt='Leia integralmente o relatório bancário. Extraia SOMENTE registros da seção de LIQUIDACAO/títulos efetivamente pagos. Para cada boleto retorne exatamente: [nome do pagador, documento/código do boleto, vencimento YYYY-MM-DD, data de pagamento YYYY-MM-DD, valor nominal, valor pago]. Preserve cada vencimento separadamente, inclusive meses futuros e múltiplos títulos do mesmo cliente. Ignore Entrada Confirmada, TOTAL, cabeçalhos e demais ocorrências. Não invente dados.';
+   const row={type:'object',additionalProperties:false,properties:{
+     p:{type:'string'},
+     d:{type:'string'},
+     v:{type:'string'},
+     g:{type:'string'},
+     n:{type:'number'},
+     l:{type:'number'}
+   },required:['p','d','v','g','n','l']};
+   schema={type:'object',additionalProperties:false,properties:{rows:{type:'array',items:row}},required:['rows']};
+   name='integral_receivables_report_compact';
+   prompt='Leia integralmente o relatorio bancario. Extraia SOMENTE registros da secao de LIQUIDACAO, ou seja, titulos efetivamente pagos. Para cada boleto liquidado retorne um objeto com exatamente estas chaves: p = nome do pagador; d = documento ou codigo do boleto; v = data de vencimento no formato YYYY-MM-DD; g = data de pagamento no formato YYYY-MM-DD; n = valor nominal como numero; l = valor efetivamente pago como numero. Preserve cada vencimento separadamente, inclusive vencimentos de meses futuros e multiplos titulos do mesmo pagador: nunca agrupe, some ou deduplique linhas. Use ponto como separador decimal e nao inclua simbolo de moeda. Ignore Entrada Confirmada, TOTAL, subtotais, cabecalhos e rodapes. Se um campo nao existir use string vazia ou zero. Nao invente dados.';
   }
   const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_file',file_data:file,filename:fileName}]}],text:{format:{type:'json_schema',name,strict:true,schema}}})});
   const raw=await response.text();let data={};try{data=raw?JSON.parse(raw):{}}catch{return res.status(502).json({ok:false,error:'OPENAI_INVALID_RESPONSE',details:'A OpenAI retornou uma resposta inválida.'})}
   if(!response.ok)return res.status(response.status).json({ok:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI',model});
   const text=data.output_text||(data.output||[]).flatMap(i=>i.content||[]).filter(i=>i.type==='output_text').map(i=>i.text).join('');let parsed={};try{parsed=JSON.parse(text||'{}')}catch{return res.status(502).json({ok:false,error:'OPENAI_OUTPUT_INVALID',details:'Não foi possível interpretar o arquivo retornado pela IA.'})}
   if(mode!=='clients'){
-   const entries=(parsed.rows||[]).map(r=>({pagador:String(r?.[0]||''),cpf_cnpj:'',nosso_numero:'',documento:String(r?.[1]||''),vencimento:String(r?.[2]||''),pagamento:String(r?.[3]||''),valor_nominal:Number(r?.[4]||0),valor_liquidado:Number(r?.[5]||0)}));
+   const pick=(r,k,i)=>r&&typeof r==='object'&&!Array.isArray(r)?r[k]:(Array.isArray(r)?r[i]:undefined);
+   const entries=(parsed.rows||[]).map(r=>({
+    pagador:String(pick(r,'p',0)||''),
+    cpf_cnpj:'',
+    nosso_numero:'',
+    documento:String(pick(r,'d',1)||''),
+    vencimento:String(pick(r,'v',2)||'').slice(0,10),
+    pagamento:String(pick(r,'g',3)||'').slice(0,10),
+    valor_nominal:Number(pick(r,'n',4)||0),
+    valor_liquidado:Number(pick(r,'l',5)||0)
+   })).filter(e=>e.pagador||e.documento);
    return res.status(200).json({ok:true,model:data.model||model,entries});
   }
   return res.status(200).json({ok:true,model:data.model||model,...parsed});
