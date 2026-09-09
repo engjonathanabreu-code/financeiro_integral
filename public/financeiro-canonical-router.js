@@ -45,36 +45,62 @@ async function renderCanonical(id){
   }catch(err){console.error('Roteador canônico:',id,err);const out=q('#content');if(out)out.innerHTML=`<div class="notice danger">Não foi possível carregar esta tela: ${String(err?.message||err)}</div>`;return false}
 }
 
+let pendingCanonical=null;
+function requestCanonical(id){
+  if(pendingCanonical===id)return;
+  pendingCanonical=id;
+  queueMicrotask(async()=>{
+    try{ await renderCanonical(id) } finally { pendingCanonical=null }
+  });
+}
+
 document.addEventListener('click',ev=>{
   const btn=ev.target.closest?.('.nav [data-view]');if(!btn)return;
   const id=btn.dataset.view;if(!canonicalViews.has(id))return;
-  ev.preventDefault();ev.stopImmediatePropagation();renderCanonical(id);
+  ev.preventDefault();ev.stopImmediatePropagation();
+  setView(id);ensureNav();setActive(id);requestCanonical(id);
 },true);
 
-/* O bundle legado continua responsável pelo shell e pelas telas legadas, mas não pode
-   redesenhar uma view canônica. Isso elimina concorrência entre Documentos e Recebimentos. */
+/* A shell (sidebar, #content, botão Sair) é responsabilidade exclusiva do
+   app legado e precisa SEMPRE ser montada, inclusive no login. */
 try{
   const legacyApp=typeof app==='function'?app:null;
   if(legacyApp&&!legacyApp.__canonicalWrapped){
-    const wrapped=function(){
-      const id=currentView();
-      if(canonicalViews.has(id)){
-        ensureNav();queueMicrotask(()=>renderCanonical(id));return;
-      }
-      const result=legacyApp.apply(this,arguments);queueMicrotask(ensureNav);return result;
+    const wrappedApp=function(){
+      const result=legacyApp.apply(this,arguments);
+      queueMicrotask(ensureNav);
+      return result;
     };
-    wrapped.__canonicalWrapped=true;wrapped.__legacyApp=legacyApp;app=wrapped;window.app=wrapped;
+    wrappedApp.__canonicalWrapped=true;
+    wrappedApp.__legacyApp=legacyApp;
+    app=wrappedApp;window.app=wrappedApp;
+  }
+}catch{}
+
+/* O render legado é quem pinta a tela de negócio. Para views canônicas ele
+   não desenha nada — assim Documentos nunca sobrescreve Recebimentos. */
+try{
+  const legacyRender=typeof render==='function'?render:window.render;
+  if(typeof legacyRender==='function'&&!legacyRender.__canonicalRenderWrapped){
+    const wrappedRender=function(){
+      const id=currentView();
+      if(canonicalViews.has(id)){ ensureNav(); requestCanonical(id); return; }
+      return legacyRender.apply(this,arguments);
+    };
+    wrappedRender.__canonicalRenderWrapped=true;
+    wrappedRender.__legacyRender=legacyRender;
+    render=wrappedRender;window.render=wrappedRender;
   }
 }catch{}
 
 let reconcileScheduled=false;
 function reconcile(){
   reconcileScheduled=false;ensureNav();const id=currentView();if(!canonicalViews.has(id))return;
-  const c=q('#content');if(!c||c.dataset.canonicalView===id)return;renderCanonical(id);
+  const c=q('#content');if(!c||c.dataset.canonicalView===id)return;requestCanonical(id);
 }
 function scheduleReconcile(){if(reconcileScheduled)return;reconcileScheduled=true;queueMicrotask(reconcile)}
 const root=q('#app');if(root)new MutationObserver(scheduleReconcile).observe(root,{childList:true,subtree:true});
 window.addEventListener('load',scheduleReconcile,{once:true});setTimeout(scheduleReconcile,0);
 window.IntegralFinanceRouter={render:renderCanonical,canonicalViews:[...canonicalViews],ensureNav};
-window.__INTEGRAL_FINANCEIRO_CANONICAL__='2026-09-09-receivables';
+window.__INTEGRAL_FINANCEIRO_CANONICAL__='2026-09-09-shellfix';
 })();
