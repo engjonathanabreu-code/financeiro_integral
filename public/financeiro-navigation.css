@@ -1,0 +1,69 @@
+.fin-navigation [data-fin-icon]::before{content:"";display:inline-block;flex:0 0 18px;width:18px;height:18px;background:currentColor;mask:var(--fin-icon) center/contain no-repeat;-webkit-mask:var(--fin-icon) center/contain no-repeat;pointer-events:none}
+.fin-navigation>.nav{min-height:0;flex:1 1 auto}
+.fin-navigation>.nav button{display:flex;align-items:center;gap:9px;min-width:0;overflow-wrap:anywhere}
+.fin-navigation [hidden],#tripApplyReview[hidden]{display:none!important}
+.fin-navigation .sidebar-foot{position:relative;flex:0 0 auto;display:flex!important;align-items:center;gap:8px;min-width:0;margin-top:10px}
+.fin-navigation .sidebar-foot>.user-mini{flex:1;min-width:0;margin:0;overflow-wrap:anywhere}
+#finConfigurationToggle{display:inline-flex!important;flex:0 0 40px;width:40px;height:40px;min-height:40px!important;padding:0!important;border-radius:8px;color:#fff;background:rgba(255,255,255,.12)}
+#finConfigurationToggle:hover,#finConfigurationToggle[aria-expanded="true"]{background:rgba(255,255,255,.22)}
+.fin-configuration-panel{position:absolute;z-index:1002;bottom:calc(100% + 8px);left:0;width:252px;max-width:calc(100vw - 20px);max-height:calc(100dvh - 100px);overflow:auto;padding:6px;background:#fff;color:#18302e;border:1px solid #d9e6e4;border-radius:8px;box-shadow:0 8px 30px #123b3426}
+.fin-navigation .fin-configuration-actions{display:flex!important;flex-direction:column!important;gap:2px!important;width:100%;overflow:visible!important}
+.fin-navigation .fin-configuration-actions button{display:flex!important;justify-content:flex-start!important;align-items:center;gap:10px;width:100%!important;min-width:0!important;min-height:42px!important;height:auto;padding:10px!important;white-space:normal!important;font-size:13px!important;line-height:1.35;color:#18302e;background:transparent;border:0;border-radius:6px}
+.fin-navigation .fin-configuration-actions button:hover,.fin-navigation .fin-configuration-actions button.active{background:#edf4f3;color:#0f5f5b}
+.fin-navigation .fin-configuration-actions #logout{color:#a82929}
+.fin-navigation .fin-configuration-actions #erpSyncControl{display:block!important;margin:0!important;padding:0!important;background:transparent;box-shadow:none;border-radius:0}
+.fin-navigation .fin-configuration-actions #erpSyncCaption{padding:0 10px 7px 38px;font-size:10px!important;text-align:left!important;color:#6b7f7d}
+.fin-navigation button:focus-visible,.trip-document-link:focus-visible{outline:2px solid #20a89c;outline-offset:2px}
+.trip-document-link{display:inline;text-align:left;border:0;background:transparent;color:#0f5f5b;text-decoration:underline;text-underline-offset:3px;font:inherit;font-size:13px;font-weight:600;padding:4px 0;max-width:100%;overflow-wrap:anywhere;cursor:pointer}
+.trip-document-link:hover{color:#111}
+.trip-expenses .actions{display:table-cell;min-width:175px}
+.trip-expenses .actions .btn{margin:3px;min-height:36px}
+.trip-expenses td:nth-child(6){max-width:240px;overflow-wrap:anywhere}
+.trip-review-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.trip-filename{display:block;overflow-wrap:anywhere}
+.trip-review .detail-list{margin-bottom:16px}
+.trip-review .detail-list b{overflow-wrap:anywhere}
+.trip-suggestions{display:grid;grid-template-columns:110px minmax(0,1fr);gap:9px;font-size:14px}
+.trip-suggestions dt{color:#6b7f7d}.trip-suggestions dd{margin:0;overflow-wrap:anywhere}
+.trip-review #tripReviewStatus:empty{display:none}
+@media(min-width:741px) and (max-width:1180px){
+  .shell:has(.fin-navigation){display:grid!important;grid-template-columns:205px minmax(0,1fr)}
+  .sidebar.fin-navigation{position:sticky!important;top:0;height:100dvh!important;width:auto!important;align-items:stretch;overflow:visible;flex-direction:column;background:#0d4d49}
+  .fin-navigation .sidebar-foot>.user-mini{display:block}
+  .sidebar.fin-navigation>.nav{display:flex!important;flex-direction:column;min-height:0;overflow-y:auto}
+  .sidebar.fin-navigation>.nav button{min-height:42px;min-width:0;white-space:normal}
+  .grid.trip-info-grid{grid-template-columns:minmax(0,1fr)!important}
+  .toolbar .left,.toolbar .right{flex-wrap:wrap;max-width:100%}
+  .topbar h2{overflow-wrap:anywhere;min-width:0}
+  .form-grid{min-width:0}.form-grid>.field{min-width:0}
+}
+@media(max-width:740px){
+  .sidebar.fin-navigation{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;align-items:center;gap:6px;overflow:visible!important}
+  .fin-navigation>.nav{order:0!important;width:calc(100% - 50px)!important;max-width:calc(100% - 50px)!important;flex:1 1 0;min-width:0;margin:0!important}
+  .fin-navigation>.nav button{gap:6px;min-height:44px;padding:8px 10px}
+  .fin-navigation .sidebar-foot,.fin-navigation .sidebar-foot:has(#erpSyncControl){position:relative!important;inset:auto!important;display:flex!important;flex:0 0 44px;width:44px!important;margin:0!important;padding:0!important;border:0;background:transparent}
+  .fin-navigation .sidebar-foot>.user-mini{display:none!important}
+  #app .fin-navigation .sidebar-foot>#finConfigurationToggle{display:inline-flex!important;flex-basis:44px;width:44px;height:44px;min-height:44px!important}
+  #app .fin-navigation .sidebar-foot>#finConfigurationPanel:not([hidden]){display:block!important;position:absolute;left:auto;right:0;bottom:calc(100% + 12px);width:252px}
+  .fin-navigation .sidebar-foot{order:1!important}
+  .fin-navigation .fin-configuration-actions button{min-height:44px!important;flex:0 0 auto!important}
+  .modal-backdrop{z-index:1100}
+  .modal{max-height:calc(100dvh - 20px)}
+  .trip-expenses{overflow:visible;border:0;background:transparent}
+  .trip-expenses .table{display:block;min-width:0!important;width:100%}
+  .trip-expenses thead{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%)}
+  .trip-expenses tbody{display:grid;gap:12px}
+  .trip-expenses tr{display:block;border:1px solid #d9e6e4;border-radius:8px;background:#fff;padding:6px 12px}
+  .trip-expenses .table td{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:start;gap:10px;padding:8px 0;max-width:none!important;min-width:0!important;white-space:normal;overflow-wrap:anywhere;font-size:13px}
+  .trip-expenses td[data-label]::before{content:attr(data-label);color:#6b7f7d;font-size:11px;font-weight:650;padding-top:2px}
+  .trip-expenses td.actions{display:flex;flex-wrap:wrap;justify-content:flex-start;border-top:1px solid #d9e6e4}
+  .trip-expenses td.actions::before{display:none}
+  .trip-expenses .actions .btn{min-height:44px;margin:0}
+  .trip-expenses .badge{justify-self:start}
+  .trip-expenses td[colspan]{display:block}
+  .trip-info-grid .detail-list>div{flex-wrap:wrap;gap:6px}
+  .trip-info-grid .detail-list b{overflow-wrap:anywhere;max-width:100%}
+  .file-row{flex-wrap:wrap;gap:8px}.file-row>div{min-width:0}.file-row small{overflow-wrap:anywhere}
+  .topbar .badge{max-width:40%;white-space:normal;text-align:center}
+  .trip-suggestions{grid-template-columns:90px minmax(0,1fr)}
+}
