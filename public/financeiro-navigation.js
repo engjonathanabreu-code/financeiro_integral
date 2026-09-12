@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const q=s=>document.querySelector(s);
-const icons={dashboard:'layout-dashboard',accounts:'wallet',documents:'files',cashflow:'arrow-left-right',budgets:'calculator',trips:'plane',planning:'clipboard-list',reports:'chart-no-axes-combined',receivables:'receipt',hr:'contact',registers:'folder-cog',users:'users',recebimentos:'receipt'};
+const icons={dashboard:'layout-dashboard',accounts:'wallet',institutionalClients:'users',erpProjects:'clipboard-list',documents:'files',cashflow:'arrow-left-right',budgets:'calculator',trips:'plane',planning:'clipboard-list',reports:'chart-no-axes-combined',receivables:'receipt',hr:'contact',registers:'folder-cog',users:'users',recebimentos:'receipt'};
 let pending=false;
 function close(focus){const menu=q('#finConfigurationPanel'),toggle=q('#finConfigurationToggle');if(!menu||!toggle)return;menu.hidden=true;toggle.setAttribute('aria-expanded','false');if(focus)toggle.focus()}
 function mount(){
