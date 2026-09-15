@@ -1,10 +1,10 @@
+const {resolveFile}=require('../lib/ai-file');
 module.exports=async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
   if(!process.env.OPENAI_API_KEY)return res.status(500).json({ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
   try{
-    const {image,fileName='',accounts=[]}=req.body||{};
-    if(!image||typeof image!=='string'||!image.startsWith('data:'))return res.status(400).json({ok:false,error:'FILE_REQUIRED'});
-    if(image.length>10000000)return res.status(413).json({ok:false,error:'FILE_TOO_LARGE'});
+    const {fileName='',accounts=[]}=req.body||{};
+    const image=await resolveFile(req.body||{},'image');
 
     const mime=(image.match(/^data:([^;,]+)/i)||[])[1]?.toLowerCase()||'';
     const isPdf=mime==='application/pdf'||/\.pdf$/i.test(fileName);
@@ -44,6 +44,6 @@ module.exports=async function handler(req,res){
     return res.status(200).json({ok:true,model:data.model||model,inputType:isPdf?'pdf':'image',account:parsed.account||{},payments});
   }catch(error){
     console.error('ai-account error',error);
-    return res.status(500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});
+    return res.status(error.statusCode||500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});
   }
 };

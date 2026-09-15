@@ -18,7 +18,7 @@ function existingCandidates(){const d=getDb();return (d?.cashflow||[]).slice(-20
 
 async function analyzeFile(file,dataUrl){
   try{
-    const r=await fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,fileName:file.name,sector:'Administrativo',context:'documento_fiscal',candidates:existingCandidates()})});
+    const r=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,fileName:file.name,sector:'Administrativo',context:'documento_fiscal',candidates:existingCandidates()})});
     const out=await r.json().catch(()=>({}));
     if(!r.ok||!out?.ok)throw new Error(out?.details||out?.error||`HTTP ${r.status}`);
     return out;
@@ -36,7 +36,7 @@ async function processFiles(files,button,statusEl,modal){
       button.textContent=`Enviando ${i+1}/${files.length}...`;
       statusEl.textContent=`Lendo ${file.name}...`;
       try{
-        if(file.size>10*1024*1024)throw new Error('Arquivo maior que 10 MB');
+        if(file.size>20*1024*1024)throw new Error('Arquivo maior que 20 MB');
         const dataUrl=await readDataUrl(file);
         const ai=await analyzeFile(file,dataUrl);
         const duplicate=ai?.duplicate?.id?true:false;

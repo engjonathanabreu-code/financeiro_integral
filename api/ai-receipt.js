@@ -1,10 +1,10 @@
+const {resolveFile}=require('../lib/ai-file');
 module.exports = async function handler(req,res){
   if(req.method!=='POST') return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
   if(!process.env.OPENAI_API_KEY) return res.status(500).json({ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
   try{
-    const {image,fileName='',sector='',context='',candidates=[]}=req.body||{};
-    if(!image||typeof image!=='string'||!image.startsWith('data:')) return res.status(400).json({ok:false,error:'FILE_REQUIRED'});
-    if(image.length>12000000) return res.status(413).json({ok:false,error:'FILE_TOO_LARGE'});
+    const {fileName='',sector='',context='',candidates=[]}=req.body||{};
+    const image=await resolveFile(req.body||{},'image');
     const clean=(Array.isArray(candidates)?candidates:[]).slice(0,200).map(c=>({id:String(c.id||''),date:String(c.date||''),description:String(c.description||'').slice(0,180),value:Number(c.value||0),source:String(c.source||'')}));
     const schema={type:'object',additionalProperties:false,properties:{value:{type:'number'},expense_type:{type:'string'},origin:{type:'string'},description:{type:'string'},date:{type:'string'},confidence:{type:'integer',minimum:0,maximum:100},duplicate:{anyOf:[{type:'null'},{type:'object',additionalProperties:false,properties:{id:{type:'string'},label:{type:'string'},reason:{type:'string'}},required:['id','label','reason']}]},notes:{type:'string'}},required:['value','expense_type','origin','description','date','confidence','duplicate','notes']};
     const travel=context==='viagem';
@@ -23,5 +23,5 @@ module.exports = async function handler(req,res){
     if(!Number.isFinite(Number(parsed.value))||Number(parsed.value)<0) parsed.value=0;
     if(typeof parsed.date!=='string'||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(parsed.date)) parsed.date='';
     return res.status(200).json({ok:true,model:data.model||model,...parsed});
-  }catch(error){console.error('ai-receipt error',error);return res.status(500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});}
+  }catch(error){console.error('ai-receipt error',error);return res.status(error.statusCode||500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});}
 };

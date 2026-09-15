@@ -50,7 +50,7 @@ async function exportFiscalZip(month,button){
 async function analyzeDocument(file){
   const dataUrl=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file)});
   const candidates=realRows().map((r,i)=>({id:String(r.id||i),date:r.date||'',description:r.description||'',value:moneyNum(r.value),source:r.source||''}));
-  const r=await fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,fileName:file.name,sector:'',candidates})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.details||d.error||'Falha na IA');return d;
+  const r=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,fileName:file.name,sector:'',candidates})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.details||d.error||'Falha na IA');return d;
 }
 async function uploadFiscalDocument(){
   const x=v2modal('Enviar documento fiscal',`<form id="v14DocUpload"><div class="modal-body"><div class="dropzone"><h3>Documento fiscal ou comprovante</h3><p>A IA identifica valor, fornecedor e data. O arquivo será armazenado no Supabase para permitir exportação em ZIP.</p><input id="v14DocFile" type="file" accept="image/*,.pdf" required></div><div class="field"><label>Setor</label><select name="sector"><option value="">Não informado</option>${(db.sectors||[]).filter(s=>s.active!==false).map(s=>`<option>${esc(s.name)}</option>`).join('')}</select></div><div id="v14DocStatus" class="notice">Aguardando arquivo.</div></div><div class="modal-foot"><button class="btn">Analisar e salvar</button></div></form>`);

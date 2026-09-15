@@ -1,10 +1,10 @@
+const {resolveFile}=require('../lib/ai-file');
 module.exports=async function handler(req,res){
  if(req.method!=='POST')return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
  if(!process.env.OPENAI_API_KEY)return res.status(500).json({ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
  try{
-  const {file,fileName='arquivo',mode='payments'}=req.body||{};
-  if(!file||!String(file).startsWith('data:'))return res.status(400).json({ok:false,error:'FILE_REQUIRED'});
-  if(file.length>16000000)return res.status(413).json({ok:false,error:'FILE_TOO_LARGE'});
+  const {fileName='arquivo',mode='payments'}=req.body||{};
+  const file=await resolveFile(req.body||{},'file');
   const configured=String(process.env.OPENAI_FINANCE_MODEL||'').trim();
   let schema,prompt,name,model;
   if(mode==='clients'){
@@ -48,5 +48,5 @@ module.exports=async function handler(req,res){
    return res.status(200).json({ok:true,model:data.model||model,entries});
   }
   return res.status(200).json({ok:true,model:data.model||model,...parsed});
- }catch(e){console.error('ai-receivables error',e);return res.status(500).json({ok:false,error:'INTERNAL_ERROR',details:String(e?.message||e)})}
+ }catch(e){console.error('ai-receivables error',e);return res.status(e.statusCode||500).json({ok:false,error:'INTERNAL_ERROR',details:String(e?.message||e)})}
 }

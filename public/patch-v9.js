@@ -62,7 +62,7 @@
   async function analyzeReceipt(file,budget){
     const image=await new Promise((ok,no)=>{const r=new FileReader;r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file)});
     const candidates=[...(db.accountPayments||[]).filter(p=>p.status==='Paga').map(p=>({id:p.id,date:p.paidAt||p.due,description:(db.accountMasters||[]).find(a=>a.id===p.accountId)?.name||'Conta paga',value:+p.value||0,source:'Conta paga'})),...(db.budgetExpenses||[]).map(e=>({id:e.id,date:e.date,description:e.description,value:+e.value||0,source:'Orçamento'}))];
-    const r=await fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,sector:budget?.sector,candidates})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.details||d.error||'Falha na leitura do comprovante.');return d;
+    const r=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,sector:budget?.sector,candidates})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.details||d.error||'Falha na leitura do comprovante.');return d;
   }
 
   function expenseForm(bid,eid){

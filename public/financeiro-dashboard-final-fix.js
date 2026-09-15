@@ -62,7 +62,7 @@ function openActiveBillsAiModal(){
         status.textContent=`Analisando arquivo ${filesDone+1} de ${files.length}: ${file.name}`;
         const image=await fileDataUrl(file);
         const existing=d.accountMasters.map(a=>({id:a.id,name:a.name||'',supplier:a.supplier||'',registration:a.registration||'',category:a.category||'',sector:a.sector||''}));
-        const response=await fetch('/api/ai-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,accounts:existing})});
+        const response=await window.IntegralFileUploads.fetch('/api/ai-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,accounts:existing})});
         const ai=await response.json();if(!response.ok||!ai.ok)throw new Error(ai.details||ai.error||'Falha na análise da IA.');
         const account=ai.account||ai;
         const found=Array.isArray(ai.payments)&&ai.payments.length?ai.payments:[{value:ai.value,dueDate:ai.dueDate,paymentCode:ai.paymentCode,competence:ai.competence,notes:ai.notes}];

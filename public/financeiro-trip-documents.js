@@ -1,10 +1,10 @@
 /* Comprovantes de viagem: preserva o original e reutiliza a leitura fiscal. */
 (function(){
 'use strict';
-const MAX_FILE=10*1024*1024, MAX_AI=3*1024*1024;
+const MAX_FILE=20*1024*1024, MAX_AI=20*1024*1024;
 const readDataURL=file=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('Não foi possível ler o arquivo.'));r.readAsDataURL(file)});
 async function capture(file){
-  if(file.size>MAX_FILE)throw new Error('O comprovante deve ter até 10 MB.');
+  if(file.size>MAX_FILE)throw new Error('O comprovante deve ter até 20 MB.');
   if(!/^image\/(jpeg|png|webp|gif)$/.test(file.type)&&file.type!=='application/pdf'&&!/\.(pdf|jpe?g|png|webp|gif)$/i.test(file.name))throw new Error('Envie um PDF ou uma imagem JPG, PNG, WebP ou GIF.');
   return {name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString(),dataUrl:await readDataURL(file)};
 }
@@ -27,8 +27,8 @@ async function download(record,linked){
 }
 async function analyze(record,trip,candidates,linked){
   const file=await blob(record,linked);
-  if(file.size>MAX_AI)throw new Error('Para revisar com IA, use um arquivo de até 3 MB. O original continua disponível para download.');
-  const response=await fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:await readDataURL(file),fileName:record?.file?.name||record?.doc||record?.name||'',sector:trip.sector||'',context:'viagem',candidates})});
+  if(file.size>MAX_AI)throw new Error('Para revisar com IA, use um arquivo de até 20 MB. O original continua disponível para download.');
+  const response=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:await readDataURL(file),fileName:record?.file?.name||record?.doc||record?.name||'',sector:trip.sector||'',context:'viagem',candidates})});
   const result=await response.json().catch(()=>({}));
   if(!response.ok||!result.ok)throw new Error(result.details||result.error||'Não foi possível analisar o documento. Tente novamente.');
   return result;

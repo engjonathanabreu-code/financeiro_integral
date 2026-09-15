@@ -17,7 +17,7 @@ async function reviewDoc(doc,button){
  if(!doc.dataUrl)return alert('O arquivo original deste documento não está disponível para uma nova leitura da IA. Você ainda pode editar os dados manualmente.');
  const old=button?.textContent||'';if(button){button.disabled=true;button.textContent='Revisando...'}
  try{
-  const r=await fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:doc.dataUrl,fileName:doc.name||'',sector:doc.sector||'Administrativo',context:'documento_fiscal_revisao',candidates:candidates()})});
+  const r=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:doc.dataUrl,fileName:doc.name||'',sector:doc.sector||'Administrativo',context:'documento_fiscal_revisao',candidates:candidates()})});
   const out=await r.json().catch(()=>({}));if(!r.ok||!out?.ok)throw new Error(out?.details||out?.error||`HTTP ${r.status}`);
   if(out.origin)doc.supplier=String(out.origin).trim();
   if(/^\d{4}-\d{2}-\d{2}$/.test(String(out.date||'')))doc.date=out.date;
