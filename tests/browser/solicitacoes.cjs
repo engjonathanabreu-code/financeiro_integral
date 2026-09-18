@@ -19,8 +19,12 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
   window.server=[];window.fail=false;window.IntegralERP={sb:{auth:{getUser:async()=>({data:{user:{id:user.erpId}}})},rpc:async(name,args)=>{if(fail)return {error:{message:'Servidor recusou'}};if(args.p_expected){const i=server.findIndex(x=>x.id===args.p_request.id);server[i]=structuredClone(args.p_request)}else server.push(structuredClone(args.p_request));return {data:structuredClone(server)}}}};
  },sector);
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'public/financeiro-invoices.js'),'utf8')});
- // Freeze timers/observers for the sector guard; exercise its actual click listener and reconcile explicitly.
- await page.evaluate(()=>{window.MutationObserver=class{observe(){}};window.setTimeout=()=>0});
+ // Exercise the actual legacy navigation wrapper that used to redirect every staff route.
+ const bundle=fs.readFileSync(path.join(root,'public/financeiro.bundle.js'),'utf8');
+ const legacy=bundle.slice(bundle.indexOf('  function enforceLimitedNav(){'),bundle.indexOf('  const baseBudgets=budgets;',bundle.indexOf('  function enforceLimitedNav(){')));
+ await page.addScriptTag({content:`(function(){const isAdm=()=>user?.role==='Administrador';const normalizeAssignments=()=>{};const syncSectorsFromERP=()=>{};${legacy}})();`});
+ // Freeze observers for the sector guard; exercise its actual click listener and reconcile explicitly.
+ await page.evaluate(()=>{window.MutationObserver=class{observe(){}};window.setTimeout=fn=>queueMicrotask(fn)});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'public/financeiro-finance-sector-access.js'),'utf8')});
  await page.evaluate(()=>app());
  await page.locator('[data-view="invoices"]').click();

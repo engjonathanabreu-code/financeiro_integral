@@ -398,12 +398,12 @@ window.IntegralV6={real,dup};
     if(!user||isAdm())return;
     const nav=document.querySelector('.nav');
     if(!nav)return;
-    nav.querySelectorAll('button[data-view]').forEach(btn=>{btn.style.display=['budgets','trips'].includes(btn.dataset.view)?'':'none'});
+    nav.querySelectorAll('button[data-view]').forEach(btn=>{btn.style.display=['budgets','trips','invoices'].includes(btn.dataset.view)?'':'none'});
   }
 
   const baseApp=app;
   app=function(){
-    if(user&&!isAdm()&&!['budgets','trips'].includes(view))view='budgets';
+    if(user&&!isAdm()&&!['budgets','trips','invoices'].includes(view))view='budgets';
     normalizeAssignments();
     baseApp();
     if(window.IntegralERP?.loaded)syncSectorsFromERP();
