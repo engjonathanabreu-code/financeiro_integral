@@ -89,7 +89,7 @@ async function initialize(){
         const cloudExists=cloud.has(k);
         const value=mergeValue(local[k],cloud.get(k),cloudExists);
         merged[k]=value;
-        if(!cloudExists)rows.push({chave:k,dados:value,updated_by:s.user.id,updated_at:now});
+        if(!cloudExists&&k!=='invoiceRequests')rows.push({chave:k,dados:value,updated_by:s.user.id,updated_at:now});
       }
       const d=state();if(d){for(const k of Object.keys(d))if(validKey(k)&&!(k in merged))delete d[k];Object.assign(d,merged)}
       await upsertRows(rows);
@@ -110,7 +110,7 @@ async function pushChanged(){
   try{
     const rows=[],now=new Date().toISOString();
     for(const [k,v] of Object.entries(d)){
-      if(!validKey(k))continue;
+      if(!validKey(k)||k==='invoiceRequests')continue;
       const j=json(v);if(snapshot[k]===j)continue;
       rows.push({chave:k,dados:v,updated_by:s.user.id,updated_at:now});snapshot[k]=j;
     }
