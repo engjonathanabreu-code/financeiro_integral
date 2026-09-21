@@ -7,7 +7,7 @@ const digits=s=>String(s||'').replace(/\D/g,'');
 const fileData=file=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)});
 const isSpreadsheet=file=>/\.(csv|xlsx|xls|xlsb)$/i.test(file?.name||'');
 function close(){document.querySelector('#recebSmartReport')?.remove()}
-function modal(){close();const d=document.createElement('div');d.id='recebSmartReport';d.className='modal-backdrop';d.innerHTML=`<section class="modal"><header class="modal-head"><h3>Importar relatório de pagamentos</h3><button class="btn icon ghost" data-close>×</button></header><div class="modal-body"><div class="form-grid"><div class="field full"><label>Relatório (PDF, CSV ou Excel)</label><input id="smartPayFile" type="file" accept="application/pdf,.csv,.xlsx,.xls,.xlsb"></div><div class="field full"><div class="notice">Cada título liquidado é conciliado com a <b>parcela do vencimento informado no relatório</b>, inclusive parcelas de meses futuros. Se o mesmo cliente pagar várias parcelas, cada vencimento é marcado separadamente. Juros e multa recalibram apenas a parcela correspondente.<br><br>Planilha CSV/Excel: use as colunas <code>documento</code>, <code>codigo_processo</code>, <code>nome</code>, <code>parcela_vencimento</code>, <code>valor_pago</code> e <code>data_pagamento</code> (é o formato exportado a partir do relatório do banco).</div></div><div id="smartPayStatus" class="field full"></div></div></div><footer class="modal-foot"><button class="btn ghost" data-close>Fechar</button><button class="btn" id="smartPayImport">Importar</button></footer></section>`;document.body.appendChild(d);d.querySelectorAll('[data-close]').forEach(x=>x.onclick=close);d.querySelector('#smartPayImport').onclick=run}
+function modal(){close();const d=document.createElement('div');d.id='recebSmartReport';d.className='modal-backdrop';d.innerHTML=`<section class="modal"><header class="modal-head"><h3>Importar relatório de pagamentos</h3><button class="btn icon ghost" data-close>×</button></header><div class="modal-body"><div class="form-grid"><div class="field full"><label>Relatório (PDF, CSV ou Excel)</label><input id="smartPayFile" type="file" accept="application/pdf,.csv,.xlsx,.xls,.xlsb"></div><div class="field full"><div class="notice">Cada título liquidado é conciliado com a <b>parcela do vencimento informado no relatório</b>, inclusive parcelas de meses futuros. Se o mesmo cliente pagar várias parcelas, cada vencimento é marcado separadamente. Juros e multa recalibram apenas a parcela correspondente.<br><br>O PDF do relatório bancário (seção Liquidação) é lido direto no navegador, sem IA. Planilha CSV/Excel: use as colunas <code>documento</code>, <code>codigo_processo</code>, <code>nome</code>, <code>parcela_vencimento</code>, <code>valor_pago</code> e <code>data_pagamento</code>.</div></div><div id="smartPayStatus" class="field full"></div></div></div><footer class="modal-foot"><button class="btn ghost" data-close>Fechar</button><button class="btn" id="smartPayImport">Importar</button></footer></section>`;document.body.appendChild(d);d.querySelectorAll('[data-close]').forEach(x=>x.onclick=close);d.querySelector('#smartPayImport').onclick=run}
 async function responseJsonSafe(rr){const raw=await rr.text();let j=null;try{j=raw?JSON.parse(raw):null}catch{}if(j)return j;if(rr.status===504)throw new Error('O relatório demorou além do limite do servidor. A leitura foi otimizada; tente novamente após atualizar a página.');throw new Error(raw&&raw.length<240?raw:`Falha do servidor ao processar o relatório (HTTP ${rr.status}).`)}
 function brDateToIso(s){s=String(s||'').trim();if(!s)return null;let m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);if(m){let y=Number(m[3]);if(y<100)y+=2000;return `${y}-${String(Number(m[2])).padStart(2,'0')}-${String(Number(m[1])).padStart(2,'0')}`}m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return `${m[1]}-${String(Number(m[2])).padStart(2,'0')}-${String(Number(m[3])).padStart(2,'0')}`;return null}
 function brNum(v){if(typeof v==='number')return v;let s=String(v??'').trim().replace(/R\$\s*/gi,'');if(!s)return 0;if(s.includes(',')&&s.includes('.'))s=s.replace(/\./g,'').replace(',','.');else if(s.includes(','))s=s.replace(',','.');return Number(s)||0}
@@ -59,13 +59,62 @@ async function parseSpreadsheetFile(file){
  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
  return rowsToEntries(rows);
 }
+const REPORT_ROW_RE=/^(INTERNET|COMPE)\s+(\d+)\s+(\S+)\s+(\d{2}\/\d{2}\/\d{4})(.*?)(\d{2}\/\d{2}\/\d{4})\s+([\d.,]+)\s+([\d.,]+)([\d.,]+)\s+([\d.,]+)\s+(\S+?)([\d.,]+)\s+([\d.,]+)\s+(\d{2}\/\d{2}\/\d{4})([\d.,]+)\s+(.*?)(\d{2}\/\d{2}\/\d{4})([\d.,]+)$/;
+function cleanReportRow(l){
+ return l.replace(/MotivoVencimentoNome[\s\S]*?Vlr\.Boleto/,'').replace(/TOTAL[\s\S]*?Boleto\(s\)/,'').replace(/Convênio:[\s\S]*$/,'').trim();
+}
+async function extractReportRows(pdf){
+ const rows=[];
+ for(let p=1;p<=pdf.numPages;p++){
+  const page=await pdf.getPage(p);
+  const tc=await page.getTextContent();
+  let cur=null;
+  for(const it of tc.items){
+   const s=it.str;
+   if(s.trim()==='INTERNET'||s.trim()==='COMPE'){if(cur)rows.push(cur.join(''));cur=[s]}
+   else if(cur)cur.push(s);
+  }
+  if(cur)rows.push(cur.join(''));
+ }
+ return rows;
+}
+async function parsePdfLocally(file){
+ if(!window.pdfjsLib)throw new Error('Leitor de PDF não carregou. Atualize a página e tente novamente.');
+ window.pdfjsLib.GlobalWorkerOptions.workerSrc||(window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js');
+ const buf=await file.arrayBuffer(),pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+ const rawRows=await extractReportRows(pdf);
+ const out=[];
+ for(const raw of rawRows){
+  const l=cleanReportRow(raw);
+  if(!l.startsWith('COMPE'))continue;
+  const m=l.match(REPORT_ROW_RE);
+  if(!m)continue;
+  out.push({
+   documento:m[2],
+   nosso_numero:null,
+   cpf_cnpj:null,
+   pagador:m[5].trim(),
+   vencimento:brDateToIso(m[4]),
+   valor_nominal:brNum(m[13]),
+   valor_liquidado:brNum(m[13]),
+   pagamento:brDateToIso(m[17])
+  });
+ }
+ return out;
+}
 async function run(){const file=document.querySelector('#smartPayFile')?.files?.[0],status=document.querySelector('#smartPayStatus'),btn=document.querySelector('#smartPayImport');if(!file)return alert('Selecione o arquivo.');btn.disabled=true;status.textContent='Lendo relatório e conciliando parcelas...';try{
  let entries;
  if(isSpreadsheet(file)){
   entries=await parseSpreadsheetFile(file);
  }else{
-  const data=await fileData(file),rr=await window.IntegralFileUploads.fetch('/api/ai-receivables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:data,fileName:file.name,mode:'payments'})}),j=await responseJsonSafe(rr);if(!rr.ok||!j?.ok)throw new Error(j?.details||j?.error||'Falha na leitura do relatório');
-  entries=j.entries||[];
+  try{
+   entries=await parsePdfLocally(file);
+   if(!entries.length)throw new Error('EMPTY');
+  }catch(localErr){
+   status.textContent='Leitura direta não reconheceu o layout; tentando com IA...';
+   const data=await fileData(file),rr=await window.IntegralFileUploads.fetch('/api/ai-receivables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:data,fileName:file.name,mode:'payments'})}),j=await responseJsonSafe(rr);if(!rr.ok||!j?.ok)throw new Error(j?.details||j?.error||'Falha na leitura do relatório');
+   entries=j.entries||[];
+  }
  }
  const [cr,pr]=await Promise.all([sb.from('fin_receb_clientes').select('*'),sb.from('fin_receb_parcelas').select('*')]);if(cr.error)throw cr.error;if(pr.error)throw pr.error;const clients=cr.data||[],parcels=pr.data||[];let ok=0,pending=0,adjusted=0,future=0,retroCreated=0;const misses=[],used=new Set(),currentMonth=new Date().toISOString().slice(0,7);
  const eligible=z=>z&&!used.has(z.id);
