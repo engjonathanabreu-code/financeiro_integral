@@ -126,6 +126,12 @@ async function run(){const file=document.querySelector('#smartPayFile')?.files?.
   if(!p&&cpf){c=clients.find(z=>digits(z.cpf_cnpj)===cpf);if(c)p=byClientDue(c.id,due,nom);}
   if(!p&&name){const exact=clients.filter(z=>norm(z.nome)===name);if(exact.length===1){c=exact[0];p=byClientDue(c.id,due,nom);}}
   if(!p&&name){const near=clients.filter(z=>{const n=norm(z.nome);return n&&name&&(n.startsWith(name)||name.startsWith(n))});if(near.length===1){c=near[0];p=byClientDue(c.id,due,nom);}}
+  if(!p&&name&&due){
+   const dueCandidates=parcels.filter(z=>eligible(z)&&z.vencimento===due);
+   let byName=dueCandidates.filter(z=>{const cli=clients.find(cc=>cc.id===z.cliente_id);const n=norm(cli?.nome);return n&&(n.startsWith(name)||name.startsWith(n))});
+   if(byName.length>1&&nom){const tight=byName.filter(z=>Math.abs(Number(z.valor_previsto||0)-nom)<0.03);if(tight.length)byName=tight;}
+   if(byName.length===1){p=byName[0];c=clients.find(cc=>cc.id===p.cliente_id);}
+  }
   if(p){const diff=paid-nom,upd={status:'Pago',pago_em:x.pagamento||null,valor_liquidado:paid,diferenca:diff,nosso_numero:p.nosso_numero||x.nosso_numero||null,documento:p.documento||x.documento||null};if(Math.abs(diff)>0.009){upd.valor_previsto=paid;adjusted++;}const ur=await sb.from('fin_receb_parcelas').update(upd).eq('id',p.id);if(ur.error){pending++;misses.push(x.pagador||x.documento||'registro')}else{used.add(p.id);ok++;if(due&&due.slice(0,7)>currentMonth)future++;}
   }else{const retroDate=due||String(x.pagamento||'').slice(0,10),isPast=retroDate&&retroDate.slice(0,7)<currentMonth;if(c&&isPast&&paid>0){const clientParcels=parcels.filter(z=>z.cliente_id===c.id),numero=Math.max(0,...clientParcels.map(z=>Number(z.numero||0)))+1,row={id:crypto.randomUUID(),cliente_id:c.id,numero,vencimento:retroDate,status:'Pago',valor_previsto:paid,pago_em:x.pagamento||retroDate,valor_liquidado:paid,diferenca:0,nosso_numero:x.nosso_numero||null,documento:x.documento||null};const ins=await sb.from('fin_receb_parcelas').insert(row).select().single();if(ins.error){pending++;misses.push(x.pagador||x.documento||'registro')}else{parcels.push(ins.data);used.add(ins.data.id);ok++;retroCreated++;}}else{pending++;misses.push(x.pagador||x.documento||'registro')}}
  }
