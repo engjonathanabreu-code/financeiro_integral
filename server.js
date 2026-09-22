@@ -3,6 +3,7 @@ const aiAccountHandler=require('./api/ai-account');
 const aiHealthHandler=require('./api/ai-health');
 const aiReceiptHandler=require('./api/ai-receipt');
 const aiReceivablesHandler=require('./api/ai-receivables');
+const integracaoFinanceiroIA=require('./api/integracao-financeiro-ia');
 const root=path.join(__dirname,'public');
 const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml'};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data))};
@@ -46,6 +47,7 @@ http.createServer((req,res)=>{
  if(pathname==='/api/ai-classify')return aiClassify(req,res);
  if(pathname==='/api/ai-account')return aiAccount(req,res);
  if(pathname==='/api/ai-receipt')return aiReceipt(req,res);
+ if(pathname==='/api/integracao-financeiro-ia')return withJsonBody(req,res,integracaoFinanceiroIA);
  if(pathname==='/api/ai-receivables')return aiReceivables(req,res);
  if(pathname==='/api/ai-health')return aiHealthHandler(req,vercelResponseCompat(res));
  const url=pathname==='/'?'/index.html':pathname;

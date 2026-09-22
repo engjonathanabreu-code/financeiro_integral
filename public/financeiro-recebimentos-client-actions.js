@@ -8,6 +8,7 @@ const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'B
 const br=v=>v?new Date(v+'T12:00:00').toLocaleDateString('pt-BR'):'—';
 const competence=v=>v?`${v.slice(5,7)}/${v.slice(0,4)}`:'—';
 let cache={clients:null,municipios:null,at:0};
+window.addEventListener('integral:financeiro-atualizado',()=>{cache={clients:null,municipios:null,at:0};});
 
 function ensureStyles(){
  if(document.getElementById('recebHistoryStyles'))return;
@@ -68,7 +69,7 @@ function ensureStyles(){
 async function getDirectory(force=false){
  if(!sb)return {clients:[],municipios:[]};
  if(!force&&cache.clients&&Date.now()-cache.at<30000)return cache;
- const [c,m]=await Promise.all([sb.from('fin_receb_clientes').select('*').order('nome'),sb.from('fin_receb_municipios').select('*').order('nome')]);
+ const [c,m]=await Promise.all([window.IntegralReceivables.allRows('fin_receb_clientes','nome').then(data=>({data})),window.IntegralReceivables.allRows('fin_receb_municipios','nome').then(data=>({data}))]);
  if(c.error)throw c.error;if(m.error)throw m.error;
  cache={clients:c.data||[],municipios:m.data||[],at:Date.now()};return cache;
 }
@@ -91,7 +92,7 @@ async function showHistory(clientId){
   const ref=currentReferenceMonth();
   const body=`<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap"><div><b>${esc(client.nome)}</b><div class="muted">${esc(client.codigo||client.cpf_cnpj||'')}</div></div><div class="receb-status">Competência selecionada ${competence(ref+'-01')}</div></div>
   <div class="receb-history-summary"><div class="card"><small>Total de parcelas</small><b>${ps.length}</b></div><div class="card"><small>Pagas</small><b>${paid.length}</b></div><div class="card"><small>Em aberto</small><b>${open.length}</b></div><div class="card"><small>Inadimplentes</small><b>${late.length}</b></div></div>
-  <div class="table-wrap receb-history-wrap"><table class="table receb-history-table"><thead><tr><th>Competência</th><th>Parcela</th><th>Vencimento</th><th>Status</th><th>Valor previsto</th><th>Pago em</th><th>Valor pago</th></tr></thead><tbody>${ps.map(p=>`<tr data-parcela-id="${p.id}" data-cliente-id="${clientId}" class="${p.vencimento?.slice(0,7)===ref?'receb-history-row-ref':''}"><td data-label="Competência"><b>${competence(p.vencimento)}</b></td><td data-label="Parcela">#${p.numero}</td><td data-label="Vencimento">${br(p.vencimento)}</td><td data-label="Status"><span class="receb-status ${esc(p.status)}">${esc(p.status||'Pendente')}</span></td><td data-label="Valor previsto">${money(p.valor_previsto)}</td><td data-label="Pago em">${br(p.pago_em)}</td><td data-label="Valor pago">${p.status==='Pago'?money(p.valor_liquidado||p.valor_previsto):'—'}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma parcela cadastrada para este cliente.</td></tr>'}</tbody></table></div>`;
+  <div class="table-wrap receb-history-wrap"><table class="table receb-history-table"><thead><tr><th>Competência</th><th>Parcela</th><th>Vencimento</th><th>Status</th><th>Valor previsto</th><th>Pago em</th><th>Valor pago</th></tr></thead><tbody>${ps.map(p=>`<tr data-parcela-id="${p.id}" data-cliente-id="${clientId}" class="${p.vencimento?.slice(0,7)===ref?'receb-history-row-ref':''}"><td data-label="Competência"><b>${competence(p.vencimento)}</b></td><td data-label="Parcela">#${p.numero}</td><td data-label="Vencimento">${br(p.vencimento)}</td><td data-label="Status"><span class="receb-status ${esc(p.status)}">${esc(p.status||'Pendente')}</span></td><td data-label="Valor previsto">${money(p.valor_previsto)}</td><td data-label="Pago em">${br(p.pago_em)}</td><td data-label="Valor pago">${['Pago','Parcial'].includes(p.status)?money(p.valor_liquidado??p.valor_previsto):'—'}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma parcela cadastrada para este cliente.</td></tr>'}</tbody></table></div>`;
   makeModal(`Histórico — ${client.nome}`,body);
  }catch(e){alert('Não foi possível carregar o histórico: '+(e.message||e));}
 }

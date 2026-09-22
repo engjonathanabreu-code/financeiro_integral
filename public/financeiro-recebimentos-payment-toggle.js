@@ -37,15 +37,15 @@ async function toggle(btn){
  const title=modal.querySelector('.modal-head h3')?.textContent||'';
  const clientName=title.replace(/^Histórico\s*—\s*/i,'').trim();
  const numero=Number(btn.dataset.numero);const paid=btn.dataset.paid==='1';
- if(!clientName||!numero)return;
+ if(!clientName||!Number.isInteger(numero))return;
  btn.disabled=true;
  try{
-   const c=await sb.from('fin_receb_clientes').select('id').eq('nome',clientName).limit(2);if(c.error)throw c.error;
-   if(!c.data?.length)throw new Error('Cliente não encontrado.');
-   let q=sb.from('fin_receb_parcelas').select('id,valor_previsto').eq('cliente_id',c.data[0].id).eq('numero',numero).limit(1);const p=await q;if(p.error)throw p.error;if(!p.data?.length)throw new Error('Parcela não encontrada.');
+   const parcelaId=btn.closest('tr')?.dataset.parcelaId;
+   if(!parcelaId)throw new Error('Reabra a ficha para identificar a parcela.');
+   const p=await sb.from('fin_receb_parcelas').select('*').eq('id',parcelaId).limit(1);if(p.error)throw p.error;if(!p.data?.length)throw new Error('Parcela não encontrada.');
    const parcel=p.data[0];
-   const values=paid?{status:'Pendente',pago_em:null,valor_liquidado:0,diferenca:0}:{status:'Pago',pago_em:new Date().toISOString().slice(0,10),valor_liquidado:Number(parcel.valor_previsto||0),diferenca:0};
-   const u=await sb.from('fin_receb_parcelas').update(values).eq('id',parcel.id).select('id,status').single();if(u.error)throw u.error;
+   const values=paid?{status:'Pendente',pago_em:null,valor_liquidado:0,diferenca:0}:{status:'Pago',pago_em:new Date().toISOString().slice(0,10),valor_liquidado:Number(parcel.valor_previsto||0)+Number(parcel.juros||0)+Number(parcel.multa||0),diferenca:0};
+   const u=await sb.from('fin_receb_parcelas').update(values).eq('id',parcel.id).eq('versao',parcel.versao).select('id,status').single();if(u.error)throw u.error;
    const row=btn.closest('tr');const cells=row.querySelectorAll('td');
    const newPaid=!paid;btn.dataset.paid=newPaid?'1':'0';btn.textContent=newPaid?'Desmarcar':'✓ Pago';btn.classList.toggle('is-paid',newPaid);
    const statusEl=cells[3]?.querySelector('.receb-status');if(statusEl){statusEl.textContent=newPaid?'Pago':'Pendente';statusEl.className=`receb-status ${newPaid?'Pago':'Pendente'}`}
