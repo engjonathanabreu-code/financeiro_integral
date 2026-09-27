@@ -1,0 +1,156 @@
+/* Integral Financeiro — tema escuro do Design System "Integração".
+   Mesma identidade do guia (verde-petróleo, neutros quentes, cantos 8/12/999, Nunito Sans),
+   com superfícies escuras e contrastes AA. Ativado por financeiro-theme.js (html[data-theme="dark"]). */
+
+:root[data-theme="dark"]{
+  --ds-primary:#5CC3B8;            /* verde do guia clareado para texto e ícones sobre fundo escuro */
+  --ds-primary-hover:#7ED3CA;
+  --ds-primary-active:#3FA89D;
+  --ds-primary-fill:#1B7A72;       /* preenchimento de botões (texto branco com contraste AA) */
+  --ds-primary-fill-hover:#218A81;
+  --ds-on-primary:#FFFFFF;
+  --ds-primary-soft:#16332F;
+  --ds-primary-soft-2:#1D4540;
+  --ds-bg:#0F1719;
+  --ds-surface:#162124;
+  --ds-surface-2:#1B282B;
+  --ds-border:#2A3A3D;
+  --ds-border-strong:#3B5155;
+  --ds-text:#E7EEF0;
+  --ds-muted:#9CAFB4;
+  --ds-disabled:#4A5A5D;
+  --ds-row-hover:#1D2B2E;
+  --ds-backdrop:rgba(3,8,10,.66);
+  --ds-info:#8EC2F2;--ds-info-bg:#14283B;--ds-info-border:#24425F;
+  --ds-success:#7FD3A2;--ds-success-bg:#12301F;--ds-success-border:#21503A;
+  --ds-warning:#F2B866;--ds-warning-bg:#33250F;--ds-warning-border:#5A4119;
+  --ds-danger:#F4A29B;--ds-danger-bg:#3A1C1A;--ds-danger-border:#63302B;
+  --ds-shadow-card:0 1px 2px rgba(0,0,0,.35),0 4px 12px rgba(0,0,0,.25);
+  --ds-shadow-modal:0 8px 24px rgba(0,0,0,.5);
+  --ds-focus:0 0 0 3px rgba(92,195,184,.28);
+  color-scheme:dark;
+}
+
+/* Base */
+[data-theme="dark"] body,[data-theme="dark"] #app,[data-theme="dark"] .shell,[data-theme="dark"] .main,[data-theme="dark"] .content{background:var(--ds-bg);color:var(--ds-text)}
+[data-theme="dark"] h1,[data-theme="dark"] h2,[data-theme="dark"] h3,[data-theme="dark"] h4,[data-theme="dark"] b,[data-theme="dark"] strong{color:inherit}
+[data-theme="dark"] h1,[data-theme="dark"] h2,[data-theme="dark"] h3,[data-theme="dark"] h4{color:var(--ds-text)}
+[data-theme="dark"] a{color:var(--ds-primary)}
+[data-theme="dark"] ::selection{background:#1D4540;color:#fff}
+[data-theme="dark"] .login-mode,[data-theme="dark"] .login-wrap{background:var(--ds-bg)}
+
+/* Superfícies genéricas que usavam branco fixo */
+[data-theme="dark"] .card,[data-theme="dark"] .modal,[data-theme="dark"] .topbar,[data-theme="dark"] .sidebar,[data-theme="dark"] .table-wrap,[data-theme="dark"] .excel-wrap,
+[data-theme="dark"] .page-intro,[data-theme="dark"] .month-folder,[data-theme="dark"] .folder,[data-theme="dark"] .mini-row,[data-theme="dark"] .timeline-item,
+[data-theme="dark"] .erp-source-row,[data-theme="dark"] .hr13-month,[data-theme="dark"] .hr17-month,[data-theme="dark"] .hr-month-card,[data-theme="dark"] .empty,
+[data-theme="dark"] .login-card,[data-theme="dark"] .fin-configuration-panel,[data-theme="dark"] .user-select-card,[data-theme="dark"] .assignment-grid .check-line,
+[data-theme="dark"] .v3-review-row,[data-theme="dark"] .planning-month-card,[data-theme="dark"] .employee-card,[data-theme="dark"] .register-tabs button:not(.active),
+[data-theme="dark"] .segmented button.active,[data-theme="dark"] .v6-budget-card,[data-theme="dark"] .restored-budget-card,[data-theme="dark"] .trip-card,
+[data-theme="dark"] .account-master-card,[data-theme="dark"] .dashboard-finance-panel,[data-theme="dark"] .contracts-due-card{background:var(--ds-surface)!important;color:var(--ds-text);border-color:var(--ds-border)!important}
+[data-theme="dark"] .form-section,[data-theme="dark"] .dropzone,[data-theme="dark"] .report-text,[data-theme="dark"] .cash-group-head,[data-theme="dark"] .segmented,
+[data-theme="dark"] .v3-summary span,[data-theme="dark"] .mini-row.readonly,[data-theme="dark"] .contracts-due-head,[data-theme="dark"] .fin-panel-total,
+[data-theme="dark"] .table th,[data-theme="dark"] .excel-table th,[data-theme="dark"] .v3-import-card{background:var(--ds-surface-2)!important;color:var(--ds-text);border-color:var(--ds-border)!important}
+[data-theme="dark"] .table th,[data-theme="dark"] .excel-table th{color:var(--ds-muted)}
+[data-theme="dark"] .table td,[data-theme="dark"] .excel-table td,[data-theme="dark"] .table th,[data-theme="dark"] .excel-table th,[data-theme="dark"] .cash-row,
+[data-theme="dark"] .modal-head,[data-theme="dark"] .modal-foot,[data-theme="dark"] .file-row,[data-theme="dark"] .plan-row,[data-theme="dark"] .detail-list>div,
+[data-theme="dark"] .history-list>div,[data-theme="dark"] .fin-row,[data-theme="dark"] .contract-due-row{border-color:var(--ds-border)!important}
+[data-theme="dark"] .table td,[data-theme="dark"] .excel-table td{color:var(--ds-text)}
+[data-theme="dark"] .table td small,[data-theme="dark"] .muted,[data-theme="dark"] small.muted,[data-theme="dark"] .account-master-card p,[data-theme="dark"] .account-master-card small,
+[data-theme="dark"] .employee-facts small,[data-theme="dark"] .user-select-text small,[data-theme="dark"] .form-section>p{color:var(--ds-muted)!important}
+[data-theme="dark"] .user-select-text b,[data-theme="dark"] .form-section h4,[data-theme="dark"] .planning-month-card>span,[data-theme="dark"] .hr-month-card span{color:var(--ds-text)!important}
+
+/* Barra lateral e topo */
+[data-theme="dark"] .sidebar{border-right-color:var(--ds-border)!important}
+[data-theme="dark"] .brand img{filter:brightness(1.25) saturate(.9)!important}
+[data-theme="dark"] .nav button{color:var(--ds-muted)}
+[data-theme="dark"] .nav button:hover{background:var(--ds-surface-2);color:var(--ds-text)}
+[data-theme="dark"] .nav button.active{background:var(--ds-primary-soft);color:var(--ds-primary)}
+[data-theme="dark"] .fin-navigation .fin-configuration-actions button{color:var(--ds-text)}
+[data-theme="dark"] .fin-navigation .fin-configuration-actions button:hover{background:var(--ds-primary-soft);color:var(--ds-primary)}
+[data-theme="dark"] .fin-navigation .fin-configuration-actions #logout{color:var(--ds-danger)}
+[data-theme="dark"] #erpSyncCaption{color:var(--ds-muted)!important}
+
+/* Campos */
+[data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{background:var(--ds-surface-2)!important;color:var(--ds-text)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] input:hover,[data-theme="dark"] select:hover,[data-theme="dark"] textarea:hover{border-color:var(--ds-border-strong)!important}
+[data-theme="dark"] input:focus,[data-theme="dark"] select:focus,[data-theme="dark"] textarea:focus{border-color:var(--ds-primary)!important;box-shadow:var(--ds-focus)!important}
+[data-theme="dark"] input::placeholder,[data-theme="dark"] textarea::placeholder{color:#6F8488}
+[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,[data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator{filter:invert(.85)}
+[data-theme="dark"] option{background:var(--ds-surface);color:var(--ds-text)}
+[data-theme="dark"] .field label{color:var(--ds-text)}
+[data-theme="dark"] .receb-toolbar .receb-search-box{background:var(--ds-surface-2)!important}
+[data-theme="dark"] .receb-toolbar .receb-search-box input{background:transparent!important}
+
+/* Botões secundários e de perigo */
+[data-theme="dark"] .btn.secondary,[data-theme="dark"] .btn.ghost{background:transparent;color:var(--ds-primary);border-color:var(--ds-border-strong)}
+[data-theme="dark"] .btn.secondary{border-color:var(--ds-primary)}
+[data-theme="dark"] .btn.secondary:hover,[data-theme="dark"] .btn.ghost:hover{background:var(--ds-primary-soft);color:var(--ds-primary-hover)}
+[data-theme="dark"] .btn.danger{background:transparent;color:var(--ds-danger);border-color:var(--ds-danger-border)}
+[data-theme="dark"] .btn.danger:hover{background:var(--ds-danger-bg);color:var(--ds-danger)}
+[data-theme="dark"] .icon-btn{color:var(--ds-muted)}
+[data-theme="dark"] .account-payment-line-delete{background:var(--ds-danger-bg);border-color:var(--ds-danger-border);color:var(--ds-danger)}
+
+/* Métricas, gráficos e progresso */
+[data-theme="dark"] .metric b,[data-theme="dark"] .page-intro>strong,[data-theme="dark"] .month-folder b,[data-theme="dark"] .folder b,[data-theme="dark"] .budget-line strong,[data-theme="dark"] .budget-card h3{color:var(--ds-text)}
+[data-theme="dark"] .progress{background:var(--ds-primary-soft)}
+[data-theme="dark"] .bar{background:var(--ds-primary)}
+[data-theme="dark"] .bar.out,[data-theme="dark"] .legend span:last-child:before{background:#5C7377}
+[data-theme="dark"] .kpi-positive{color:var(--ds-success)!important}
+[data-theme="dark"] .kpi-negative{color:var(--ds-danger)!important}
+[data-theme="dark"] .account-meta span,[data-theme="dark"] .cell-pill{background:var(--ds-primary-soft);color:var(--ds-primary)}
+
+/* Modais e rolagem */
+[data-theme="dark"] .modal{border-color:var(--ds-border)}
+[data-theme="dark"] *{scrollbar-color:#3B5155 transparent}
+
+/* Visão Geral (estilos injetados pelo painel) */
+[data-theme="dark"] .ba-health{background:var(--ds-surface)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .ba-health.good,[data-theme="dark"] .ba-alert.good{border-left-color:var(--ds-success)!important}
+[data-theme="dark"] .ba-health.risk,[data-theme="dark"] .ba-alert.risk{border-left-color:var(--ds-danger)!important}
+[data-theme="dark"] .ba-alert.warn{border-left-color:var(--ds-warning)!important}
+[data-theme="dark"] .ba-alert,[data-theme="dark"] .ba-quality>div{background:var(--ds-surface-2)!important}
+[data-theme="dark"] .ba-bars i,[data-theme="dark"] .ba-legend i{background:var(--ds-primary)!important}
+[data-theme="dark"] .ba-bars i.out,[data-theme="dark"] .ba-legend i.out{background:#5C7377!important}
+[data-theme="dark"] .ba-rank progress{accent-color:var(--ds-primary)}
+[data-theme="dark"] .ba-water>div{border-color:var(--ds-border)!important}
+
+/* Clientes institucionais e Projetos do ERP */
+[data-theme="dark"] .erp-live-bar{background:var(--ds-surface-2)!important;border-color:var(--ds-border)!important;color:var(--ds-muted)!important}
+[data-theme="dark"] .erp-module-loading,[data-theme="dark"] .erp-module-empty,[data-theme="dark"] .erp-group,[data-theme="dark"] .erp-project-health,
+[data-theme="dark"] .erp-stage-item,[data-theme="dark"] .erp-doc-item,[data-theme="dark"] .erp-payment-item{background:var(--ds-surface)!important;border-color:var(--ds-border)!important;color:var(--ds-text)}
+[data-theme="dark"] .erp-group>h3,[data-theme="dark"] .erp-group-toggle,[data-theme="dark"] .erp-upload-box,[data-theme="dark"] .erp-financial-summary .metric{background:var(--ds-surface-2)!important;color:var(--ds-text)!important}
+[data-theme="dark"] .erp-group-toggle:hover,[data-theme="dark"] .erp-project-row:hover,[data-theme="dark"] .erp-stage-item:hover,[data-theme="dark"] .erp-doc-item:hover,[data-theme="dark"] .erp-payment-item:hover{background:var(--ds-row-hover)!important}
+[data-theme="dark"] .erp-project-row{border-color:var(--ds-border)!important}
+[data-theme="dark"] .erp-project-hero{background:linear-gradient(135deg,#16332F,#162124)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .erp-project-hero::after{background:#5CC3B814!important}
+[data-theme="dark"] .erp-financial-summary{background:var(--ds-border)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .erp-service-icon,[data-theme="dark"] .erp-project-type{background:var(--ds-primary-soft)!important;color:var(--ds-primary)!important}
+[data-theme="dark"] .erp-project-name button,[data-theme="dark"] .erp-project-health>strong,[data-theme="dark"] .erp-project-detail-grid .metric b,[data-theme="dark"] .erp-financial-summary b{color:var(--ds-primary)!important}
+[data-theme="dark"] .erp-project-hero h2,[data-theme="dark"] .erp-project-section .section-head h3,[data-theme="dark"] .erp-stage-main strong,[data-theme="dark"] .erp-doc-main strong,[data-theme="dark"] .erp-payment-main strong,[data-theme="dark"] .erp-group-toggle strong,[data-theme="dark"] .erp-group-title strong{color:var(--ds-text)!important}
+[data-theme="dark"] .erp-project-notes,[data-theme="dark"] .erp-project-health-top,[data-theme="dark"] .erp-project-health>small,[data-theme="dark"] .erp-project-detail-grid .metric h3,[data-theme="dark"] .erp-project-detail-grid .metric small,[data-theme="dark"] .erp-financial-summary h3,[data-theme="dark"] .erp-group-title small{color:var(--ds-muted)!important}
+[data-theme="dark"] .erp-project-detail-grid>.card,[data-theme="dark"] .erp-project-section{border-color:var(--ds-border)!important}
+[data-theme="dark"] .erp-row-actions .danger{color:var(--ds-danger)!important}
+
+/* Solicitações */
+[data-theme="dark"] .invoice-hero{background:linear-gradient(135deg,#16332F,#162124)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .invoice-eyebrow,[data-theme="dark"] .invoice-category,[data-theme="dark"] .invoice-has-response{color:var(--ds-primary)!important}
+[data-theme="dark"] .invoice-card{background:var(--ds-surface)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .invoice-compose-note,[data-theme="dark"] .invoice-response{background:var(--ds-primary-soft)!important;border-color:var(--ds-primary-soft-2)!important;color:var(--ds-text)!important}
+[data-theme="dark"] .invoice-editor{background:var(--ds-surface-2)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .invoice-editor-area{color:var(--ds-text)!important}
+[data-theme="dark"] .invoice-editor-toolbar{background:var(--ds-surface)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .invoice-editor-toolbar button,[data-theme="dark"] .invoice-editor-toolbar select{background:var(--ds-surface-2)!important;color:var(--ds-text)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .invoice-toolbar-separator{background:var(--ds-border)!important}
+[data-theme="dark"] .invoice-detail-grid>div,[data-theme="dark"] .invoice-description{border-color:var(--ds-border)!important}
+
+/* Fluxo de Caixa: resumo por natureza */
+[data-theme="dark"] .cash-nature-card{background:var(--ds-surface)!important;border-color:var(--ds-border)!important}
+[data-theme="dark"] .cash-nature-head,[data-theme="dark"] .cash-nature-row{border-color:var(--ds-border)!important}
+[data-theme="dark"] .cash-nature-columns,[data-theme="dark"] .cash-nature-balance{background:var(--ds-surface-2)!important}
+
+/* Recebimentos */
+[data-theme="dark"] #recebHistoryModal .receb-history-table th,[data-theme="dark"] #recebHistoryModal .receb-history-table td{border-color:var(--ds-border)!important}
+[data-theme="dark"] .receb-client-card,[data-theme="dark"] .receb-history-summary .card,[data-theme="dark"] .receb-remessa-group{background:var(--ds-surface)!important;border-color:var(--ds-border)!important;color:var(--ds-text)}
+[data-theme="dark"] .receb-history-row-ref td{background:var(--ds-primary-soft)!important}
+[data-theme="dark"] .assignment-grid .check-line b,[data-theme="dark"] .check-line b{color:var(--ds-text)!important}
+[data-theme="dark"] .assignment-grid .check-line small{color:var(--ds-muted)!important}
