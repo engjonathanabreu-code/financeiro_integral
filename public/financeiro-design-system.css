@@ -9,6 +9,11 @@
   --ds-primary-active:#0D4B47;
   --ds-primary-soft:#E3EEEC;
   --ds-primary-soft-2:#D6E6E3;
+  --ds-primary-fill:#115E59;
+  --ds-primary-fill-hover:#1A6F69;
+  --ds-on-primary:#FFFFFF;
+  --ds-row-hover:#F7F9F8;
+  --ds-backdrop:rgba(24,53,82,.45);
   --ds-bg:#F5F3ED;
   --ds-surface:#FFFFFF;
   --ds-surface-2:#FAF9F5;
@@ -101,8 +106,8 @@ h1,h2,h3,h4{color:var(--ds-text);letter-spacing:-.01em}
 .legend span:before{background:var(--ds-primary)}
 
 /* 06 Botões */
-.btn{background:var(--ds-primary);color:#fff;border:1px solid var(--ds-primary);border-radius:var(--ds-r-field);min-height:36px;padding:8px 16px;font-size:14px;font-weight:600;line-height:1.2;letter-spacing:0;gap:8px;box-shadow:none;transition:background-color .15s ease,border-color .15s ease,color .15s ease}
-.btn:hover{background:var(--ds-primary-hover);border-color:var(--ds-primary-hover);transform:none}
+.btn{background:var(--ds-primary-fill);color:var(--ds-on-primary);border:1px solid var(--ds-primary-fill);border-radius:var(--ds-r-field);min-height:36px;padding:8px 16px;font-size:14px;font-weight:600;line-height:1.2;letter-spacing:0;gap:8px;box-shadow:none;transition:background-color .15s ease,border-color .15s ease,color .15s ease}
+.btn:hover{background:var(--ds-primary-fill-hover);border-color:var(--ds-primary-fill-hover);color:var(--ds-on-primary);transform:none}
 .btn:active{background:var(--ds-primary-active);border-color:var(--ds-primary-active);transform:none}
 .btn:focus-visible{outline:0;box-shadow:var(--ds-focus)}
 .btn.secondary,.btn.ghost{background:var(--ds-surface);color:var(--ds-primary);border:1px solid var(--ds-primary)}
@@ -127,7 +132,7 @@ h1,h2,h3,h4{color:var(--ds-text);letter-spacing:-.01em}
 .segmented button{color:var(--ds-muted);font-weight:600;font-size:13px;border-radius:6px}
 .segmented button.active{background:var(--ds-surface);color:var(--ds-primary);box-shadow:0 1px 3px rgba(24,53,82,.10)}
 .register-tabs button{border:1px solid var(--ds-border);border-radius:var(--ds-r-field);color:var(--ds-muted);font-weight:600;background:var(--ds-surface)}
-.register-tabs button.active{background:var(--ds-primary);border-color:var(--ds-primary);color:#fff}
+.register-tabs button.active{background:var(--ds-primary-fill);border-color:var(--ds-primary-fill);color:var(--ds-on-primary)}
 
 /* 07 Campos */
 .field{gap:6px}
@@ -163,11 +168,11 @@ input:disabled,select:disabled,textarea:disabled{background:var(--ds-surface-2);
 .table-wrap,.excel-wrap{background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:var(--ds-r-card)}
 .table th,.excel-table th{font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--ds-muted);background:var(--ds-surface-2)}
 .table th,.table td,.excel-table th,.excel-table td{border-bottom-color:var(--ds-border)}
-.table tbody tr:hover td,.excel-table tr:hover td{background:#F7F9F8}
+.table tbody tr:hover td,.excel-table tr:hover td{background:var(--ds-row-hover)}
 .table td small,.excel-table td small{color:var(--ds-muted)}
 
 /* Modais */
-.modal-backdrop{background:rgba(24,53,82,.45)}
+.modal-backdrop{background:var(--ds-backdrop)}
 .modal{border-radius:var(--ds-r-card);box-shadow:var(--ds-shadow-modal);border:1px solid var(--ds-border)}
 .modal-head,.modal-foot{border-color:var(--ds-border);padding:16px 24px}
 .modal-head h3{font-size:18px;font-weight:600}
@@ -195,7 +200,7 @@ input:disabled,select:disabled,textarea:disabled{background:var(--ds-surface-2);
 .receb-history-table td:last-child .btn,.receb-parcel-actions .btn{margin:2px}
 #recebHistoryModal .receb-parcel-actions{display:inline-flex!important;flex-wrap:nowrap;gap:4px;align-items:center}
 #recebHistoryModal .receb-parcel-edit,#recebHistoryModal .receb-pay-toggle{min-height:28px;padding:4px 10px;font-size:12px;font-weight:600;border-radius:var(--ds-r-field);border:1px solid var(--ds-border-strong);background:var(--ds-surface);color:var(--ds-primary);cursor:pointer}
-#recebHistoryModal .receb-pay-toggle:not(.is-paid){border-color:var(--ds-primary);background:var(--ds-primary);color:#fff}
+#recebHistoryModal .receb-pay-toggle:not(.is-paid){border-color:var(--ds-primary-fill);background:var(--ds-primary-fill);color:var(--ds-on-primary)}
 #recebHistoryModal .receb-parcel-edit:hover,#recebHistoryModal .receb-pay-toggle.is-paid:hover{background:var(--ds-primary-soft)}
 #recebHistoryModal [data-archive-parcela]{margin-left:4px!important}
 .receb-history-row-ref td{background:var(--ds-primary-soft)!important}
@@ -226,3 +231,27 @@ input:disabled,select:disabled,textarea:disabled{background:var(--ds-surface-2);
 .fin-inc-status{margin-right:auto;align-self:center;font-size:13px}
 .fin-inc-modal .toolbar{margin-bottom:16px}
 .fin-inc-modal .toolbar label{margin-right:8px}
+
+/* Coluna Ações das tabelas: a célula continua sendo célula (display:flex quebrava o alinhamento das linhas) */
+@media(min-width:741px){.table td.actions,.excel-table td.actions{display:table-cell!important;white-space:nowrap;text-align:right;vertical-align:middle;min-width:0}
+.table td.actions>.btn,.table td.actions>button,.excel-table td.actions>.btn{margin:2px 0 2px 6px;vertical-align:middle}
+.table td.actions>.btn:first-child,.excel-table td.actions>.btn:first-child{margin-left:0}}
+.table td,.table th{vertical-align:middle}
+
+/* Seletor de tema no painel de Configuração */
+.fin-theme-switch{padding:8px 10px 10px;border-top:1px solid var(--ds-border);border-bottom:1px solid var(--ds-border);margin:4px 0}
+.fin-theme-switch .fin-theme-label{display:block;font-size:12px;font-weight:600;color:var(--ds-muted);margin-bottom:6px}
+.fin-theme-switch .segmented{display:flex;width:100%}
+.fin-navigation .fin-configuration-actions .fin-theme-switch .segmented button{flex:1;min-height:30px!important;padding:4px 6px!important;font-size:12px!important;justify-content:center!important;width:auto!important}
+.fin-navigation .fin-configuration-actions .fin-theme-switch .segmented button.active{background:var(--ds-surface);color:var(--ds-primary);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+
+/* Recebimentos: status (os módulos injetam estilos depois deste arquivo, por isso :root aumenta a especificidade) */
+:root .receb-status{background:var(--ds-info-bg);color:var(--ds-info);border:1px solid var(--ds-info-border);border-radius:var(--ds-r-pill);font-weight:600}
+:root .receb-status.Pago{background:var(--ds-success-bg);color:var(--ds-success);border-color:var(--ds-success-border)}
+:root .receb-status.Inadimplente{background:var(--ds-danger-bg);color:var(--ds-danger);border-color:var(--ds-danger-border)}
+:root .receb-status.Pendente,:root .receb-status.Parcial{background:var(--ds-warning-bg);color:var(--ds-warning);border-color:var(--ds-warning-border)}
+:root .receb-status.Cancelado{background:var(--ds-surface-2);color:var(--ds-muted);border-color:var(--ds-border)}
+:root .receb-remessa-title{background:var(--ds-primary-soft);color:var(--ds-primary)}
+:root .receb-remessa-title small{color:var(--ds-muted)}
+:root .receb-client-card h4,:root .receb-history-summary b{color:var(--ds-text)}
+:root .receb-history-table tr.receb-history-row-ref,:root .receb-history-row-ref{background:var(--ds-primary-soft)}
