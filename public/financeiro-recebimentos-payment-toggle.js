@@ -44,7 +44,9 @@ async function toggle(btn){
    if(!parcelaId)throw new Error('Reabra a ficha para identificar a parcela.');
    const p=await sb.from('fin_receb_parcelas').select('*').eq('id',parcelaId).limit(1);if(p.error)throw p.error;if(!p.data?.length)throw new Error('Parcela não encontrada.');
    const parcel=p.data[0];
-   const values=paid?{status:'Pendente',pago_em:null,valor_liquidado:0,diferenca:0}:{status:'Pago',pago_em:new Date().toISOString().slice(0,10),valor_liquidado:Number(parcel.valor_previsto||0)+Number(parcel.juros||0)+Number(parcel.multa||0),diferenca:0};
+   if(paid&&!confirm(`Desmarcar o pagamento da parcela #${numero}? O valor pago e a data serão apagados e a parcela voltará para Pendente.`))return;
+   if(!paid&&parcel.status==='Parcial'&&!confirm(`A parcela #${numero} tem pagamento parcial de ${Number(parcel.valor_liquidado||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}. Marcar como paga pelo valor total?`))return;
+   const values=paid?{status:'Pendente',pago_em:null,valor_liquidado:0,diferenca:0}:{status:'Pago',pago_em:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),valor_liquidado:Number(parcel.valor_previsto||0)+Number(parcel.juros||0)+Number(parcel.multa||0),diferenca:0};
    const u=await sb.from('fin_receb_parcelas').update(values).eq('id',parcel.id).eq('versao',parcel.versao).select('id,status').single();if(u.error)throw u.error;
    const row=btn.closest('tr');const cells=row.querySelectorAll('td');
    const newPaid=!paid;btn.dataset.paid=newPaid?'1':'0';btn.textContent=newPaid?'Desmarcar':'✓ Pago';btn.classList.toggle('is-paid',newPaid);

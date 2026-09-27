@@ -57,7 +57,7 @@ async function openEditor(modal){
    if(error)throw error;
    closeEditor();
    modal.remove();
-   const nav=document.querySelector('.nav [data-view="recebimentos"],.nav [data-view="receipts"]');
+   const nav=document.querySelector('.nav [data-view="receivables"]');
    if(nav)nav.click();
    else location.reload();
   }catch(e){status.innerHTML=`<div class="notice danger">${esc(e.message||e)}</div>`;save.disabled=false}

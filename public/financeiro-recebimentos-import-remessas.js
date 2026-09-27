@@ -3,7 +3,7 @@
 const cfg=window.ERP_SUPABASE||{};
 const sb=window.supabase?.createClient?.(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true}});
 if(!sb)return;
-const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[m]));
+const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toUpperCase();
 const uid=()=>crypto.randomUUID();
 const CITY_BY_PREFIX={AGM:'Águas Mornas',AUR:'Aurora',BDN:'Benedito Novo',DRP:'Doutor Pedrinho',IBI:'Ibirama',ILH:'Ilhota',LON:'Lontras',LNT:'Lontras',RSL:'Rio do Sul',NRSL:'Rio do Sul',JB:'José Boiteux',STA:'Santa Terezinha'};

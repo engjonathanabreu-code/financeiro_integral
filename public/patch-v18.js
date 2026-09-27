@@ -3,7 +3,7 @@
 'use strict';
 
 const qs=(s)=>document.querySelector(s), qsa=(s)=>Array.from(document.querySelectorAll(s));
-const now=()=>new Date().toISOString().slice(0,10);
+const now=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const currentMonth=()=>now().slice(0,7);
 const addMonth=(m,n)=>{const d=new Date(m+'-01T12:00:00');d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const monthLabel=(m)=>{const parts=String(m).split('-');return new Date(Number(parts[0]),Number(parts[1])-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
@@ -58,7 +58,7 @@ function installTripReportButton(){
   let right=toolbar.querySelector('.right');
   if(!right){right=document.createElement('div');right.className='right';toolbar.appendChild(right);}
   const btn=document.createElement('button');btn.id='tripReport18';btn.className='btn ghost';btn.type='button';btn.textContent='Relatório de Viagens';
-  btn.onclick=()=>{const tripsList=db.trips||[];const declared=tripsList.reduce((s,t)=>s+Number(t.declared||0),0);const proven=tripsList.reduce((s,t)=>s+Number(t.proven||t.spent||0),0);v2modal('Relatório de Viagens',`<div class="modal-body"><div class="grid cols-3"><div class="card metric"><h3>Viagens</h3><b>${tripsList.length}</b></div><div class="card metric"><h3>Declarado</h3><b>${money18(declared)}</b></div><div class="card metric"><h3>Comprovado</h3><b>${money18(proven)}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Projeto</th><th>Declarado</th><th>Comprovado</th><th>Status</th></tr></thead><tbody>${tripsList.map(t=>`<tr><td><b>${esc(t.city||t.destination||'—')}</b></td><td>${esc(t.period||'—')}</td><td>${esc(t.employee||t.team||'—')}</td><td>${esc(t.project||'—')}</td><td>${money18(t.declared)}</td><td>${money18(t.proven||t.spent)}</td><td>${esc(t.status||'—')}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma viagem registrada.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);};
+  btn.onclick=()=>{/* Só as viagens que o usuário pode ver */const canSee=t=>user?.role==='Administrador'||(typeof window.IntegralTripVisible==='function'?window.IntegralTripVisible(t):false);const tripsList=(db.trips||[]).filter(canSee);const declared=tripsList.reduce((s,t)=>s+Number(t.declared||0),0);const proven=tripsList.reduce((s,t)=>s+Number(t.proven||t.spent||0),0);v2modal('Relatório de Viagens',`<div class="modal-body"><div class="grid cols-3"><div class="card metric"><h3>Viagens</h3><b>${tripsList.length}</b></div><div class="card metric"><h3>Declarado</h3><b>${money18(declared)}</b></div><div class="card metric"><h3>Comprovado</h3><b>${money18(proven)}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Projeto</th><th>Declarado</th><th>Comprovado</th><th>Status</th></tr></thead><tbody>${tripsList.map(t=>`<tr><td><b>${esc(t.city||t.destination||'—')}</b></td><td>${esc(t.period||'—')}</td><td>${esc(t.employee||t.team||'—')}</td><td>${esc(t.project||'—')}</td><td>${money18(t.declared)}</td><td>${money18(t.proven||t.spent)}</td><td>${esc(t.status||'—')}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma viagem registrada.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);};
   right.prepend(btn);
 }
 

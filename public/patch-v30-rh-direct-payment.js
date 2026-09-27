@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const currentMonth=()=>today().slice(0,7);
 function variable(personId,month){return (db.hrMonthlyVariables||[]).find(x=>String(x.personId)===String(personId)&&x.month===month)||null}
 function payment(personId,month){return (db.hrPayments||[]).find(x=>String(x.personId)===String(personId)&&x.month===month)||null}

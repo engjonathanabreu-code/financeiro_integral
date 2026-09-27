@@ -9,9 +9,12 @@
     const profiles=window.IntegralERP?.profiles||[];
     const names=[...new Set(profiles.map(p=>p.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
     if(!names.length)return;
-    db.sectors=names.map((name,i)=>({id:i+1,name,active:true,source:'ERP'}));
-    normalizeAssignments();
-    save();
+    /* Mescla com os setores já cadastrados: nunca remove setores criados no Financeiro. */
+    const current=Array.isArray(db.sectors)?db.sectors:(db.sectors=[]);
+    let changed=false,nextId=Math.max(0,...current.map(s=>Number(s.id)||0))+1;
+    for(const name of names){if(!current.some(s=>norm(s.name)===norm(name))){current.push({id:nextId++,name,active:true,source:'ERP'});changed=true}}
+    if(normalizeAssignments())changed=true;
+    if(changed)save();
   }
 
   function sectorUserIds(sector){
@@ -19,12 +22,18 @@
   }
 
   function normalizeAssignments(){
-    db.trips=(db.trips||[]).map(t=>({...t,assigned:Array.isArray(t.assigned)?t.assigned:[],sector:t.sector||''}));
-    db.budgetRecords=(db.budgetRecords||[]).map(b=>{
+    /* Ajusta os registros no lugar (sem recriar objetos), para não invalidar edições em modais abertos. */
+    let changed=false;
+    if(!Array.isArray(db.trips))db.trips=[];
+    for(const t of db.trips){if(!Array.isArray(t.assigned)){t.assigned=[];changed=true}if(t.sector==null){t.sector='';changed=true}}
+    if(!Array.isArray(db.budgetRecords))db.budgetRecords=[];
+    for(const b of db.budgetRecords){
       const direct=Array.isArray(b.assignedDirect)?b.assignedDirect:(Array.isArray(b.assigned)?b.assigned:[]);
       const effective=[...new Set([...direct,...sectorUserIds(b.sector)])];
-      return {...b,assignedDirect:direct,assigned:effective};
-    });
+      if(b.assignedDirect!==direct){b.assignedDirect=direct;changed=true}
+      if(JSON.stringify(b.assigned)!==JSON.stringify(effective)){b.assigned=effective;changed=true}
+    }
+    return changed;
   }
 
   function canAccessBudget(b){

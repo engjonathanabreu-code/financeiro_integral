@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
-const today=()=>new Date().toISOString().slice(0,10),monthNow=()=>today().slice(0,7),uid=()=>Date.now()+Math.floor(Math.random()*100000);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),monthNow=()=>today().slice(0,7),uid=()=>window.integralUid?window.integralUid():Date.now()+Math.floor(Math.random()*100000);
 const addMonth=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`};
 const monthLabel=m=>{const[y,mm]=String(m).split('-');return new Date(+y,+mm-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
 const mny=v=>typeof money==='function'?money(Number(v||0)):Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),E=v=>typeof esc==='function'?esc(String(v??'')):String(v??''),F=d=>{if(!d)return'—';try{return typeof fmt==='function'?fmt(d):new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}catch{return d}},sb=()=>window.IntegralERP?.sb||null;

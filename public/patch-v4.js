@@ -78,9 +78,18 @@
     const renderReg=(key)=>{
       $$('.register-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v4regtab===key));
       const items=db[key]||[];
-      $('#v4RegisterPanel').innerHTML=`<div class="toolbar"><div class="left"><div class="muted">${items.length} registro(s)</div></div><button class="btn" id="v4AddReg">+ Novo</button></div><div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Nome</th><th>Status</th><th></th></tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.name||'')}</td><td>${i.active===false?'<span class="badge">Inativo</span>':'<span class="badge ok">Ativo</span>'}</td><td><button class="btn small ghost" data-v4editreg="${i.id}">Editar</button></td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Nenhum cadastro.</div></td></tr>'}</tbody></table></div>`;
+      $('#v4RegisterPanel').innerHTML=`<div class="toolbar"><div class="left"><div class="muted">${items.length} registro(s)</div></div><button class="btn" id="v4AddReg">+ Novo</button></div><div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Nome</th><th>Status</th><th></th></tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.name||'')}</td><td>${i.active===false?'<span class="badge">Inativo</span>':'<span class="badge ok">Ativo</span>'}</td><td class="actions"><button class="btn small ghost" data-v4editreg="${i.id}">Editar</button><button class="btn small danger" data-v4delreg="${i.id}">Excluir</button></td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Nenhum cadastro.</div></td></tr>'}</tbody></table></div>`;
       $('#v4AddReg').onclick=()=>v4GenericRegisterModal(key);
       $$('[data-v4editreg]').forEach(b=>b.onclick=()=>v4GenericRegisterModal(key,Number(b.dataset.v4editreg)));
+      /* Excluir só quando o cadastro não é usado em nenhum lançamento; se for, a opção é inativar. */
+      $$('[data-v4delreg]').forEach(b=>b.onclick=()=>{
+        const arr=db[key]||[],item=arr.find(x=>String(x.id)===String(b.dataset.v4delreg));if(!item)return;
+        const name=String(item.name||'').trim().toLowerCase();let uses=0;
+        for(const [k,v] of Object.entries(db)){if(k===key||!Array.isArray(v))continue;for(const row of v){if(row&&typeof row==='object'&&Object.values(row).some(val=>typeof val==='string'&&val.trim().toLowerCase()===name))uses++}}
+        if(uses)return alert(`"${item.name}" está em uso em ${uses} registro(s). Para não alterar esses lançamentos, edite o cadastro e desmarque "Ativo".`);
+        if(!confirm(`Excluir o cadastro "${item.name}"?`))return;
+        db[key]=arr.filter(x=>x!==item);save();renderReg(key);
+      });
     };
     $$('[data-v4regtab]').forEach(b=>b.onclick=()=>renderReg(b.dataset.v4regtab));
     renderReg('natures');

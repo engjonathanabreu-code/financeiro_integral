@@ -4,7 +4,7 @@
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 const uid=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
 const monthOf=d=>String(d||'').slice(0,7);
-const todayISO=()=>new Date().toISOString().slice(0,10);
+const todayISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const nowMonth=()=>todayISO().slice(0,7);
 const monthLabel=m=>{if(!m)return'';const[y,n]=m.split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
 const addMonths=(date,n)=>{const d=new Date((date||todayISO())+'T12:00:00');d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,10)};

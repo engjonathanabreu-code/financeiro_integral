@@ -42,7 +42,7 @@ async function renderCanonical(id){
     }
     const out=q('#content');if(out)out.dataset.canonicalView=id;
     setActive(id);return true;
-  }catch(err){console.error('Roteador canônico:',id,err);const out=q('#content');if(out)out.innerHTML=`<div class="notice danger">Não foi possível carregar esta tela: ${String(err?.message||err)}</div>`;return false}
+  }catch(err){console.error('Roteador canônico:',id,err);const out=q('#content');/* Marca a tela como tratada para o observer não tentar renderizar de novo em loop. */if(out){out.innerHTML=`<div class="notice danger">Não foi possível carregar esta tela: ${String(err?.message||err).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}. Clique no menu para tentar novamente.</div>`;out.dataset.canonicalView=id}return false}
 }
 
 let pendingCanonical=null;

@@ -29,7 +29,7 @@ login();
 /* Integral Financeiro V2 - evolução modular sobre a V1 */
 const v2Month='2026-08';
 const v2state={accountsMonth:v2Month,accountsMode:'month',docsMonth:v2Month,cashMonth:v2Month,budgetSector:null,tripsMonth:v2Month,tripId:null,planningMonth:'2026-09'};
-const v2uid=()=>Date.now()+Math.floor(Math.random()*1000);
+const v2uid=window.integralUid=window.integralUid||(()=>{let last=0;return()=>{let n=Date.now()+Math.floor(Math.random()*1000);if(n<=last)n=last+1;last=n;return n}})(); /* IDs únicos mesmo em importações em lote */
 const v2month=d=>String(d||'').slice(0,7);
 const v2monthLabel=k=>{if(!k)return'';const[y,m]=k.split('-');return new Date(+y,+m-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
 function v2ensure(){
@@ -56,7 +56,7 @@ function v2picker(v,id){return `<input type="month" id="${id}" value="${v}">`}
 function v2master(id){return db.accountMasters.find(a=>a.id===id)}
 accounts=function(){if(user.role!=='Administrador')return documents();title('Contas');const payments=(v2state.accountsMode==='month'?db.accountPayments.filter(p=>v2month(p.due)===v2state.accountsMonth):db.accountPayments).map(p=>({...p,master:v2master(p.accountId)}));$('#content').innerHTML=`<div class="toolbar"><div class="left"><div class="segmented"><button id="v2MonthMode" class="${v2state.accountsMode==='month'?'active':''}">Contas do mês</button><button id="v2AllMode" class="${v2state.accountsMode==='all'?'active':''}">Todas as contas cadastradas</button></div>${v2state.accountsMode==='month'?v2picker(v2state.accountsMonth,'v2AccountsMonth'):''}</div><div class="right"><button class="btn ghost" id="v2AiBills">Enviar boletos para IA</button><button class="btn" id="v2NewAccount">+ Cadastrar conta</button></div></div>${v2state.accountsMode==='all'?`<div class="grid cols-3">${db.accountMasters.map(a=>{const ps=db.accountPayments.filter(p=>p.accountId===a.id);return `<button class="card account-master-card" data-v2master="${a.id}"><span class="badge ok">${a.active?'Ativa':'Inativa'}</span><h3>${esc(a.name)}</h3><p>${esc(a.supplier||'')}</p><div class="account-meta"><span>${esc(a.category||'')}</span><span>${esc(a.sector||'')}</span></div><b>${ps.length} pagamento(s) cadastrado(s)</b></button>`}).join('')}</div>`:`<div class="page-intro"><div><h3>${v2monthLabel(v2state.accountsMonth)}</h3><p>Somente pagamentos com vencimento neste mês.</p></div><strong>${payments.length} pagamento(s)</strong></div><div class="table-wrap"><table class="table"><thead><tr><th>Conta</th><th>Vencimento</th><th>Forma</th><th>Setor</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${payments.map(p=>`<tr><td><b>${esc(p.master?.name||'')}</b><div class="muted">${esc(p.master?.supplier||'')}</div></td><td>${fmt(p.due)}</td><td>${esc(p.master?.method||'')}</td><td>${esc(p.master?.sector||'')}</td><td><b>${money(p.value)}</b></td><td>${badgeStatus(p.status)}</td><td><button class="btn small ghost" data-v2payment="${p.id}">Abrir card</button></td></tr>`).join('')||'<tr><td colspan="7"><div class="empty">Nenhuma conta neste mês.</div></td></tr>'}</tbody></table></div>`}`;$('#v2MonthMode').onclick=()=>{v2state.accountsMode='month';accounts()};$('#v2AllMode').onclick=()=>{v2state.accountsMode='all';accounts()};if($('#v2AccountsMonth'))$('#v2AccountsMonth').onchange=e=>{v2state.accountsMonth=e.target.value;accounts()};$('#v2AiBills').onclick=()=>v2modal('Leitura de boletos por IA',`<div class="modal-body"><div class="dropzone"><h3>Envie todos os boletos da conta</h3><p>A IA irá identificar vencimento, valor, código e competência e separar cada pagamento no mês correto.</p><input type="file" multiple accept=".pdf,image/*"></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);$('#v2NewAccount').onclick=()=>v2AccountModal();$$('[data-v2master]').forEach(b=>b.onclick=()=>v2AccountModal(+b.dataset.v2master));$$('[data-v2payment]').forEach(b=>b.onclick=()=>v2PaymentModal(+b.dataset.v2payment));}
 function v2AccountModal(id){const a=v2master(id),ps=a?db.accountPayments.filter(p=>p.accountId===id).sort((x,y)=>x.due.localeCompare(y.due)):[];const x=v2modal(a?'Conta cadastrada':'Nova conta',`<form id="v2AccountForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Nome</label><input name="name" value="${esc(a?.name||'')}" required></div><div class="field"><label>Fornecedor</label><input name="supplier" value="${esc(a?.supplier||'')}"></div><div class="field"><label>Categoria</label><input name="category" value="${esc(a?.category||'')}"></div><div class="field"><label>Forma</label><select name="method">${['Boleto','PIX','Débito automático','Cartão','Transferência','Outro'].map(v=>`<option ${a?.method===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Setor</label><select name="sector">${['Administrativo','Projetos','Topografia','Comercial'].map(v=>`<option ${a?.sector===v?'selected':''}>${v}</option>`).join('')}</select></div></div>${a?`<h3 class="section-title">Pagamentos vinculados</h3>${ps.map(p=>`<button type="button" class="mini-row" data-v2openpay="${p.id}"><span>${fmt(p.due)}</span><strong>${money(p.value)}</strong>${badgeStatus(p.status)}</button>`).join('')||'<div class="empty">Sem pagamentos.</div>'}<button type="button" class="btn ghost" id="v2AddPay">+ Adicionar pagamento</button>`:''}</div><div class="modal-foot"><button class="btn">Salvar conta</button></div></form>`);x.querySelector('#v2AccountForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),o={id:a?.id||v2uid(),name:f.get('name'),supplier:f.get('supplier'),category:f.get('category'),method:f.get('method'),sector:f.get('sector'),active:true};a?Object.assign(a,o):db.accountMasters.push(o);save();x.remove();accounts()};x.querySelectorAll('[data-v2openpay]').forEach(b=>b.onclick=()=>{x.remove();v2PaymentModal(+b.dataset.v2openpay)});if(x.querySelector('#v2AddPay'))x.querySelector('#v2AddPay').onclick=()=>{x.remove();v2PaymentModal(null,a.id)}}
-function v2PaymentModal(id,accountId){const p=db.accountPayments.find(q=>q.id===id),a=v2master(p?.accountId||accountId);const x=v2modal('Card do pagamento',`<form id="v2PayForm"><div class="modal-body"><h2>${esc(a?.name||'')}</h2><p class="muted">${esc(a?.supplier||'')}</p><div class="form-grid"><div class="field"><label>Vencimento</label><input type="date" name="due" value="${p?.due||''}" required></div><div class="field"><label>Valor</label><input type="number" step="0.01" name="value" value="${p?.value||''}" required></div><div class="field"><label>Status</label><select name="status">${['A vencer','Vence hoje','Vencida','Paga','Cancelada'].map(v=>`<option ${p?.status===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field full"><label>Linha digitável / código</label><textarea name="barcode">${esc(p?.barcode||'')}</textarea></div></div><div class="notice">O WhatsApp será disparado apenas pelo backend para destinatários administrativos autorizados. Funcionários não terão acesso ao envio.</div></div><div class="modal-foot"><button class="btn">Salvar pagamento</button></div></form>`);x.querySelector('#v2PayForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),o={id:p?.id||v2uid(),accountId:a.id,due:f.get('due'),value:+f.get('value'),status:f.get('status'),barcode:f.get('barcode'),source:p?.source||'Manual'};p?Object.assign(p,o):db.accountPayments.push(o);save();x.remove();accounts()}}
+function v2PaymentModal(id,accountId){const p=db.accountPayments.find(q=>q.id===id),a=v2master(p?.accountId||accountId);const x=v2modal('Card do pagamento',`<form id="v2PayForm"><div class="modal-body"><h2>${esc(a?.name||'')}</h2><p class="muted">${esc(a?.supplier||'')}</p><div class="form-grid"><div class="field"><label>Vencimento</label><input type="date" name="due" value="${p?.due||''}" required></div><div class="field"><label>Valor</label><input type="number" step="0.01" name="value" value="${p?.value||''}" required></div><div class="field"><label>Status</label><select name="status">${['A vencer','Vence hoje','Vencida','Paga','Cancelada'].map(v=>`<option ${p?.status===v?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Data do pagamento</label><input type="date" name="paidAt" value="${p?.paidAt||''}"></div><div class="field full"><label>Linha digitável / código</label><textarea name="barcode">${esc(p?.barcode||'')}</textarea></div></div><div class="notice">O WhatsApp será disparado apenas pelo backend para destinatários administrativos autorizados. Funcionários não terão acesso ao envio.</div></div><div class="modal-foot"><button class="btn">Salvar pagamento</button></div></form>`);x.querySelector('#v2PayForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),o={id:p?.id||v2uid(),accountId:a.id,due:f.get('due'),value:+f.get('value'),status:f.get('status'),barcode:f.get('barcode'),source:p?.source||'Manual'};/* Pagamento quitado guarda a data real, usada pelo Fluxo de Caixa */const localToday=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);o.paidAt=o.status==='Paga'?(f.get('paidAt')||p?.paidAt||localToday):'';p?Object.assign(p,o):db.accountPayments.push(o);save();x.remove();accounts()}}
 documents=function(){title('Documentos Fiscais');const docs=db.docs.filter(d=>v2month(d.date)===v2state.docsMonth),months=[...new Set(db.docs.map(d=>v2month(d.date)))].sort().reverse();$('#content').innerHTML=`<div class="toolbar"><div>${v2picker(v2state.docsMonth,'v2DocsMonth')}</div><button class="btn" id="v2UploadDocs">+ Enviar documentos</button></div><div class="month-folders">${months.map(m=>`<button class="month-folder ${m===v2state.docsMonth?'active':''}" data-v2docmonth="${m}"><b>${v2monthLabel(m)}</b><small>${db.docs.filter(d=>v2month(d.date)===m).length} arquivo(s)</small></button>`).join('')}</div><div class="table-wrap"><table class="table"><thead><tr><th>Documento</th><th>Tipo</th><th>Fornecedor</th><th>Data</th><th>Categoria</th><th>Setor</th><th>Valor</th><th>IA</th></tr></thead><tbody>${docs.map(d=>`<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.type)}</td><td>${esc(d.supplier)}</td><td>${fmt(d.date)}</td><td>${esc(d.cat)}</td><td>${esc(d.sector)}</td><td><b>${money(d.value)}</b></td><td>${badgeStatus(d.status)}</td></tr>`).join('')||'<tr><td colspan="8"><div class="empty">Nenhum documento neste mês.</div></td></tr>'}</tbody></table></div>`;$('#v2DocsMonth').onchange=e=>{v2state.docsMonth=e.target.value;documents()};$$('[data-v2docmonth]').forEach(b=>b.onclick=()=>{v2state.docsMonth=b.dataset.v2docmonth;documents()});$('#v2UploadDocs').onclick=()=>v2modal('Upload de documentos',`<div class="modal-body"><div class="dropzone"><h3>Notas, cupons e comprovantes</h3><p>A IA classificará e atribuirá cada documento ao mês correto.</p><input type="file" multiple accept=".pdf,image/*"></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`)}
 const v2Kinds=['Despesa fixa','Despesa variável','Folha e encargos','Retirada e distribuição aos sócios','Receita parcelada de clientes','Receita de contratos públicos','Receita avulsa de contratos privados','Outras receitas'];
 cashflow=function(){if(user.role!=='Administrador')return documents();title('Fluxo de Caixa');const rs=db.cashflow.filter(r=>v2month(r.date)===v2state.cashMonth),tin=rs.filter(r=>r.direction==='Entrada').reduce((s,r)=>s+r.value,0),tout=rs.filter(r=>r.direction==='Saída').reduce((s,r)=>s+r.value,0);$('#content').innerHTML=`<div class="toolbar"><div>${v2picker(v2state.cashMonth,'v2CashMonth')}</div><div class="right"><button class="btn ghost" id="v2ImportBank">Importar extrato bancário</button><button class="btn" id="v2NewCash">+ Lançamento</button></div></div><div class="grid cols-3"><div class="card metric"><h3>Entradas</h3><b>${money(tin)}</b></div><div class="card metric"><h3>Saídas</h3><b>${money(tout)}</b></div><div class="card metric"><h3>Resultado</h3><b class="${tin-tout>=0?'kpi-positive':'kpi-negative'}">${money(tin-tout)}</b></div></div><h3 class="section-title">Movimentações por natureza</h3><div class="cash-groups">${v2Kinds.map(k=>{const g=rs.filter(r=>r.kind===k);if(!g.length)return'';return `<section class="card cash-group"><div class="cash-group-head"><h3>${k}</h3><strong>${money(g.reduce((s,r)=>s+r.value,0))}</strong></div>${g.map(r=>`<div class="cash-row"><div><b>${fmt(r.date)}</b><span>${esc(r.description)}</span><small>${esc(r.source||'')}</small></div><strong class="${r.direction==='Entrada'?'kpi-positive':'kpi-negative'}">${r.direction==='Entrada'?'+':'−'} ${money(r.value)}</strong><div class="actions"><button class="btn small ghost" data-v2cash="${r.id}">Editar</button><button class="btn small ghost" data-v2cashdel="${r.id}">Excluir</button></div></div>`).join('')}</section>`}).join('')}</div>`;$('#v2CashMonth').onchange=e=>{v2state.cashMonth=e.target.value;cashflow()};$('#v2ImportBank').onclick=()=>v2modal('Importar extrato bancário',`<div class="modal-body"><div class="dropzone"><h3>Enviar XLSX, XLS ou CSV</h3><p>A IA separará entradas e saídas e sugerirá a natureza financeira de cada linha.</p><input type="file" accept=".xlsx,.xls,.csv"></div><div class="notice warn">Após a leitura, cada linha será editável ou excluível. Assim você poderá remover itens já cadastrados em Contas e evitar duplicidade.</div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);$('#v2NewCash').onclick=()=>v2CashModal();$$('[data-v2cash]').forEach(b=>b.onclick=()=>v2CashModal(+b.dataset.v2cash));$$('[data-v2cashdel]').forEach(b=>b.onclick=()=>{db.cashflow=db.cashflow.filter(r=>r.id!==+b.dataset.v2cashdel);save();cashflow()})}
@@ -173,9 +173,18 @@ reports=function(){if(user.role!=='Administrador')return trips();title('Relatór
     const renderReg=(key)=>{
       $$('.register-tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v4regtab===key));
       const items=db[key]||[];
-      $('#v4RegisterPanel').innerHTML=`<div class="toolbar"><div class="left"><div class="muted">${items.length} registro(s)</div></div><button class="btn" id="v4AddReg">+ Novo</button></div><div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Nome</th><th>Status</th><th></th></tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.name||'')}</td><td>${i.active===false?'<span class="badge">Inativo</span>':'<span class="badge ok">Ativo</span>'}</td><td><button class="btn small ghost" data-v4editreg="${i.id}">Editar</button></td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Nenhum cadastro.</div></td></tr>'}</tbody></table></div>`;
+      $('#v4RegisterPanel').innerHTML=`<div class="toolbar"><div class="left"><div class="muted">${items.length} registro(s)</div></div><button class="btn" id="v4AddReg">+ Novo</button></div><div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Nome</th><th>Status</th><th></th></tr></thead><tbody>${items.map(i=>`<tr><td>${esc(i.name||'')}</td><td>${i.active===false?'<span class="badge">Inativo</span>':'<span class="badge ok">Ativo</span>'}</td><td class="actions"><button class="btn small ghost" data-v4editreg="${i.id}">Editar</button><button class="btn small danger" data-v4delreg="${i.id}">Excluir</button></td></tr>`).join('')||'<tr><td colspan="3"><div class="empty">Nenhum cadastro.</div></td></tr>'}</tbody></table></div>`;
       $('#v4AddReg').onclick=()=>v4GenericRegisterModal(key);
       $$('[data-v4editreg]').forEach(b=>b.onclick=()=>v4GenericRegisterModal(key,Number(b.dataset.v4editreg)));
+      /* Excluir só quando o cadastro não é usado em nenhum lançamento; se for, a opção é inativar. */
+      $$('[data-v4delreg]').forEach(b=>b.onclick=()=>{
+        const arr=db[key]||[],item=arr.find(x=>String(x.id)===String(b.dataset.v4delreg));if(!item)return;
+        const name=String(item.name||'').trim().toLowerCase();let uses=0;
+        for(const [k,v] of Object.entries(db)){if(k===key||!Array.isArray(v))continue;for(const row of v){if(row&&typeof row==='object'&&Object.values(row).some(val=>typeof val==='string'&&val.trim().toLowerCase()===name))uses++}}
+        if(uses)return alert(`"${item.name}" está em uso em ${uses} registro(s). Para não alterar esses lançamentos, edite o cadastro e desmarque "Ativo".`);
+        if(!confirm(`Excluir o cadastro "${item.name}"?`))return;
+        db[key]=arr.filter(x=>x!==item);save();renderReg(key);
+      });
     };
     $$('[data-v4regtab]').forEach(b=>b.onclick=()=>renderReg(b.dataset.v4regtab));
     renderReg('natures');
@@ -237,7 +246,7 @@ reports=function(){if(user.role!=='Administrador')return trips();title('Relatór
 /* ===== SOURCE: patch-v6.js ===== */
 /* Integral Financeiro V6 */
 (function(){
-const uid=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999), mo=d=>String(d||'').slice(0,7), nowMo=()=>new Date().toISOString().slice(0,7), isAdm=()=>user?.role==='Administrador', ur=()=>db.usersMvp?.find(x=>x.name===user?.name), sec=()=>db.sectors?.filter(x=>x.active!==false).map(x=>x.name)||[], us=()=>db.usersMvp?.filter(x=>x.active!==false)||[], fmeta=f=>f?{name:f.name,type:f.type,size:f.size,addedAt:new Date().toISOString()}:null;
+const uid=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999), mo=d=>String(d||'').slice(0,7), nowMo=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7), isAdm=()=>user?.role==='Administrador', ur=()=>db.usersMvp?.find(x=>x.name===user?.name), sec=()=>db.sectors?.filter(x=>x.active!==false).map(x=>x.name)||[], us=()=>db.usersMvp?.filter(x=>x.active!==false)||[], fmeta=f=>f?{name:f.name,type:f.type,size:f.size,addedAt:new Date().toISOString()}:null;
 const ml=m=>{let[y,n]=m.split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}, addm=(d,n)=>{let x=new Date(d+'T12:00:00');x.setMonth(x.getMonth()+n);return x.toISOString().slice(0,10)}, opts=(a,s='')=>a.map(v=>`<option ${v===s?'selected':''}>${esc(v)}</option>`).join('');
 Object.assign(db,{budgetRecords:db.budgetRecords||[],budgetExpenses:db.budgetExpenses||[],tripDocuments:db.tripDocuments||[],planRevenues:db.planRevenues||[],planExpenses:db.planExpenses||[],hrPeople:db.hrPeople||[],hrPayments:db.hrPayments||[]});
 if(!db.budgetRecords.length)db.budgetRecords=(db.budgets||[]).map(b=>({id:uid(),name:`Orçamento ${b.sector}`,sector:b.sector,limit:+b.limit||0,assigned:[],erpPlan:'',active:true,history:[]}));
@@ -338,7 +347,7 @@ window.IntegralV6={real,dup};
     $('#erpFinLogin').onsubmit=async e=>{e.preventDefault();const btn=e.submitter||e.target.querySelector('button[type="submit"]'),err=$('#erpErr');btn.disabled=true;btn.textContent='Entrando...';err.textContent='';try{const email=$('#erpEmail').value.trim().toLowerCase(),password=$('#erpPass').value;const {data,error}=await sb.auth.signInWithPassword({email,password});if(error)throw error;const p=await profileFor(data.user);setFinanceUser(p,data.user);view=user.role==='Administrador'?'dashboard':'budgets';matrix(false);app();}catch(x){console.error('Login Financeiro/ERP:',x);try{await sb?.auth.signOut()}catch{}err.textContent=x.message==='Invalid login credentials'?'E-mail ou senha incorretos. Use os mesmos dados do ERP.':(x.message||'Falha ao entrar.');btn.disabled=false;btn.textContent='Entrar';}};
   }
 
-  login=async function(){try{if(user){await sb?.auth.signOut();return renderERPLogin();}if(!sb)return renderERPLogin('Não foi possível carregar a conexão com o ERP.');const {data:{session},error}=await sb.auth.getSession();if(error)throw error;if(!session)return renderERPLogin();const p=await profileFor(session.user);setFinanceUser(p,session.user);view=user.role==='Administrador'?'dashboard':'budgets';matrix(false);app();}catch(e){console.error('Sessão Financeiro/ERP:',e);try{await sb?.auth.signOut()}catch{}renderERPLogin(e.message||'Não foi possível validar sua sessão do ERP.');}};
+  login=async function(){try{if(user){await sb?.auth.signOut();return renderERPLogin();}if(!sb)return renderERPLogin('Não foi possível carregar a conexão com o ERP.');const {data:{session},error}=await sb.auth.getSession();if(error)throw error;if(!session)return renderERPLogin();const p=await profileFor(session.user);setFinanceUser(p,session.user);view=user.role==='Administrador'?'dashboard':'budgets';matrix(false);try{app()}catch(renderError){console.error('Financeiro: falha ao montar a tela inicial',renderError);const c=document.querySelector('#content');if(c)c.innerHTML='<div class="notice danger">Não foi possível abrir esta tela. Escolha outra opção no menu.</div>'}}catch(e){console.error('Sessão Financeiro/ERP:',e);try{await sb?.auth.signOut()}catch{}renderERPLogin(e.message||'Não foi possível validar sua sessão do ERP.');}};
 
   function planChoices(sector=''){const plans=db.erpPlans||[];return plans.filter(p=>!sector||!p.sectors?.length||p.sectors.some(s=>norm(s)===norm(sector)));}
   function enhanceBudgetModal(modal){const labels=[...modal.querySelectorAll('label')],planLabel=labels.find(l=>l.textContent.includes('Plano de Trabalho ERP')),sector=modal.querySelector('select[name="sector"]');if(planLabel){const old=planLabel.parentElement.querySelector('input[name="erp"]');if(old){const sel=document.createElement('select');sel.name='erp';const fill=()=>{const current=old.value||sel.value;sel.innerHTML='<option value="">Sem associação</option>'+planChoices(sector?.value||'').map(p=>`<option value="${esc(p.title)}" data-plan-id="${p.id}" ${p.title===current?'selected':''}>${esc(p.title)}${p.status?` • ${esc(p.status)}`:''}</option>`).join('')};fill();old.replaceWith(sel);if(sector)sector.addEventListener('change',fill);}}const form=modal.querySelector('#bf');if(form&&!form.dataset.erpHook){form.dataset.erpHook='1';form.addEventListener('submit',()=>setTimeout(()=>{const title=form.querySelector('[name="erp"]')?.value||'',p=(db.erpPlans||[]).find(x=>x.title===title);if(!p)return;const candidates=(db.budgetRecords||[]).filter(b=>b.erpPlan===title),b=candidates[candidates.length-1];if(b){b.erpPlanId=p.id;b.erpProjectId=p.projectId||'';b.erpSectors=p.sectors||[];save()}},30),true)}}
@@ -347,7 +356,8 @@ window.IntegralV6={real,dup};
   function decorateERP(){const c=$('#content');if(!c)return;c.querySelector('.erp-sync-chip')?.remove();if(!window.IntegralERP.loadedAt)return;const chip=document.createElement('div');chip.className='erp-sync-chip';chip.innerHTML=`<span class="badge ${window.IntegralERP.error?'warn':'ok'}">ERP ${window.IntegralERP.error?'parcial':'sincronizado'}</span><span>${db.usersMvp?.length||0} usuários • ${db.erpPlans?.length||0} planos • ${db.erpProjects?.length||0} projetos</span>`;c.prepend(chip);}
   const oldApp=app;app=function(){oldApp();setTimeout(decorateERP,0)};
   users=function(){if(user?.role!=='Administrador')return budgets();title('Usuários do ERP');$('#content').innerHTML=`<div class="erp-sync-chip"><span class="badge ok">Login integrado</span><span>Usuários e senhas são os mesmos do ERP Integral. Os demais dados são atualizados somente pelo botão Sincronizar com ERP.</span></div><div class="table-wrap excel-wrap"><table class="table excel-table"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil/Setor</th><th>Status</th></tr></thead><tbody>${(db.usersMvp||[]).map(u=>`<tr><td><b>${esc(u.name)}</b></td><td>${esc(u.email||'')}</td><td>${esc(u.sector||'')}</td><td><span class="badge ok">Ativo</span></td></tr>`).join('')}</tbody></table></div>`;};
-  setTimeout(()=>login(),0);
+  /* Aguarda todos os scripts da página antes de restaurar a sessão (evita renderizar telas antigas). */
+  const bootLogin=()=>setTimeout(()=>login(),0);if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",bootLogin,{once:true});else bootLogin();
 })();
 
 ;
@@ -364,9 +374,12 @@ window.IntegralV6={real,dup};
     const profiles=window.IntegralERP?.profiles||[];
     const names=[...new Set(profiles.map(p=>p.tipo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
     if(!names.length)return;
-    db.sectors=names.map((name,i)=>({id:i+1,name,active:true,source:'ERP'}));
-    normalizeAssignments();
-    save();
+    /* Mescla com os setores já cadastrados: nunca remove setores criados no Financeiro. */
+    const current=Array.isArray(db.sectors)?db.sectors:(db.sectors=[]);
+    let changed=false,nextId=Math.max(0,...current.map(s=>Number(s.id)||0))+1;
+    for(const name of names){if(!current.some(s=>norm(s.name)===norm(name))){current.push({id:nextId++,name,active:true,source:'ERP'});changed=true}}
+    if(normalizeAssignments())changed=true;
+    if(changed)save();
   }
 
   function sectorUserIds(sector){
@@ -374,12 +387,18 @@ window.IntegralV6={real,dup};
   }
 
   function normalizeAssignments(){
-    db.trips=(db.trips||[]).map(t=>({...t,assigned:Array.isArray(t.assigned)?t.assigned:[],sector:t.sector||''}));
-    db.budgetRecords=(db.budgetRecords||[]).map(b=>{
+    /* Ajusta os registros no lugar (sem recriar objetos), para não invalidar edições em modais abertos. */
+    let changed=false;
+    if(!Array.isArray(db.trips))db.trips=[];
+    for(const t of db.trips){if(!Array.isArray(t.assigned)){t.assigned=[];changed=true}if(t.sector==null){t.sector='';changed=true}}
+    if(!Array.isArray(db.budgetRecords))db.budgetRecords=[];
+    for(const b of db.budgetRecords){
       const direct=Array.isArray(b.assignedDirect)?b.assignedDirect:(Array.isArray(b.assigned)?b.assigned:[]);
       const effective=[...new Set([...direct,...sectorUserIds(b.sector)])];
-      return {...b,assignedDirect:direct,assigned:effective};
-    });
+      if(b.assignedDirect!==direct){b.assignedDirect=direct;changed=true}
+      if(JSON.stringify(b.assigned)!==JSON.stringify(effective)){b.assigned=effective;changed=true}
+    }
+    return changed;
   }
 
   function canAccessBudget(b){
@@ -481,7 +500,7 @@ window.IntegralV6={real,dup};
   const isAdm=()=>user?.role==='Administrador';
   const uid=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
   const monthOf=d=>String(d||'').slice(0,7);
-  const nowMonth=()=>new Date().toISOString().slice(0,7);
+  const nowMonth=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
   const monthLabel=m=>{if(!m)return'';const[y,n]=m.split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
   const currentLocalUser=()=> (db.usersMvp||[]).find(u=>u.erpId===user?.erpId||norm(u.email)===norm(user?.email)||u.name===user?.name);
   const sameSector=(a,b)=>!!norm(a)&&norm(a)===norm(b);
@@ -696,7 +715,7 @@ Document.prototype.addEventListener=function(type,listener,options){
 const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 const uid=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
 const monthOf=d=>String(d||'').slice(0,7);
-const todayISO=()=>new Date().toISOString().slice(0,10);
+const todayISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const nowMonth=()=>todayISO().slice(0,7);
 const monthLabel=m=>{if(!m)return'';const[y,n]=m.split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
 const addMonths=(date,n)=>{const d=new Date((date||todayISO())+'T12:00:00');d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,10)};
@@ -774,6 +793,12 @@ function employeeMonthlyCost(p,m){
 function hrMonthDetail(m){const people=(db.hrPeople||[]).filter(p=>employeeMonthlyCost(p,m)>0),total=people.reduce((s,p)=>s+employeeMonthlyCost(p,m),0),paid=(db.hrPayments||[]).filter(x=>x.month===m&&x.status==='Pago');v2modal(`RH • ${monthLabel(m)}`,`<div class="modal-body"><div class="grid cols-2 compact-metrics"><div class="card metric mini"><h3>Previsto</h3><b>${moneySafe(total)}</b></div><div class="card metric mini"><h3>Quitações registradas</h3><b>${paid.length}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Colaborador</th><th>Valor vigente</th><th>Status do mês</th></tr></thead><tbody>${people.map(p=>{const q=(db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===m);return`<tr><td><b>${esc(p.name)}</b></td><td>${moneySafe(employeeMonthlyCost(p,m))}</td><td>${q?.status==='Pago'?badgeStatus('Pago'):'Previsto'}</td></tr>`}).join('')||'<tr><td colspan="3">Nenhum colaborador vigente.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`)}
 function employeeForm(id){
   const p=(db.hrPeople||[]).find(x=>String(x.id)===String(id));const x=v2modal(p?'Editar colaborador':'Cadastrar colaborador',`<form id="v10Employee"><div class="modal-body"><div class="form-section"><h4>Dados do contrato</h4><div class="form-grid"><div class="field full"><label>Nome do colaborador</label><input name="name" value="${esc(p?.name||'')}" required></div><div class="field"><label>Início do contrato</label><input name="start" type="date" value="${p?.start||todayISO()}" required></div><div class="field"><label>Fim do contrato</label><input name="end" type="date" value="${p?.end||''}"></div><div class="field"><label>Valor mensal atual</label><input name="value" type="number" step="0.01" value="${p?.currentValue||p?.value||''}" required></div><div class="field"><label>Contrato / arquivo</label><input id="v10EmpFile" type="file"></div></div></div><div class="notice">Ao alterar o valor mensal, o sistema registra a mudança no histórico para calcular os meses futuros corretamente.</div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);x.querySelector('#v10Employee').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),newVal=+f.get('value')||0,oldVal=+(p?.currentValue??p?.value??0),files=[...(p?.files||[])],file=x.querySelector('#v10EmpFile').files[0];if(file)files.push(fmeta(file));const history=[...(p?.history||[])];if(!p||newVal!==oldVal)history.push({date:todayISO(),value:newVal,by:user?.name||''});const o={id:p?.id||uid(),name:f.get('name').trim(),start:f.get('start'),end:f.get('end'),currentValue:newVal,files,history};p?Object.assign(p,o):db.hrPeople.push(o);save();x.remove();hr()};}
+/* ATENÇÃO (27/09/2026): esta atribuição lança "ReferenceError: hr is not defined" e interrompe o restante
+   deste arquivo. Assim, as seções V11 a V20 abaixo NÃO são executadas em produção; as telas atuais vêm dos
+   arquivos avulsos carregados depois no index.html. Não corrija esta linha sem revisar tudo que voltaria a rodar:
+   a V19, por exemplo, recarregaria Contas das tabelas financeiro_contas/financeiro_pagamentos e poderia
+   sobrescrever os dados atuais. As funcionalidades úteis dessas seções foram trazidas, como incrementos
+   que não alteram o que existe, para public/financeiro-incrementos.js. */
 hr=function(){
   if(!isAdm()){view='budgets';return app()};title('RH');const months=Array.from({length:6},(_,i)=>monthOf(addMonths(nowMonth()+'-01',i))),cur=nowMonth();
   $('#content').innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Selecione um mês para conferir o gasto previsto de pessoal.</div></div><button class="btn" id="v10NewEmployee">+ Cadastrar colaborador</button></div><div class="hr-month-strip">${months.map(m=>{const total=(db.hrPeople||[]).reduce((s,p)=>s+employeeMonthlyCost(p,m),0);return`<button class="card hr-month-card" data-v10-hr-month="${m}"><span>${monthLabel(m)}</span><b>${moneySafe(total)}</b><small>Previsto</small></button>`}).join('')}</div><h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-v10-employee="${p.id}"><div><h3>${esc(p.name)}</h3><span class="badge">${p.end&&p.end<todayISO()?'Encerrado':'Vigente'}</span></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${moneySafe(p.currentValue||p.value)}</b></span><span><small>Contratos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div><h3 class="section-title">Folha do mês vigente</h3><div class="table-wrap"><table class="table"><thead><tr><th>Colaborador</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${(db.hrPeople||[]).filter(p=>employeeMonthlyCost(p,cur)>0).map(p=>{let q=(db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===cur);return`<tr><td><b>${esc(p.name)}</b></td><td>${moneySafe(employeeMonthlyCost(p,cur))}</td><td>${q?.status==='Pago'?badgeStatus('Pago'):'Pendente'}</td><td>${q?.status==='Pago'?'Quitado':`<button class="btn small" data-v10-pay-salary="${p.id}">Marcar pago</button>`}</td></tr>`}).join('')||'<tr><td colspan="4">Sem contratos vigentes neste mês.</td></tr>'}</tbody></table></div>`;
@@ -813,7 +838,7 @@ accounts=function(){if(!isAdm())return documents();title('Contas');const mode=v2
 (function(){
 'use strict';
 const monthOf=d=>String(d||'').slice(0,7);
-const todayISO=()=>new Date().toISOString().slice(0,10);
+const todayISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const moneySafe=v=>money(Number(v||0));
 const dateObj=v=>v?new Date(`${String(v).slice(0,10)}T12:00:00`):null;
 const daysFromToday=v=>{const d=dateObj(v);if(!d)return null;const t=dateObj(todayISO());return Math.ceil((d-t)/86400000)};
@@ -874,7 +899,7 @@ async function renderDashboardV11(){
 dashboard=function(){renderDashboardV11().catch(e=>{console.error(e);title('Visão Geral');$('#content').innerHTML=`<div class="notice danger">Não foi possível montar a Visão Geral: ${esc(e.message||String(e))}</div>`})};
 
 // Reforça no Planejamento as parcelas do ERP recebidas na tabela pagamentos.
-window.addEventListener('integral:erp-planning-synced',()=>{if(view==='dashboard')renderDashboardV11();});
+/* O painel canônico já se redesenha neste evento; chamar o V11 aqui sincronizava o ERP em loop. */
 
 // Garante que a tela do usuário enviado como exemplo apareça assim que o Supabase retornar os dados.
 setTimeout(()=>{if(view==='dashboard')dashboard()},700);
@@ -921,7 +946,7 @@ window.addEventListener('integral:erp-planning-synced',()=>{if(view==='planning'
 (function(){
 'use strict';
 const uid13=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
-const today13=()=>new Date().toISOString().slice(0,10);
+const today13=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const month13=d=>String(d||'').slice(0,7);
 const addMonths13=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const label13=m=>{const [y,n]=String(m).split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
@@ -998,7 +1023,7 @@ window.hr=hr=function(){
 (function(){
 'use strict';
 const monthOf=d=>String(d||'').slice(0,7);
-const nowMonth=()=>new Date().toISOString().slice(0,7);
+const nowMonth=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
 const safe=s=>String(s||'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
 const csvCell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
 const downloadBlob=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800)};
@@ -1061,7 +1086,16 @@ function installCashExports(){
 function installDocumentExports(){
   const old=window.documents;if(typeof old!=='function'||old.__v14)return;const wrapped=function(){const out=old.apply(this,arguments);setTimeout(()=>{const toolbar=document.querySelector('#content .toolbar');if(!toolbar)return;const upload=document.querySelector('#v10UploadDoc');if(upload)upload.onclick=uploadFiscalDocument;if(!document.querySelector('#v14DocsZip')){const b=document.createElement('button');b.id='v14DocsZip';b.className='btn ghost';b.textContent='Exportar mês em ZIP';b.onclick=()=>exportFiscalZip(v2state?.docsMonth||nowMonth(),b);toolbar.appendChild(b)}},0);return out};wrapped.__v14=true;window.documents=wrapped;documents=wrapped;
 }
-setTimeout(()=>{installCashExports();installDocumentExports();if(view==='cashflow')cashflow();if(view==='documents')documents();},300);
+/* Botões de exportação do Fluxo de Caixa: acrescentados sempre que a tela aparece, usando o mês selecionado nela.
+   (Antes eram instalados por um temporizador e sumiam quando o editor canônico redesenhava a tela.) */
+function ensureCashExportButtons(){
+  if((document.querySelector('#title')?.textContent||'').trim()!=='Fluxo de Caixa')return;
+  const toolbar=document.querySelector('#content .toolbar');if(!toolbar||document.querySelector('#v14CashCsv'))return;
+  const month=()=>document.querySelector('#cashEditMonth')?.value||v2state?.cashMonth||nowMonth();
+  const box=document.createElement('div');box.className='right export-actions';box.innerHTML='<button class="btn ghost" id="v14CashCsv">Exportar CSV</button><button class="btn ghost" id="v14CashPdf">Exportar PDF</button>';
+  toolbar.appendChild(box);box.querySelector('#v14CashCsv').onclick=()=>exportCashCsv(month());box.querySelector('#v14CashPdf').onclick=()=>exportCashPdf(month());
+}
+new MutationObserver(ensureCashExportButtons).observe(document.documentElement,{childList:true,subtree:true});
 })();
 
 ;
@@ -1164,8 +1198,8 @@ planning=function(){const r=oldPlanningStable();setTimeout(wireERPSourceRows,0);
 (function(){
 'use strict';
 const $q=q=>document.querySelector(q), $$q=q=>[...document.querySelectorAll(q)];
-const uid=()=>Date.now()+Math.floor(Math.random()*9999);
-const today=()=>new Date().toISOString().slice(0,10);
+const uid=()=>window.integralUid?window.integralUid():Date.now()+Math.floor(Math.random()*9999);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const currentMonth=()=>today().slice(0,7);
 const addMonth=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const monthLabel=m=>{const[y,n]=String(m).split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
@@ -1243,7 +1277,7 @@ render=function(){if(view==='hr')return hr();return previousRender17();};
 'use strict';
 
 const qs=(s)=>document.querySelector(s), qsa=(s)=>Array.from(document.querySelectorAll(s));
-const now=()=>new Date().toISOString().slice(0,10);
+const now=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const currentMonth=()=>now().slice(0,7);
 const addMonth=(m,n)=>{const d=new Date(m+'-01T12:00:00');d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const monthLabel=(m)=>{const parts=String(m).split('-');return new Date(Number(parts[0]),Number(parts[1])-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
@@ -1298,7 +1332,7 @@ function installTripReportButton(){
   let right=toolbar.querySelector('.right');
   if(!right){right=document.createElement('div');right.className='right';toolbar.appendChild(right);}
   const btn=document.createElement('button');btn.id='tripReport18';btn.className='btn ghost';btn.type='button';btn.textContent='Relatório de Viagens';
-  btn.onclick=()=>{const tripsList=db.trips||[];const declared=tripsList.reduce((s,t)=>s+Number(t.declared||0),0);const proven=tripsList.reduce((s,t)=>s+Number(t.proven||t.spent||0),0);v2modal('Relatório de Viagens',`<div class="modal-body"><div class="grid cols-3"><div class="card metric"><h3>Viagens</h3><b>${tripsList.length}</b></div><div class="card metric"><h3>Declarado</h3><b>${money18(declared)}</b></div><div class="card metric"><h3>Comprovado</h3><b>${money18(proven)}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Projeto</th><th>Declarado</th><th>Comprovado</th><th>Status</th></tr></thead><tbody>${tripsList.map(t=>`<tr><td><b>${esc(t.city||t.destination||'—')}</b></td><td>${esc(t.period||'—')}</td><td>${esc(t.employee||t.team||'—')}</td><td>${esc(t.project||'—')}</td><td>${money18(t.declared)}</td><td>${money18(t.proven||t.spent)}</td><td>${esc(t.status||'—')}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma viagem registrada.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);};
+  btn.onclick=()=>{/* Só as viagens que o usuário pode ver */const canSee=t=>user?.role==='Administrador'||(typeof window.IntegralTripVisible==='function'?window.IntegralTripVisible(t):false);const tripsList=(db.trips||[]).filter(canSee);const declared=tripsList.reduce((s,t)=>s+Number(t.declared||0),0);const proven=tripsList.reduce((s,t)=>s+Number(t.proven||t.spent||0),0);v2modal('Relatório de Viagens',`<div class="modal-body"><div class="grid cols-3"><div class="card metric"><h3>Viagens</h3><b>${tripsList.length}</b></div><div class="card metric"><h3>Declarado</h3><b>${money18(declared)}</b></div><div class="card metric"><h3>Comprovado</h3><b>${money18(proven)}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Projeto</th><th>Declarado</th><th>Comprovado</th><th>Status</th></tr></thead><tbody>${tripsList.map(t=>`<tr><td><b>${esc(t.city||t.destination||'—')}</b></td><td>${esc(t.period||'—')}</td><td>${esc(t.employee||t.team||'—')}</td><td>${esc(t.project||'—')}</td><td>${money18(t.declared)}</td><td>${money18(t.proven||t.spent)}</td><td>${esc(t.status||'—')}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma viagem registrada.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);};
   right.prepend(btn);
 }
 
@@ -1471,7 +1505,7 @@ window.IntegralFinanceCloud={load,push,get ready(){return ready;}};
 
 const q=(s)=>document.querySelector(s);
 const qa=(s)=>Array.from(document.querySelectorAll(s));
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const monthNow=()=>today().slice(0,7);
 const addMonth=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const monthLabel=(m)=>{const [y,mm]=String(m).split('-');return new Date(Number(y),Number(mm)-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};

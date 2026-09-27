@@ -63,7 +63,7 @@ async function renderDashboardV11(){
 dashboard=function(){renderDashboardV11().catch(e=>{console.error(e);title('Visão Geral');$('#content').innerHTML=`<div class="notice danger">Não foi possível montar a Visão Geral: ${esc(e.message||String(e))}</div>`})};
 
 // Reforça no Planejamento as parcelas do ERP recebidas na tabela pagamentos.
-window.addEventListener('integral:erp-planning-synced',()=>{if(view==='dashboard')renderDashboardV11();});
+/* O painel canônico já se redesenha neste evento; chamar o V11 aqui sincronizava o ERP em loop. */
 
 // Garante que a tela do usuário enviado como exemplo apareça assim que o Supabase retornar os dados.
 setTimeout(()=>{if(view==='dashboard')dashboard()},700);

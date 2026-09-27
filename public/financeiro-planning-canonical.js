@@ -5,7 +5,7 @@ const q=s=>document.querySelector(s),qa=s=>[...document.querySelectorAll(s)];
 const E=v=>typeof esc==='function'?esc(String(v??'')):String(v??'');
 const M=v=>typeof moneySafe==='function'?moneySafe(v):(typeof money==='function'?money(v):Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}));
 const F=d=>{if(!d)return'—';try{return typeof fmt==='function'?fmt(d):new Date(d+'T12:00:00').toLocaleDateString('pt-BR')}catch{return d}};
-const monthOf=v=>String(v||'').slice(0,7),today=()=>new Date().toISOString().slice(0,10),uid=()=>Date.now()+Math.floor(Math.random()*1000000);
+const monthOf=v=>String(v||'').slice(0,7),today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),uid=()=>window.integralUid?window.integralUid():Date.now()+Math.floor(Math.random()*1000000);
 const addMonths=(date,n)=>{const d=new Date(date+'T12:00:00');d.setDate(1);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,10)};
 const label=m=>{if(typeof monthLabel==='function')return monthLabel(m);const[y,mo]=String(m).split('-');return new Date(+y,+mo-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,x=>x.toUpperCase())};
 function D(){try{return db}catch{return window.db||{}}}function persist(){if(typeof save==='function')save()}

@@ -3,7 +3,7 @@
 'use strict';
 const $q=q=>document.querySelector(q), $$q=q=>[...document.querySelectorAll(q)];
 const uid=()=>Date.now()+Math.floor(Math.random()*9999);
-const today=()=>new Date().toISOString().slice(0,10);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const currentMonth=()=>today().slice(0,7);
 const addMonth=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const monthLabel=m=>{const[y,n]=String(m).split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};

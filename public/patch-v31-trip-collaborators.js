@@ -4,7 +4,7 @@
 const q=(s,r=document)=>r.querySelector(s), qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 const E=v=>typeof esc==='function'?esc(String(v??'')):String(v??'');
 const F=d=>{if(!d)return'—';try{return typeof fmt==='function'?fmt(d):new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}catch{return d}};
-const uid=()=>Date.now()+Math.floor(Math.random()*100000);
+const uid=()=>window.integralUid?window.integralUid():Date.now()+Math.floor(Math.random()*100000);
 const isAdm=()=>{try{return user?.role==='Administrador'}catch{return false}};
 const currentLocalUser=()=>{try{return (db.usersMvp||[]).find(u=>u.erpId===user?.erpId||String(u.email||'').toLowerCase()===String(user?.email||'').toLowerCase()||u.name===user?.name)||null}catch{return null}};
 const tripById=id=>(db.trips||[]).find(t=>String(t.id)===String(id));
@@ -32,7 +32,7 @@ function enhance(){
     }
   }
   if(/^Viagem\s*•/.test(titleText)){
-    const right=q('.toolbar .right',content);if(right&&!q('#trip31Edit',right)){const b=document.createElement('button');b.className='btn ghost';b.id='trip31Edit';b.textContent='Editar viagem';const current=(db.trips||[]).find(t=>String(t.city||'')===titleText.replace(/^Viagem\s*•\s*/,''));b.onclick=()=>current&&modalTrip(current.id);right.insertBefore(b,right.firstChild);}
+    const right=q('.toolbar .right',content);if(right&&!q('#trip31Edit',right)&&!q('#trip26Edit',right)){const b=document.createElement('button');b.className='btn ghost';b.id='trip31Edit';b.textContent='Editar viagem';const current=(db.trips||[]).find(t=>String(t.id)===String(window.IntegralSelectedTripId))||(db.trips||[]).find(t=>String(t.city||'')===titleText.replace(/^Viagem\s*•\s*/,''));b.onclick=()=>current&&modalTrip(current.id);right.insertBefore(b,right.firstChild);}
   }
 }
 const obs=new MutationObserver(()=>setTimeout(enhance,0));

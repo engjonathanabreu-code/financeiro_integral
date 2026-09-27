@@ -111,6 +111,8 @@ function installRouter(){
   if(window.__financeiroErpProjectsRouter)return;window.__financeiroErpProjectsRouter=true;installNav();
   const baseRender=render;render=function(){const v=currentView();if(v===V_CLIENTS){renderClients();load();return}if(v===V_PROJECTS){renderProjects();load();return}return baseRender()};
   const baseApp=app;app=function(){installNav();baseApp()};
+  /* Menu montado antes deste módulo: remonta uma vez para incluir Clientes Institucionais e Projetos. */
+  try{if(typeof user!=='undefined'&&user&&user.role==='Administrador'&&document.querySelector('.shell .nav')&&!document.querySelector('.nav [data-view="'+V_PROJECTS+'"]'))app()}catch(e){console.warn('Integração ERP: não foi possível atualizar o menu',e)}
 }
 function installRealtime(){const c=sb();if(!c||realtime)return;realtime=c.channel('financeiro-erp-projects-live');for(const table of ['clientes','projetos','etapas_projeto','pagamentos','documentos','planos_trabalho'])realtime.on('postgres_changes',{event:'*',schema:'public',table},()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>load(true),180)});realtime.subscribe()}
 function boot(){

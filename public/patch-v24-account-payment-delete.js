@@ -40,7 +40,14 @@
     action.setAttribute('aria-label','Excluir somente este pagamento');
     action.textContent='Excluir';
 
-    const remove=e=>{
+    /* Remove também a linha na tabela financeiro_pagamentos; sem isso o pagamento voltava na próxima carga. */
+    async function deleteCloudPayment(paymentId){
+      const sb=window.IntegralERP?.sb;if(!sb)return;
+      const r=await sb.from('financeiro_pagamentos').delete().eq('id',String(paymentId));
+      if(r.error&&!/does not exist|relation|schema cache/i.test(r.error.message||''))throw r.error;
+    }
+
+    const remove=async e=>{
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation?.();
@@ -50,6 +57,7 @@
       if(!payment) return;
       if(!confirm('Excluir somente esta linha de pagamento? A conta cadastrada e os demais pagamentos serão mantidos.')) return;
       const accountId=payment.accountId;
+      try{await deleteCloudPayment(id)}catch(err){console.error('Falha ao excluir pagamento no Supabase:',err);alert('Não foi possível excluir o pagamento: '+(err?.message||err));return}
       d.accountPayments=(d.accountPayments||[]).filter(p=>String(p.id)!==String(id));
       persist();
       const modal=row.closest('.modal-backdrop');

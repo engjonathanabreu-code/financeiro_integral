@@ -52,7 +52,7 @@
 
   function decorateModal(accountId){
     if(accountId===undefined||accountId===null) return;
-    requestAnimationFrame(()=>{
+    setTimeout(()=>{
       const modals=[...document.querySelectorAll('.modal-backdrop')];
       const backdrop=modals.at(-1);
       if(!backdrop) return;
@@ -68,7 +68,7 @@
       del.style.marginRight='auto';
       del.addEventListener('click',()=>removeAccount(accountId,backdrop,del));
       if(saveButton) foot.insertBefore(del,saveButton); else foot.prepend(del);
-    });
+    },0);
   }
 
   const wrapped=function(id){

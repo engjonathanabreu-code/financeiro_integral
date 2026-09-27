@@ -12,6 +12,11 @@ async function sync(){try{await window.IntegralFinanceCloudStorage?.syncNow?.()}
 function candidates(){const d=data();return (d?.cashflow||[]).slice(-200).map(x=>({id:String(x.id||''),date:x.date||'',description:x.description||'',value:Number(x.value||0),source:x.source||''}))}
 function modal(title,body){const x=document.createElement('div');x.className='modal-backdrop';x.innerHTML=`<section class="modal"><div class="modal-head"><h3>${esc(title)}</h3><button class="btn ghost small" data-x>Fechar</button></div>${body}</section>`;document.body.append(x);q('[data-x]',x).onclick=()=>x.remove();return x}
 function getDocByName(name){const d=data();return (d?.docs||[]).find(x=>String(x.name||'').trim()===String(name||'').trim())}
+const squash=v=>String(v??'').replace(/s+/g,' ').trim().toLowerCase();
+const brDate=v=>v?new Date(v+'T12:00:00').toLocaleDateString('pt-BR'):'';
+const brMoney=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+function getDocForRow(tr,name,taken){const d=data();const all=(d?.docs||[]).filter(x=>String(x.name||'').trim()===String(name||'').trim()&&!taken.has(x));if(all.length<=1)return all[0];const text=squash(tr.textContent);const exact=all.filter(x=>(!x.supplier||text.includes(squash(x.supplier)))&&(!x.date||text.includes(squash(brDate(x.date))))&&text.includes(squash(brMoney(x.value))));return (exact.length?exact:all)[0]}
+function linkedCash(doc){const d=data();return (d?.cashflow||[]).filter(c=>doc.id!=null&&String(c.documentId)===String(doc.id))}
 async function reviewDoc(doc,button){
  if(!doc)return;
  if(!doc.dataUrl)return alert('O arquivo original deste documento não está disponível para uma nova leitura da IA. Você ainda pode editar os dados manualmente.');
@@ -31,7 +36,7 @@ function editDoc(doc){
  const types=['Nota Fiscal','Cupom','Comprovante','Outros'], sectors=['Administrativo','Projetos','Topografia','Comercial','Financeiro','Atendimento','Pós-Protocolo'];
  const x=modal('Editar documento fiscal',`<form id="fiscalEdit"><div class="modal-body"><div class="form-grid"><div class="field full"><label>Documento</label><input name="name" value="${esc(doc.name||'')}" required></div><div class="field"><label>Tipo</label><select name="type">${types.map(v=>`<option ${v===doc.type?'selected':''}>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Fornecedor</label><input name="supplier" value="${esc(doc.supplier||'')}"></div><div class="field"><label>Data</label><input name="date" type="date" value="${esc(doc.date||'')}"></div><div class="field"><label>Categoria / natureza</label><input name="cat" value="${esc(doc.cat||'')}"></div><div class="field"><label>Setor</label><select name="sector">${[...new Set([doc.sector,...sectors].filter(Boolean))].map(v=>`<option ${v===doc.sector?'selected':''}>${esc(v)}</option>`).join('')}</select></div><div class="field"><label>Valor</label><input name="value" type="number" step="0.01" min="0" value="${Number(doc.value||0)}"></div><div class="field"><label>Status</label><select name="status">${['Confirmado','Revisar IA'].map(v=>`<option ${v===doc.status?'selected':''}>${v}</option>`).join('')}</select></div></div></div><div class="modal-foot"><button type="button" class="btn ghost" id="reviewInside">Revisar com IA</button><button class="btn">Salvar alterações</button></div></form>`);
  const f=q('#fiscalEdit',x);q('#reviewInside',x).onclick=async e=>{x.remove();await reviewDoc(doc,e.currentTarget)};
- f.onsubmit=async e=>{e.preventDefault();const o=Object.fromEntries(new FormData(f));Object.assign(doc,o,{value:Number(o.value||0),manualEditedAt:new Date().toISOString()});persist();await sync();x.remove();redraw()};
+ f.onsubmit=async e=>{e.preventDefault();const o=Object.fromEntries(new FormData(f));Object.assign(doc,o,{value:Number(o.value||0),manualEditedAt:new Date().toISOString()});for(const c of linkedCash(doc)){c.value=doc.value;if(doc.date)c.date=doc.date}persist();await sync();x.remove();redraw()};
 }
 async function deleteDoc(doc,button){
  if(!doc)return;
@@ -40,9 +45,15 @@ async function deleteDoc(doc,button){
  const d=data();if(!d||!Array.isArray(d.docs))return alert('Não foi possível localizar a base de documentos fiscais.');
  const index=d.docs.indexOf(doc);
  if(index<0)return alert('Este documento não foi localizado para exclusão.');
+ const links=linkedCash(doc);
+ const removeLinks=links.length?confirm(`Este documento gerou ${links.length} lançamento(s) de saída no Fluxo de Caixa.
+
+OK: remover também do Fluxo de Caixa.
+Cancelar: manter o lançamento no Fluxo de Caixa.`):false;
  const old=button?.textContent||'×';if(button){button.disabled=true;button.textContent='…'}
  try{
   d.docs.splice(index,1);
+  if(removeLinks&&Array.isArray(d.cashflow)){const ids=new Set(links);d.cashflow=d.cashflow.filter(c=>!ids.has(c))}
   persist();
   await sync();
   redraw();
@@ -58,9 +69,10 @@ function decorate(){
  if((q('#title')?.textContent||'').trim()!=='Documentos Fiscais')return;
  const table=qa('#content table').find(t=>/DOCUMENTO/i.test(q('thead',t)?.textContent||'')&&/FORNECEDOR/i.test(q('thead',t)?.textContent||''));if(!table)return;
  const hr=q('thead tr',table);if(hr&&!q('[data-fiscal-actions-head]',hr)){const th=document.createElement('th');th.dataset.fiscalActionsHead='1';th.textContent='Ações';hr.append(th)}
+ const taken=new Set(qa('tbody tr',table).map(tr=>tr.__fiscalDoc).filter(Boolean));
  qa('tbody tr',table).forEach(tr=>{
-  if(q('[data-fiscal-actions]',tr))return;const name=(q('td b',tr)?.textContent||q('td',tr)?.textContent||'').trim(),doc=getDocByName(name);if(!doc)return;
-  const td=document.createElement('td');td.dataset.fiscalActions='1';td.className='actions';td.style.whiteSpace='nowrap';td.innerHTML=`<button class="btn small ghost" data-ai>Revisar IA</button> <button class="btn small ghost" data-edit>Editar</button> <button type="button" data-delete title="Excluir documento" aria-label="Excluir documento" style="border:0;background:transparent;color:#dc2626;font-size:18px;font-weight:800;line-height:1;padding:2px 5px;cursor:pointer;vertical-align:middle">×</button>`;tr.append(td);
+  if(q('[data-fiscal-actions]',tr))return;const name=(q('td b',tr)?.textContent||q('td',tr)?.textContent||'').trim(),doc=getDocForRow(tr,name,taken);if(!doc)return;taken.add(doc);
+  const td=document.createElement('td');td.dataset.fiscalActions='1';td.className='actions';td.style.whiteSpace='nowrap';td.innerHTML=`<button class="btn small ghost" data-ai>Revisar IA</button> <button class="btn small ghost" data-edit>Editar</button> <button type="button" class="btn small danger" data-delete title="Excluir documento" aria-label="Excluir documento">Excluir</button>`;tr.append(td);tr.__fiscalDoc=doc;
   q('[data-ai]',td).onclick=e=>reviewDoc(doc,e.currentTarget);q('[data-edit]',td).onclick=()=>editDoc(doc);q('[data-delete]',td).onclick=e=>deleteDoc(doc,e.currentTarget);
   const badge=qa('.badge',tr).find(b=>/Revisar IA/i.test(b.textContent||''));if(badge){badge.style.cursor='pointer';badge.title='Clique para pedir uma nova revisão da IA';badge.onclick=()=>reviewDoc(doc,badge)}
  });

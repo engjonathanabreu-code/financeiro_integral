@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const uid13=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
-const today13=()=>new Date().toISOString().slice(0,10);
+const today13=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
 const month13=d=>String(d||'').slice(0,7);
 const addMonths13=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
 const label13=m=>{const [y,n]=String(m).split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};

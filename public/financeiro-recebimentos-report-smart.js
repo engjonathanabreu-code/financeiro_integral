@@ -116,26 +116,37 @@ async function run(){const file=document.querySelector('#smartPayFile')?.files?.
    entries=j.entries||[];
   }
  }
- const [cr,pr]=await Promise.all([window.IntegralReceivables.allRows('fin_receb_clientes','id').then(data=>({data})),window.IntegralReceivables.allRows('fin_receb_parcelas','id').then(data=>({data}))]);if(cr.error)throw cr.error;if(pr.error)throw pr.error;const clients=cr.data||[],parcels=pr.data||[];let ok=0,pending=0,adjusted=0,future=0,retroCreated=0;const misses=[],used=new Set(),currentMonth=new Date().toISOString().slice(0,7);
- const eligible=z=>z&&!used.has(z.id);
- const byClientDue=(clientId,due,nom)=>parcels.find(z=>eligible(z)&&z.cliente_id===clientId&&(!due||z.vencimento===due)&&(!nom||Math.abs(Number(z.valor_previsto||0)-nom)<0.03))||parcels.find(z=>eligible(z)&&z.cliente_id===clientId&&(!due||z.vencimento===due));
+ const [cr,pr]=await Promise.all([window.IntegralReceivables.allRows('fin_receb_clientes','id').then(data=>({data})),window.IntegralReceivables.allRows('fin_receb_parcelas','id').then(data=>({data}))]);if(cr.error)throw cr.error;if(pr.error)throw pr.error;const clients=cr.data||[],parcels=pr.data||[];let ok=0,pending=0,already=0,future=0,retroCreated=0;const misses=[],used=new Set(),currentMonth=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
+ const safe=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+ /* Só parcelas ativas e ainda não quitadas podem ser marcadas; reimportar o mesmo relatório não altera o que já foi pago. */
+ const eligible=z=>z&&!used.has(z.id)&&z.ativo!==false&&z.status!=='Cancelado'&&z.status!=='Pago';
+ const paidAlready=z=>z&&!used.has(z.id)&&z.ativo!==false&&z.status==='Pago';
+ const sameValue=(z,nom)=>!nom||Math.abs(Number(z.valor_previsto||0)-nom)<0.03;
+ const pick=(pred,clientId,due,nom)=>{const own=parcels.filter(z=>pred(z)&&z.cliente_id===clientId);if(!due)return own.find(z=>sameValue(z,nom))||own[0];const m=due.slice(0,7);return own.find(z=>z.vencimento===due&&sameValue(z,nom))||own.find(z=>z.vencimento===due)||own.find(z=>String(z.vencimento||'').slice(0,7)===m&&sameValue(z,nom))||own.find(z=>String(z.vencimento||'').slice(0,7)===m)};
+ const byClientDue=(clientId,due,nom)=>pick(eligible,clientId,due,nom);
  for(const x of entries||[]){let p=null,c=null;const doc=norm(x.documento),nn=digits(x.nosso_numero),cpf=digits(x.cpf_cnpj),name=norm(x.pagador),due=String(x.vencimento||'').slice(0,10),nom=Number(x.valor_nominal||0),paid=Number(x.valor_liquidado||nom||0);
   if(nn)p=parcels.find(z=>eligible(z)&&digits(z.nosso_numero)===nn&&(!due||z.vencimento===due));
-  if(!p&&doc)p=parcels.find(z=>eligible(z)&&norm(z.documento)===doc&&(!due||z.vencimento===due));
-  if(!p&&doc){c=clients.find(z=>norm(z.codigo)===doc);if(c)p=byClientDue(c.id,due,nom);}
-  if(!p&&cpf){c=clients.find(z=>digits(z.cpf_cnpj)===cpf);if(c)p=byClientDue(c.id,due,nom);}
-  if(!p&&name){const exact=clients.filter(z=>norm(z.nome)===name);if(exact.length===1){c=exact[0];p=byClientDue(c.id,due,nom);}}
-  if(!p&&name){const near=clients.filter(z=>{const n=norm(z.nome);return n&&name&&(n.startsWith(name)||name.startsWith(n))});if(near.length===1){c=near[0];p=byClientDue(c.id,due,nom);}}
-  if(!p&&name&&due){
+  if(!p&&doc)p=parcels.find(z=>eligible(z)&&z.documento&&norm(z.documento)===doc&&(!due||z.vencimento===due));
+  if(!p&&doc){c=clients.find(z=>z.codigo&&norm(z.codigo)===doc);if(c)p=byClientDue(c.id,due,nom);}
+  if(!p&&cpf){c=clients.find(z=>digits(z.cpf_cnpj)===cpf)||c;if(c)p=byClientDue(c.id,due,nom);}
+  if(!p&&name&&!c){const exact=clients.filter(z=>norm(z.nome)===name);if(exact.length===1){c=exact[0];p=byClientDue(c.id,due,nom);}}
+  if(!p&&name&&!c){const near=clients.filter(z=>{const n=norm(z.nome);return n&&name&&(n.startsWith(name)||name.startsWith(n))});if(near.length===1){c=near[0];p=byClientDue(c.id,due,nom);}}
+  if(!p&&name&&due&&!c){
    const dueCandidates=parcels.filter(z=>eligible(z)&&z.vencimento===due);
    let byName=dueCandidates.filter(z=>{const cli=clients.find(cc=>cc.id===z.cliente_id);const n=norm(cli?.nome);return n&&(n.startsWith(name)||name.startsWith(n))});
    if(byName.length>1&&nom){const tight=byName.filter(z=>Math.abs(Number(z.valor_previsto||0)-nom)<0.03);if(tight.length)byName=tight;}
    if(byName.length===1){p=byName[0];c=clients.find(cc=>cc.id===p.cliente_id);}
   }
-  if(p){const diff=paid-nom,upd={status:'Pago',pago_em:x.pagamento||null,valor_liquidado:paid,diferenca:diff,nosso_numero:p.nosso_numero||x.nosso_numero||null,documento:p.documento||x.documento||null};upd.diferenca=paid-Number(p.valor_previsto||0)-Number(p.juros||0)-Number(p.multa||0);const ur=await sb.from('fin_receb_parcelas').update(upd).eq('id',p.id).eq('versao',p.versao).select('id').single();if(ur.error){pending++;misses.push(x.pagador||x.documento||'registro')}else{used.add(p.id);ok++;if(due&&due.slice(0,7)>currentMonth)future++;}
-  }else{const retroDate=due||String(x.pagamento||'').slice(0,10),isPast=retroDate&&retroDate.slice(0,7)<currentMonth;if(c&&isPast&&paid>0){const clientParcels=parcels.filter(z=>z.cliente_id===c.id),numero=Math.max(0,...clientParcels.map(z=>Number(z.numero||0)))+1,row={id:crypto.randomUUID(),cliente_id:c.id,numero,vencimento:retroDate,status:'Pago',valor_previsto:paid,pago_em:x.pagamento||retroDate,valor_liquidado:paid,diferenca:0,nosso_numero:x.nosso_numero||null,documento:x.documento||null};const ins=await sb.from('fin_receb_parcelas').insert(row).select().single();if(ins.error){pending++;misses.push(x.pagador||x.documento||'registro')}else{parcels.push(ins.data);used.add(ins.data.id);ok++;retroCreated++;}}else{pending++;misses.push(x.pagador||x.documento||'registro')}}
+  if(!p){
+   /* Pagamento já registrado antes (reimportação): conta como conciliado e não cria parcela nova. */
+   const done=(nn&&parcels.find(z=>paidAlready(z)&&digits(z.nosso_numero)===nn))||(c&&pick(paidAlready,c.id,due,nom));
+   if(done){used.add(done.id);already++;continue}
+  }
+  if(p){const upd={status:'Pago',pago_em:x.pagamento||null,valor_liquidado:paid,nosso_numero:p.nosso_numero||x.nosso_numero||null,documento:p.documento||x.documento||null};upd.diferenca=paid-Number(p.valor_previsto||0)-Number(p.juros||0)-Number(p.multa||0);let q=sb.from('fin_receb_parcelas').update(upd).eq('id',p.id);if(p.versao!=null)q=q.eq('versao',p.versao);const ur=await q.select('id').single();if(ur.error){pending++;misses.push(x.pagador||x.documento||'registro')}else{used.add(p.id);p.status='Pago';ok++;if(due&&due.slice(0,7)>currentMonth)future++;}
+  }else{const retroDate=due||String(x.pagamento||'').slice(0,10),isPast=retroDate&&retroDate.slice(0,7)<currentMonth,sameMonthExists=c&&parcels.some(z=>z.cliente_id===c.id&&z.ativo!==false&&String(z.vencimento||'').slice(0,7)===String(retroDate).slice(0,7));if(c&&isPast&&paid>0&&!sameMonthExists){const clientParcels=parcels.filter(z=>z.cliente_id===c.id),numero=Math.max(0,...clientParcels.map(z=>Number(z.numero||0)))+1,row={id:crypto.randomUUID(),cliente_id:c.id,numero,vencimento:retroDate,status:'Pago',valor_previsto:paid,pago_em:x.pagamento||retroDate,valor_liquidado:paid,diferenca:0,nosso_numero:x.nosso_numero||null,documento:x.documento||null};const ins=await sb.from('fin_receb_parcelas').insert(row).select().single();if(ins.error){pending++;misses.push(x.pagador||x.documento||'registro')}else{parcels.push(ins.data);used.add(ins.data.id);ok++;retroCreated++;}}else{pending++;misses.push(x.pagador||x.documento||'registro')}}
  }
- status.innerHTML=`<div class="notice ok"><b>${ok}</b> parcela(s) marcada(s) como paga(s), sendo <b>${future}</b> de vencimentos futuros e <b>${retroCreated}</b> parcela(s) retroativa(s) criada(s). <b>${adjusted}</b> parcela(s) tiveram o valor recalibrado. <b>${pending}</b> ficaram pendentes para conferência.${misses.length?`<br><small>Não conciliados: ${misses.slice(0,8).join(', ')}${misses.length>8?'…':''}</small>`:''}</div>`;btn.disabled=false;
- }catch(e){status.innerHTML=`<div class="notice danger">${String(e.message||e)}</div>`;btn.disabled=false}}
+ status.innerHTML=`<div class="notice ok"><b>${ok}</b> parcela(s) marcada(s) como paga(s), sendo <b>${future}</b> de vencimentos futuros e <b>${retroCreated}</b> parcela(s) retroativa(s) criada(s). <b>${already}</b> já estavam pagas e foram mantidas. <b>${pending}</b> ficaram pendentes para conferência.${misses.length?`<br><small>Não conciliados: ${misses.slice(0,8).map(safe).join(', ')}${misses.length>8?'…':''}</small>`:''}</div>`;btn.disabled=false;
+ try{document.dispatchEvent(new CustomEvent('integral-receivables-changed'))}catch{}
+ }catch(e){status.innerHTML=`<div class="notice danger">${String(e.message||e).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}</div>`;btn.disabled=false}}
 document.addEventListener('click',e=>{const b=e.target.closest?.('#importReport');if(!b)return;e.preventDefault();e.stopImmediatePropagation();modal()},true);
 })();

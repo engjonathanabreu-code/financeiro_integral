@@ -104,18 +104,30 @@ async function initialize(){
   return initPromise;
 }
 
+let pushAgain=false,retryTimer=null;
 async function pushChanged(){
-  if(!initialized||pushing)return;const c=client(),s=await session(),d=state();if(!c||!s||!d)return;
-  pushing=true;
+  if(!initialized)return;
+  if(pushing){pushAgain=true;return}
+  const c=client(),s=await session(),d=state();if(!c||!s||!d)return;
+  pushing=true;pushAgain=false;
+  const pending={};
   try{
     const rows=[],now=new Date().toISOString();
     for(const [k,v] of Object.entries(d)){
       if(!validKey(k)||k==='invoiceRequests')continue;
       const j=json(v);if(snapshot[k]===j)continue;
-      rows.push({chave:k,dados:v,updated_by:s.user.id,updated_at:now});snapshot[k]=j;
+      rows.push({chave:k,dados:clone(v),updated_by:s.user.id,updated_at:now});pending[k]=j;
     }
     await upsertRows(rows);
-  }catch(e){console.error('Financeiro: falha ao salvar no Supabase',e)}finally{pushing=false}
+    /* Só marca como sincronizado depois que o Supabase confirmou a gravação. */
+    Object.assign(snapshot,pending);
+  }catch(e){
+    console.error('Financeiro: falha ao salvar no Supabase; nova tentativa em instantes',e);
+    clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(initialized)pushChanged()},5000);
+  }finally{
+    pushing=false;
+    if(pushAgain){pushAgain=false;schedulePush()}
+  }
 }
 function schedulePush(){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(initialized)pushChanged()},180)}
 
@@ -130,6 +142,7 @@ async function syncNow(){const ok=await initialize();if(!ok)return false;await p
 window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged};
 
 let attempts=0;const boot=setInterval(async()=>{attempts++;if(await initialize()||attempts>120)clearInterval(boot)},500);
-try{client()?.auth?.onAuthStateChange((_event,s)=>{if(s){initialized=false;initPromise=null;initialize()}else{initialized=false;initPromise=null}})}catch{}
+/* Renovar o token não recarrega os dados: recarregar substituía o db com modais abertos e descartava edições. */
+try{client()?.auth?.onAuthStateChange((event,s)=>{if(event==='SIGNED_OUT'||!s){initialized=false;initPromise=null;return}if(event==='SIGNED_IN'&&!initialized&&!initializing){initPromise=null;initialize()}})}catch{}
 window.addEventListener('beforeunload',()=>{try{cacheAll()}catch{}});
 })();

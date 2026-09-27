@@ -11,7 +11,7 @@
 
 const uid=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
 const monthOf=d=>String(d||'').slice(0,7);
-const nowMonth=()=>new Date().toISOString().slice(0,7);
+const nowMonth=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
 const isAdmin=()=>user?.role==='Administrador';
 const kinds=()=>{
   const list=(db.natures||[]).filter(n=>n.active!==false).map(n=>n.name).filter(Boolean);

@@ -90,11 +90,32 @@ async function showHistory(clientId){
   const r=await sb.from('fin_receb_parcelas').select('*').eq('cliente_id',clientId).order('vencimento');if(r.error)throw r.error;
   const ps=r.data||[],paid=ps.filter(p=>p.status==='Pago'),late=ps.filter(p=>p.status==='Inadimplente'),open=ps.filter(p=>!['Pago','Inadimplente','Cancelado'].includes(p.status));
   const ref=currentReferenceMonth();
-  const body=`<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap"><div><b>${esc(client.nome)}</b><div class="muted">${esc(client.codigo||client.cpf_cnpj||'')}</div></div><div class="receb-status">Competência selecionada ${competence(ref+'-01')}</div></div>
+  const body=`<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap"><div><b>${esc(client.nome)}</b><div class="muted">${esc(client.codigo||client.cpf_cnpj||'')}</div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><div class="receb-status">Competência selecionada ${competence(ref+'-01')}</div><button type="button" class="btn small" data-add-parcel>+ Parcela</button></div></div>
   <div class="receb-history-summary"><div class="card"><small>Total de parcelas</small><b>${ps.length}</b></div><div class="card"><small>Pagas</small><b>${paid.length}</b></div><div class="card"><small>Em aberto</small><b>${open.length}</b></div><div class="card"><small>Inadimplentes</small><b>${late.length}</b></div></div>
   <div class="table-wrap receb-history-wrap"><table class="table receb-history-table"><thead><tr><th>Competência</th><th>Parcela</th><th>Vencimento</th><th>Status</th><th>Valor previsto</th><th>Pago em</th><th>Valor pago</th></tr></thead><tbody>${ps.map(p=>`<tr data-parcela-id="${p.id}" data-cliente-id="${clientId}" class="${p.vencimento?.slice(0,7)===ref?'receb-history-row-ref':''}"><td data-label="Competência"><b>${competence(p.vencimento)}</b></td><td data-label="Parcela">#${p.numero}</td><td data-label="Vencimento">${br(p.vencimento)}</td><td data-label="Status"><span class="receb-status ${esc(p.status)}">${esc(p.status||'Pendente')}</span></td><td data-label="Valor previsto">${money(p.valor_previsto)}</td><td data-label="Pago em">${br(p.pago_em)}</td><td data-label="Valor pago">${['Pago','Parcial'].includes(p.status)?money(p.valor_liquidado??p.valor_previsto):'—'}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma parcela cadastrada para este cliente.</td></tr>'}</tbody></table></div>`;
-  makeModal(`Histórico — ${client.nome}`,body);
+  const box=makeModal(`Histórico — ${client.nome}`,body);
+  box.querySelector('[data-add-parcel]')?.addEventListener('click',()=>addParcel(client,ps));
  }catch(e){alert('Não foi possível carregar o histórico: '+(e.message||e));}
+}
+
+/* Lançamento manual de uma parcela (acordo, parcela avulsa, correção de importação). */
+function addParcel(client,ps){
+ document.querySelector('#recebAddParcel')?.remove();
+ const last=[...ps].sort((a,b)=>String(b.vencimento||'').localeCompare(String(a.vencimento||'')))[0];
+ const numero=Math.max(0,...ps.map(p=>Number(p.numero||0)))+1;
+ let next='';if(last?.vencimento){const [y,m,d]=last.vencimento.split('-').map(Number);const dt=new Date(y,m,1,12);dt.setDate(Math.min(d,new Date(y,m+1,0).getDate()));next=dt.toISOString().slice(0,10)}
+ const d=document.createElement('div');d.id='recebAddParcel';d.className='modal-backdrop';d.style.zIndex='10030';
+ d.innerHTML=`<section class="modal" style="width:min(520px,96vw)"><header class="modal-head"><h3>Nova parcela — ${esc(client.nome)}</h3><button class="btn icon ghost" data-close>×</button></header><form id="recebAddParcelForm"><div class="modal-body"><div class="form-grid"><div class="field"><label>Número</label><input name="numero" type="number" min="1" value="${numero}" required></div><div class="field"><label>Vencimento</label><input name="vencimento" type="date" value="${next}" required></div><div class="field"><label>Valor previsto</label><input name="valor" type="number" step="0.01" min="0" value="${last?.valor_previsto??''}" required></div><div class="field"><label>Status</label><select name="status"><option>Pendente</option><option>Pago</option><option>Inadimplente</option></select></div><div class="field"><label>Pago em</label><input name="pago_em" type="date"></div><div class="field"><label>Valor pago</label><input name="valor_pago" type="number" step="0.01" min="0"></div></div><div class="notice warn compact" data-msg hidden></div></div><footer class="modal-foot"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn" type="submit">Salvar parcela</button></footer></form></section>`;
+ document.body.appendChild(d);d.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>d.remove());
+ const form=d.querySelector('form'),msg=d.querySelector('[data-msg]');
+ form.onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(form)),btn=form.querySelector('[type=submit]');const paid=f.status==='Pago';
+  if(paid&&!f.pago_em){msg.hidden=false;msg.textContent='Informe a data do pagamento.';return}
+  if(ps.some(p=>Number(p.numero)===Number(f.numero)&&p.ativo!==false)&&!confirm(`Já existe a parcela #${f.numero} para este cliente. Salvar mesmo assim?`))return;
+  btn.disabled=true;btn.textContent='Salvando...';
+  const valor=Number(f.valor||0),row={id:crypto.randomUUID(),cliente_id:client.id,numero:Number(f.numero),vencimento:f.vencimento,valor_previsto:valor,status:f.status,pago_em:paid?f.pago_em:null,valor_liquidado:paid?Number(f.valor_pago||valor):null,diferenca:paid?Number(f.valor_pago||valor)-valor:0};
+  const r=await sb.from('fin_receb_parcelas').insert(row).select().single();
+  if(r.error){btn.disabled=false;btn.textContent='Salvar parcela';msg.hidden=false;msg.textContent='Não foi possível salvar: '+r.error.message;return}
+  d.remove();await showHistory(client.id);try{await window.IntegralReceivables?.reload?.()}catch{}};
 }
 
 function reopenMunicipioWhenDeletionFinishes(municipioNome){

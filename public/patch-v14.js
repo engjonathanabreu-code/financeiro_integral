@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 const monthOf=d=>String(d||'').slice(0,7);
-const nowMonth=()=>new Date().toISOString().slice(0,7);
+const nowMonth=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
 const safe=s=>String(s||'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
 const csvCell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
 const downloadBlob=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800)};
@@ -65,5 +65,14 @@ function installCashExports(){
 function installDocumentExports(){
   const old=window.documents;if(typeof old!=='function'||old.__v14)return;const wrapped=function(){const out=old.apply(this,arguments);setTimeout(()=>{const toolbar=document.querySelector('#content .toolbar');if(!toolbar)return;const upload=document.querySelector('#v10UploadDoc');if(upload)upload.onclick=uploadFiscalDocument;if(!document.querySelector('#v14DocsZip')){const b=document.createElement('button');b.id='v14DocsZip';b.className='btn ghost';b.textContent='Exportar mês em ZIP';b.onclick=()=>exportFiscalZip(v2state?.docsMonth||nowMonth(),b);toolbar.appendChild(b)}},0);return out};wrapped.__v14=true;window.documents=wrapped;documents=wrapped;
 }
-setTimeout(()=>{installCashExports();installDocumentExports();if(view==='cashflow')cashflow();if(view==='documents')documents();},300);
+/* Botões de exportação do Fluxo de Caixa: acrescentados sempre que a tela aparece, usando o mês selecionado nela.
+   (Antes eram instalados por um temporizador e sumiam quando o editor canônico redesenhava a tela.) */
+function ensureCashExportButtons(){
+  if((document.querySelector('#title')?.textContent||'').trim()!=='Fluxo de Caixa')return;
+  const toolbar=document.querySelector('#content .toolbar');if(!toolbar||document.querySelector('#v14CashCsv'))return;
+  const month=()=>document.querySelector('#cashEditMonth')?.value||v2state?.cashMonth||nowMonth();
+  const box=document.createElement('div');box.className='right export-actions';box.innerHTML='<button class="btn ghost" id="v14CashCsv">Exportar CSV</button><button class="btn ghost" id="v14CashPdf">Exportar PDF</button>';
+  toolbar.appendChild(box);box.querySelector('#v14CashCsv').onclick=()=>exportCashCsv(month());box.querySelector('#v14CashPdf').onclick=()=>exportCashPdf(month());
+}
+new MutationObserver(ensureCashExportButtons).observe(document.documentElement,{childList:true,subtree:true});
 })();

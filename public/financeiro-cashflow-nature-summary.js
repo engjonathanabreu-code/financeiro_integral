@@ -26,12 +26,16 @@ function section(title,items,type){const total=items.reduce((s,x)=>s+x.value,0),
 function build(){
   const content=document.querySelector('#content'),title=document.querySelector('#title')?.textContent||'';
   if(!content||title.trim()!=='Fluxo de Caixa')return;
-  ensureStyle();content.querySelector('#cashNatureSummary')?.remove();
+  ensureStyle();
   const m=currentMonth(),incomeMap=new Map(),outMap=new Map();
   rows().filter(r=>monthOf(r.date)===m).forEach(r=>{const nature=String(r.kind||'Sem natureza').trim()||'Sem natureza',v=Number(r.value||0);if(!v)return;const map=r.direction==='Entrada'?incomeMap:r.direction==='Saída'?outMap:null;if(!map)return;map.set(nature,(map.get(nature)||0)+v)});
   const make=map=>[...map.entries()].map(([nature,value])=>({nature,value})).sort((a,b)=>b.value-a.value||a.nature.localeCompare(b.nature,'pt-BR'));
   const ins=make(incomeMap),outs=make(outMap),totalIn=ins.reduce((s,x)=>s+x.value,0),totalOut=outs.reduce((s,x)=>s+x.value,0),balance=totalIn-totalOut;
-  const box=document.createElement('section');box.id='cashNatureSummary';box.style.marginTop='28px';box.innerHTML=`<div class="card" style="padding:18px"><div class="cash-nature-summary-head"><div><h3 style="margin:0 0 4px">Resumo por Natureza</h3><small class="muted">Somatório do mês selecionado, separado entre receitas e despesas</small></div><div class="cash-nature-balance"><small class="muted">Saldo do mês</small><div><b class="${balance>=0?'kpi-positive':'kpi-negative'}">${money2(balance)}</b></div></div></div><div class="cash-nature-grid">${section('Entradas por Natureza',ins,'Entrada')}${section('Saídas por Natureza',outs,'Saída')}</div></div>`;
+  const html=`<div class="card" style="padding:18px"><div class="cash-nature-summary-head"><div><h3 style="margin:0 0 4px">Resumo por Natureza</h3><small class="muted">Somatório do mês selecionado, separado entre receitas e despesas</small></div><div class="cash-nature-balance"><small class="muted">Saldo do mês</small><div><b class="${balance>=0?'kpi-positive':'kpi-negative'}">${money2(balance)}</b></div></div></div><div class="cash-nature-grid">${section('Entradas por Natureza',ins,'Entrada')}${section('Saídas por Natureza',outs,'Saída')}</div></div>`;
+  const current=content.querySelector('#cashNatureSummary');
+  if(current&&current.dataset.sig===html&&current===content.lastElementChild)return;
+  current?.remove();
+  const box=document.createElement('section');box.id='cashNatureSummary';box.style.marginTop='28px';box.dataset.sig=html;box.innerHTML=html;
   content.appendChild(box);
 }
 let timer=null;const schedule=()=>{clearTimeout(timer);timer=setTimeout(build,80)};
