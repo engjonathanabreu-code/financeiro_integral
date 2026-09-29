@@ -1,6 +1,6 @@
 # Cobrança Ailos no Financeiro Integral
 
-A aba **Gerar Boletos** utiliza as parcelas já cadastradas em Recebimentos. Os campos `nosso_numero`, `documento` e `linha_digitavel` são gravados nas mesmas `fin_receb_parcelas` consultadas pelo Integração. O retorno de liquidação atualiza status, data e valor recebido nessa base; os gatilhos existentes incrementam a versão e avisam o Integração.
+A aba **Gerar Boletos** permite emitir parcelas existentes ou criar um novo boleto/carnê para um cliente cadastrado. A tela começa apenas com **Buscar cliente**, que pesquisa nome (sem diferenciar acentos), CPF com ou sem pontuação, código e núcleo vinculado no Integração. A busca é paginada no servidor. As opções de configuração e retorno ficam em **Gerenciar cobranças**. Os campos `nosso_numero`, `documento` e `linha_digitavel` são gravados nas mesmas `fin_receb_parcelas` consultadas pelo Integração. O retorno de liquidação atualiza status, data e valor recebido nessa base; os gatilhos existentes incrementam a versão e avisam o Integração.
 
 ## Antes da primeira cobrança
 
@@ -18,12 +18,20 @@ Não são necessárias senhas do banco no Financeiro para este fluxo por arquivo
 
 1. Em **Convênio e configuração**, preencher os dados reais e manter Homologação. Informar razão social e endereço do beneficiário. A identidade bancária fica bloqueada depois da primeira reserva; não alterar banco/conta de títulos em circulação.
 2. Conferir CPF/CNPJ e nome do cliente em Recebimentos. Completar seu endereço na aba de boletos.
-3. Selecionar parcelas futuras, pendentes e sem boleto existente. O valor nominal inclui o valor base mais juros/multa já lançados na parcela. Não há acréscimos futuros, descontos ou protesto nesta implementação.
+3. Selecionar o cliente. Para emitir cobranças existentes, selecionar parcelas futuras, pendentes e sem boleto existente. O valor nominal inclui o valor base mais juros/multa já lançados na parcela. Não há acréscimos futuros, descontos ou protesto nesta implementação.
 4. Gerar a remessa `.REM` e os PDFs de homologação. Encaminhar os testes somente ao canal de homologação indicado pela cooperativa; o CNAB de teste tem a mesma estrutura bancária e não deve ser enviado ao processamento de produção. A troca de arquivos com o Conta Online é feita pelo operador. O sistema não envia arquivos ao banco nem aos pagadores.
 5. Encaminhar amostras à cooperativa e obter aprovação. Só então marcar a confirmação de homologação, registrar a referência e escolher Produção. Testes usam numeração reservada e crescente, sem alterar valores ou pagamentos reais.
 6. Em Produção, baixar e enviar a remessa. Importar o retorno de registro. **Gerado não significa registrado nem pago.** O PDF para cobrança só é liberado para títulos com registro aceito e em aberto. Uma remessa com rejeições libera somente os PDFs dos títulos registrados.
 7. Importar os retornos de pagamento e conferir a prévia. O valor recebido é o **valor pago pelo pagador**, não o crédito líquido após tarifas. Retornos repetidos são idempotentes. Divergências abortam a operação inteira, sem conciliar parte do arquivo.
 8. Usar o histórico para recuperar o mesmo arquivo após falha de download. Não criar outra cobrança para tentar recuperar um download.
+
+## Novos boletos e carnês
+
+Após selecionar o cliente, escolher **Novo boleto ou carnê**, informar a quantidade (1 a 500), o valor de cada parcela, a primeira data e vencimentos **Mensais** ou **Todos na mesma data**. A prévia mostra todas as parcelas e o total antes da geração. Mensais preservam o dia original, limitando-o ao último dia dos meses mais curtos. Mesmo valor e vencimento são permitidos; cada título recebe seu próprio nosso número.
+
+Em produção, finalizar a remessa cria as novas parcelas no mesmo `cliente_id` compartilhado com o Integração. Números de parcela continuam após a maior numeração existente. Se já houver parcelas em aberto, é necessário marcar que se deseja adicionar novas cobranças, para não confundir emissão de dívida existente com criação de dívida adicional. Valores gerais do contrato não são reescritos. Em homologação não se criam parcelas, nem dívidas ou pagamentos reais.
+
+A reserva e a finalização são transacionais e idempotentes. Uma falha no meio da finalização não cria parte das parcelas. Falhas de download podem ser recuperadas no histórico. No histórico, **Boletos PDF** produz uma página com recibo por título, e **Carnê PDF** produz duas fichas numeradas por página, agrupadas por cliente. Em produção, ambos incluem apenas títulos registrados e em aberto; a tela informa quando outros títulos ficaram de fora. Imprimir em tamanho real, sem redimensionamento. A cooperativa deve homologar também o modelo de carnê.
 
 ## Escopo e limitações
 
@@ -37,8 +45,8 @@ Não são necessárias senhas do banco no Financeiro para este fluxo por arquivo
 
 ## Instalação e testes
 
-Aplicar uma única vez `supabase/ailos-cobranca.sql` ao projeto do ERP/Financeiro, depois publicar os arquivos do site. A instalação é aditiva: não configura convênios nem altera parcelas existentes. As tabelas ficam no schema privado `ailos_privado`, com RLS e sem acesso direto. A função pública invoker delega à função privada que exige sessão ativa e perfil Administrador/Financeiro ou setor Financeiro. Sem chaves privilegiadas no navegador.
+Aplicar uma única vez `supabase/ailos-cobranca.sql` e depois `supabase/ailos-carnes.sql` e `supabase/ailos-busca-performance.sql` ao projeto do ERP/Financeiro, depois publicar os arquivos do site. A instalação é aditiva: não configura convênios nem altera parcelas existentes. As tabelas ficam no schema privado `ailos_privado`, com RLS e sem acesso direto. A função pública invoker delega à função privada que exige sessão ativa e perfil Administrador/Financeiro ou setor Financeiro. Sem chaves privilegiadas no navegador.
 
-`pnpm install --frozen-lockfile` e `pnpm test:ailos` verificam layout, fator de vencimento, validações, retorno truncado ou de outra conta, autorização, transação, reserva idempotente, separação de homologação/produção e pagamento compartilhado sem repetição. `pnpm test` executa as demais regressões do repositório.
+`pnpm install --frozen-lockfile` e `pnpm test:ailos` verificam layout, fator de vencimento, validações, retorno truncado ou de outra conta, autorização, transação, reserva idempotente, separação de homologação/produção pagamento compartilhado sem repetição, buscas por núcleo/CPF/nome/código, vencimentos mensais e repetidos, criação atômica de carnês e ausência de dívida em homologação. `pnpm test` executa as demais regressões do repositório.
 
 Referência de autorização de funções: https://supabase.com/docs/guides/database/functions
