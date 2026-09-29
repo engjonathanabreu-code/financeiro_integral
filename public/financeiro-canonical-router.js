@@ -2,7 +2,7 @@
    Todas as telas especiais passam por um único controlador de navegação. */
 (function(){
 'use strict';
-const canonicalViews=new Set(['dashboard','planning','hr','receivables']);
+const canonicalViews=new Set(['dashboard','planning','hr','receivables','boletos']);
 const q=(s,r=document)=>r.querySelector(s);
 const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 function currentView(){try{return typeof view!=='undefined'?view:window.view}catch{return window.view}}
@@ -20,6 +20,7 @@ function ensureNav(){
     if(!nav.querySelector('[data-view="dashboard"]')){const b=document.createElement('button');b.dataset.view='dashboard';b.textContent='Visão Geral';nav.prepend(b)}
   }
   if(canSeeReceivables()){
+    if(!nav.querySelector('[data-view="boletos"]')){const b=document.createElement('button');b.dataset.view='boletos';b.textContent='Gerar Boletos';nav.appendChild(b);}
     nav.querySelectorAll('[data-view="recebimentos"],[data-view="receipts"]').forEach(x=>x.remove());
     let b=nav.querySelector('[data-view="receivables"]');
     if(!b){b=document.createElement('button');b.dataset.view='receivables';b.textContent='Recebimentos';const cash=nav.querySelector('[data-view="cashflow"]');nav.insertBefore(b,cash||nav.firstChild)}
@@ -27,7 +28,7 @@ function ensureNav(){
 }
 async function renderCanonical(id){
   if(!canonicalViews.has(id))return false;
-  if(id==='receivables'&&!canSeeReceivables())return false;
+  if(['receivables','boletos'].includes(id)&&!canSeeReceivables())return false;
   setView(id);ensureNav();setActive(id);
   const c=q('#content');if(c)c.removeAttribute('data-canonical-view');
   try{
@@ -37,6 +38,8 @@ async function renderCanonical(id){
       const fn=window.planningCanonical;if(typeof fn!=='function')return false;await fn();
     }else if(id==='hr'){
       const fn=window.IntegralFinanceRH?.render;if(typeof fn!=='function')return false;await fn();
+    }else if(id==='boletos'){
+      await window.IntegralBoletos.render();
     }else if(id==='receivables'){
       const fn=window.IntegralReceivables?.render;if(typeof fn!=='function')throw new Error('Módulo de Recebimentos não carregado.');await fn();
     }

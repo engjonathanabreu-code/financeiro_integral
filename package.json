@@ -2,6 +2,15 @@
   "name": "integral-financeiro-v1",
   "version": "1.0.0",
   "private": true,
-  "scripts": {"start":"node server.js"},
-  "engines":{"node":">=18"}
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js tests/*.test.cjs",
+    "test:ailos": "node --test tests/ailos.test.cjs tests/ailos-db.test.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
+  }
 }
