@@ -6,3 +6,10 @@ test('CNAB 240 exato, CRLF, convenio à esquerda e nosso número com três espa�
 test('valida campos, valor, caracteres, identidade e produção sem homologação',()=>{assert.throws(()=>C.remessa({...rem,config:{...config,ambiente:'producao'}}),/homologar/);assert.throws(()=>C.remessa({...rem,boletos:[b,b]}),/duplicado/);assert.throws(()=>C.boleto(config,{...b,valor:1.001}));assert.throws(()=>C.boleto(config,{...b,pagador:{...pagador,nome:'A'.repeat(41)}}));assert.throws(()=>C.boleto(config,{...b,pagador:{...pagador,cpf_cnpj:config.cpf_cnpj}}),/mesma pessoa/);assert.throws(()=>C.alpha('A\nB',40));});
 test('retorno T/U distingue valor pago de crédito líquido e recusa truncamento/conta errada',()=>{const text=retorno(),[e]=C.retorno(text,config);assert.equal(e.pago_centavos,10000);assert.equal(e.liquido_centavos,9800);assert.equal(e.nosso_numero,b.nosso_numero);assert.throws(()=>C.retorno(text.slice(0,-300),config));assert.throws(()=>C.retorno(text,{...config,conta:'1234567'}),/outro/);const rows=text.split('\r\n');rows[3]=set(rows[3],16,17,'02');assert.throws(()=>C.retorno(rows.join('\r\n'),config),/incompatível/);});
 test('código 2 de 5 intercalado tem alternância, início e fim',()=>{const widths=C.bars(C.boleto(config,b).codigo_barras);assert.deepEqual(widths.slice(0,4),[1,1,1,1]);assert.deepEqual(widths.slice(-3),[3,1,1]);assert.equal(widths.length,227);});
+
+test('endereço permite 15 caracteres, normaliza espaços e identifica campo longo',()=>{
+ const p={endereco:' RUA TESTE  10 ',bairro:'  VALADA  S. PAULO\u00a0',cidade:' BLUMENAU ',cep:'89.010-000',uf:' sc '};
+ const out=C.address(p);assert.equal(out.bairro,'VALADA S. PAULO');assert.equal(out.endereco,'RUA TESTE 10');assert.equal(out.cep,'89010000');assert.equal(out.uf,'SC');assert.equal(C.alpha(p.bairro,15),'VALADA S. PAULO');
+ assert.throws(()=>C.address({...p,bairro:'VALADA SAO PAULO'}),e=>e.field==='bairro'&&e.message.startsWith('Bairro:'));
+ assert.throws(()=>C.address({...p,cidade:'CIDADE COM NOME LONGO'}),e=>e.field==='cidade');
+});
