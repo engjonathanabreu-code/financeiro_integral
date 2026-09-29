@@ -17,7 +17,7 @@ Não são necessárias senhas do banco no Financeiro para este fluxo por arquivo
 ## Operação
 
 1. Em **Convênio e configuração**, preencher os dados reais e manter Homologação. Informar razão social e endereço do beneficiário. A identidade bancária fica bloqueada depois da primeira reserva; não alterar banco/conta de títulos em circulação.
-2. Conferir CPF/CNPJ e nome do cliente em Recebimentos. Completar seu endereço na aba de boletos.
+2. Conferir CPF/CNPJ e nome do cliente em Recebimentos. Ao selecionar o cliente, o endereço do Integração é carregado automaticamente (logradouro, número, complemento, bairro, CEP, município e UF). Confira os dados exibidos e complete o que faltar em **Completar endereço de cobrança**. Ajustes salvos especificamente para cobrança têm preferência e não alteram o cadastro original. Endereços longos ou incompatíveis com o layout bancário devem ser revisados, sem corte automático. A remessa e o PDF preservam o endereço da emissão, mesmo que o cadastro mude depois.
 3. Selecionar o cliente. Para emitir cobranças existentes, selecionar parcelas futuras, pendentes e sem boleto existente. O valor nominal inclui o valor base mais juros/multa já lançados na parcela. Não há acréscimos futuros, descontos ou protesto nesta implementação.
 4. Gerar a remessa `.REM` e os PDFs de homologação. Encaminhar os testes somente ao canal de homologação indicado pela cooperativa; o CNAB de teste tem a mesma estrutura bancária e não deve ser enviado ao processamento de produção. A troca de arquivos com o Conta Online é feita pelo operador. O sistema não envia arquivos ao banco nem aos pagadores.
 5. Encaminhar amostras à cooperativa e obter aprovação. Só então marcar a confirmação de homologação, registrar a referência e escolher Produção. Testes usam numeração reservada e crescente, sem alterar valores ou pagamentos reais.
@@ -45,7 +45,7 @@ A reserva e a finalização são transacionais e idempotentes. Uma falha no meio
 
 ## Instalação e testes
 
-Aplicar uma única vez `supabase/ailos-cobranca.sql` e depois `supabase/ailos-carnes.sql` e `supabase/ailos-busca-performance.sql` ao projeto do ERP/Financeiro, depois publicar os arquivos do site. A instalação é aditiva: não configura convênios nem altera parcelas existentes. As tabelas ficam no schema privado `ailos_privado`, com RLS e sem acesso direto. A função pública invoker delega à função privada que exige sessão ativa e perfil Administrador/Financeiro ou setor Financeiro. Sem chaves privilegiadas no navegador.
+Aplicar uma única vez `supabase/ailos-cobranca.sql` e depois `supabase/ailos-carnes.sql` e `supabase/ailos-busca-performance.sql` e `supabase/ailos-endereco-cliente.sql` ao projeto do ERP/Financeiro, depois publicar os arquivos do site. A instalação é aditiva: não configura convênios nem altera parcelas existentes. As tabelas ficam no schema privado `ailos_privado`, com RLS e sem acesso direto. A função pública invoker delega à função privada que exige sessão ativa e perfil Administrador/Financeiro ou setor Financeiro. Sem chaves privilegiadas no navegador.
 
 `pnpm install --frozen-lockfile` e `pnpm test:ailos` verificam layout, fator de vencimento, validações, retorno truncado ou de outra conta, autorização, transação, reserva idempotente, separação de homologação/produção pagamento compartilhado sem repetição, buscas por núcleo/CPF/nome/código, vencimentos mensais e repetidos, criação atômica de carnês e ausência de dívida em homologação. `pnpm test` executa as demais regressões do repositório.
 
