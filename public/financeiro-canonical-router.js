@@ -2,7 +2,7 @@
    Todas as telas especiais passam por um único controlador de navegação. */
 (function(){
 'use strict';
-const canonicalViews=new Set(['dashboard','planning','hr','receivables','boletos']);
+const canonicalViews=new Set(['dashboard','planning','hr','receivables','boletos','dre']);
 const q=(s,r=document)=>r.querySelector(s);
 const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 function currentView(){try{return typeof view!=='undefined'?view:window.view}catch{return window.view}}
@@ -25,10 +25,14 @@ function ensureNav(){
     let b=nav.querySelector('[data-view="receivables"]');
     if(!b){b=document.createElement('button');b.dataset.view='receivables';b.textContent='Recebimentos';const cash=nav.querySelector('[data-view="cashflow"]');nav.insertBefore(b,cash||nav.firstChild)}
   }
+  if(isAdmin()&&window.IntegralDRE&&!nav.querySelector('[data-view="dre"]')){
+    const b=document.createElement('button');b.dataset.view='dre';b.textContent='DRE';const cash=nav.querySelector('[data-view="cashflow"]');nav.insertBefore(b,cash?cash.nextSibling:null);
+  }
 }
 async function renderCanonical(id){
   if(!canonicalViews.has(id))return false;
   if(['receivables','boletos'].includes(id)&&!canSeeReceivables())return false;
+  if(id==='dre'&&!isAdmin())return false;
   setView(id);ensureNav();setActive(id);
   const c=q('#content');if(c)c.removeAttribute('data-canonical-view');
   try{
@@ -40,6 +44,8 @@ async function renderCanonical(id){
       const fn=window.IntegralFinanceRH?.render;if(typeof fn!=='function')return false;await fn();
     }else if(id==='boletos'){
       await window.IntegralBoletos.render();
+    }else if(id==='dre'){
+      const fn=window.IntegralDRE?.render;if(typeof fn!=='function')throw new Error('Módulo DRE não carregado.');await fn();
     }else if(id==='receivables'){
       const fn=window.IntegralReceivables?.render;if(typeof fn!=='function')throw new Error('Módulo de Recebimentos não carregado.');await fn();
     }
