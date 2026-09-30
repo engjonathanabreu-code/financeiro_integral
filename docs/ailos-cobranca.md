@@ -37,6 +37,7 @@ A reserva e a finalização são transacionais e idempotentes. Uma falha no meio
 
 - Implementado CNAB 240 Ailos, manual v14 de maio de 2025 e as dicas de homologação recebidas. O exemplo `.rem` do ZIP usa versões antigas diferentes; o gerador segue as versões 084/043 do manual.
 - Segmentos P/Q para entrada de cobrança simples; espécie duplicata de serviço, sem aceite, juros futuros, multa futura, desconto ou protesto. Não gera CNAB 400.
+- No segmento P, a posição 142 recebe `0` (isenção de desconto); a data e o valor do desconto, posições 143–165, ficam zerados. O código `1` exige desconto em reais e data correspondente, funcionalidade ainda não disponível nesta versão.
 - Retorno T/U: 02 registro, 03 rejeição, 06/17 liquidação, 09 baixa bancária. Outros códigos permanecem para conferência, sem baixa financeira automática. Baixa bancária não cancela o contrato ou a parcela a receber.
 - Retorno com valor inferior ao nominal cria pagamento parcial para conferência. Pagamento já existente, divergência de cadastro, parcela alterada/inativa/cancelada ou segundo evento de liquidação diferente exige análise; não há sobrescrita silenciosa.
 - Não implementa API, Pix, alterações/baixas por remessa, reemissão de título rejeitado, múltiplos convênios ou criação de novos contratos. Corrigir títulos já emitidos exige conciliação operacional com a cooperativa antes de novos comandos.
