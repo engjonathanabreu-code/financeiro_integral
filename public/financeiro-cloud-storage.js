@@ -139,7 +139,9 @@ const cloudSave=function(){
 try{save=cloudSave}catch{window.save=cloudSave}
 
 async function syncNow(){const ok=await initialize();if(!ok)return false;await pushChanged();return true}
-window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged};
+// Server-confirmed changes must also replace the dirty-check baseline.
+function acceptModule(key,value){const d=state();if(!d)return;d[key]=clone(value);snapshot[key]=json(value);cacheAll()}
+window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged,acceptModule};
 
 let attempts=0;const boot=setInterval(async()=>{attempts++;if(await initialize()||attempts>120)clearInterval(boot)},500);
 /* Renovar o token não recarrega os dados: recarregar substituía o db com modais abertos e descartava edições. */

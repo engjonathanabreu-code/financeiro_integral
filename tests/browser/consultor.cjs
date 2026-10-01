@@ -1,0 +1,38 @@
+const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
+const root=path.join(__dirname,'../..');
+(async()=>{const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||'msedge'});let checks=0;
+try{
+ for(const width of [1440,390]){
+ const page=await browser.newPage({viewport:{width,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('https://fixture.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="app"><aside class="sidebar"><nav class="nav"><button data-view="boletos">Gerar boletos</button></nav></aside><h1 id="title"></h1><main id="content"></main></div>'}));await page.goto('https://fixture.test/');
+ await page.evaluate(()=>{
+ localStorage.setItem('integral_fin_real_data_reset_v1','1');window.user={role:'Administrador',name:'ADM',erpId:'adm',sector:'Projetos'};window.view='budgets';
+ window.db={budgetRecords:[{id:1,name:'Aberto',active:true,sector:'Projetos',limit:100,history:[]},{id:2,name:'Histórico',active:true,sector:'Projetos',limit:200,status:'Fechado',closedAt:'2026-09-01T12:00:00Z',history:[{at:'2026-09-01T12:00:00Z',action:'Orçamento fechado',by:'ADM'}]}],budgetExpenses:[{id:1,budgetId:2,date:'2026-09-01',value:50,description:'Gasto preservado'}],trips:[{id:1,city:'Ativa',status:'Planejada',sector:'Projetos'},{id:2,city:'Concluída',status:'Concluída',sector:'Projetos'},{id:3,city:'Outro setor',status:'Concluída',sector:'Comercial'}],tripExpenses:[],tripDocuments:[],usersMvp:[]};
+ window.$=s=>document.querySelector(s);window.$$=s=>[...document.querySelectorAll(s)];window.esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));window.money=v=>'R$ '+v;window.fmt=v=>v;window.badgeStatus=s=>esc(s);window.title=t=>$('#title').textContent=t;window.planning=()=>{};window.budgets=()=>{};window.trips=()=>{};window.documents=()=>{$('#content').textContent='Documentos'};window.render=()=>view==='budgets'?budgets():trips();window.save=()=>{};window.confirm=()=>true;window.alerts=[];window.alert=m=>alerts.push(m);
+ window.v2modal=(name,html)=>{const x=document.createElement('div');x.className='modal-backdrop';x.innerHTML='<div class="modal"><h2>'+name+'</h2>'+html+'</div>';document.body.append(x);return x};window.save=()=>localStorage.setItem('persistedTrips',JSON.stringify(db.trips));
+ window.server=structuredClone(db.budgetRecords);window.fail=false;
+ window.IntegralERP={sb:{auth:{getSession:async()=>({data:{session:{access_token:'fixture'}}})},rpc:async(name,args)=>{if(fail)return {error:{message:'Conflito'}};server=server.map(b=>String(b.id)===args.p_id?{...b,status:'Fechado',closedAt:'2026-10-01T12:00:00Z',closedBy:'adm',history:[...b.history,{at:'2026-10-01T12:00:00Z',action:'Orçamento fechado',by:'adm'}]}:b);return {data:structuredClone(server)}}}};
+ window.IntegralFinanceCloudStorage={acceptModule:(key,value)=>{db[key]=structuredClone(value);localStorage.setItem('persistedBudgets',JSON.stringify(value))}};window.IntegralTripDocuments={};
+ window.fetch=async()=>({ok:true,json:async()=>({resposta:'Observado: R$ 50. Projeções: dados insuficientes.',base:{periodo:{start:'2026-10-01',end:'2026-10-01'},observado:{recebido:50}},modo:'ia'})});
+ });
+ for(const f of ['patch-v9.js','patch-v26-trip-ai.js','financeiro-lifecycle.js','financeiro-consultor.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,'public',f),'utf8')});await page.addStyleTag({content:fs.readFileSync(path.join(root,'public/financeiro-consultor.css'),'utf8')});
+ await page.evaluate(()=>budgets());assert.equal(await page.locator('#finClosedBudgets [data-v9-budget="2"]').count(),1);assert.equal(await page.locator('#content > .grid [data-v9-budget="1"]').count(),1);checks++;
+ await page.locator('[data-v9-budget="2"]').click();await page.getByText('Gasto preservado',{exact:true}).waitFor();assert.equal(await page.locator('#finCloseBudget,#v9AddExpense,#v9BudgetEdit').count(),0);checks++;
+ await page.locator('#v9BudgetBack').click();await page.locator('[data-v9-budget="1"]').click();
+ await page.evaluate(()=>window.confirm=()=>false);await page.locator('#finCloseBudget').click();assert.equal(await page.evaluate(()=>db.budgetRecords[0].status),undefined);checks++;
+ await page.evaluate(()=>{window.confirm=()=>true;fail=true});await page.locator('#finCloseBudget').click();assert.equal(await page.evaluate(()=>db.budgetRecords[0].status),undefined);checks++;
+ await page.evaluate(()=>fail=false);await page.locator('#finCloseBudget').click();await page.locator('#finClosedBudgets [data-v9-budget="1"]').waitFor();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('persistedBudgets'))[0].status),'Fechado');checks++;
+ await page.evaluate(()=>IntegralFinanceTripsAI.list());assert.equal(await page.locator('#finCompletedTrips [data-trip26-open="2"]').count(),1);assert.equal(await page.locator('#content > .table-wrap [data-trip26-open="2"]').count(),0);await page.locator('#finCompletedTrips [data-trip26-open="2"]').click();await page.locator('#trip26Back').waitFor();checks++;
+ await page.locator('#trip26Back').click();await page.locator('[data-trip26-open="1"]').click();await page.locator('#trip26Edit').click();await page.locator('#trip26Form [name="start"]').fill('2026-10-01');await page.locator('#trip26Form [name="end"]').fill('2026-10-02');await page.locator('#trip26Form [name="employee"]').fill('Equipe');await page.locator('#trip26Form [name="status"]').selectOption('Concluída');await page.locator('#trip26Form button').click();await page.locator('#finCompletedTrips [data-trip26-open="1"]').waitFor();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('persistedTrips'))[0].status),'Concluída');checks++;
+ await page.evaluate(()=>{db.budgetRecords=structuredClone(server);budgets()});assert.equal(await page.locator('#finClosedBudgets [data-v9-budget="1"]').count(),1);checks++;
+ await page.locator('#finAgentFloat').click();await page.locator('#finAgentPanel textarea').waitFor();await page.locator('#finAgentPanel [data-agent-prompt="Resumo financeiro"]').click();await page.locator('#finAgentPanel button[type="submit"]').click();await page.getByText('Observado: R$ 50. Projeções: dados insuficientes.',{exact:true}).waitFor();checks++;
+ const box=await page.locator('#finAgentPanel').boundingBox();assert.ok(box.x>=0&&box.width<=width);await page.keyboard.press('Escape');assert.equal(await page.locator('#finAgentPanel').count(),0);checks++;
+ const order=await page.locator('.nav button').evaluateAll(bs=>bs.map(b=>b.dataset.view));assert.equal(order[order.indexOf('boletos')+1],'financialAgent');await page.locator('[data-view="financialAgent"]').click();await page.locator('#content .fin-agent-chat').waitFor();checks++;
+ await page.evaluate(()=>{user={role:'Funcionário',erpId:'staff',sector:'Projetos'};IntegralFinancialAgent.reconcile();budgets()});assert.equal(await page.locator('#finAgentFloat,[data-view="financialAgent"],#finCloseBudget').count(),0);await page.locator('[data-v9-budget="1"]').click();assert.equal(await page.locator('#finCloseBudget').count(),0);checks++;
+ await page.evaluate(()=>IntegralFinanceTripsAI.list());assert.equal(await page.locator('[data-trip26-open="3"]').count(),0);assert.equal(await page.locator('#finCompletedTrips [data-trip26-open="2"]').count(),1);checks++;
+ assert.deepEqual(errors,[]);await page.close();
+ }
+ console.log(`${checks} verificações no navegador passaram (1440 e 390 px).`);
+}finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});
+
