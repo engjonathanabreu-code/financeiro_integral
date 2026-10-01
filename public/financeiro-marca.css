@@ -1,0 +1,8 @@
+/* Integral Financeiro — marca do sistema (logo vetorial em public/marca).
+   Versão clara e escura trocadas pelo tema do sistema (html[data-theme]). */
+.brand .fin-logo{width:168px!important;height:auto!important;max-height:none!important;object-fit:contain;filter:none!important;opacity:1}
+.brand .fin-logo-dark{display:none}
+:root[data-theme="dark"] .brand .fin-logo-light{display:none}
+:root[data-theme="dark"] .brand .fin-logo-dark{display:block}
+.login-card .login-logo.fin-logo-icon{width:72px;height:72px;max-height:none;filter:none!important}
+@media(max-width:1050px){.brand .fin-logo{width:148px!important}}

@@ -13,7 +13,7 @@ const dateBR=v=>v?new Date(v+'T12:00:00').toLocaleDateString('pt-BR'):'';
 function clean(s){return String(s??'').replace(/[−–—]/g,'-').replace(/×/g,'x').replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/…/g,'...').replace(/[•·]/g,'-').replace(/≥/g,'>=').replace(/≤/g,'<=').replace(/→/g,'->').replace(/[^\x00-\xFF]/g,'')}
 function plain(md){return clean(String(md||'').replace(/\*\*(.+?)\*\*/g,'$1').replace(/`([^`]+)`/g,'$1').replace(/^#{1,6}\s*/gm,'').replace(/^\s*[-*]\s+/gm,'- '))}
 let logoPromise=null;
-function logo(){if(!logoPromise)logoPromise=fetch('logo-integral.png').then(r=>r.ok?r.blob():null).then(b=>b?new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>res(null);fr.readAsDataURL(b)}):null).catch(()=>null);return logoPromise}
+function logo(){if(!logoPromise)logoPromise=fetch('marca/logo-financeiro.png').then(r=>r.ok?r.blob():null).then(b=>b?new Promise(res=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>res(null);fr.readAsDataURL(b)}):null).catch(()=>null);return logoPromise}
 
 /* Leitura automática dos números — usada quando a IA não está disponível
    e como saudação do consultor no chat. */
@@ -43,7 +43,7 @@ async function build({base,relatorio=null,analise=null,usuario=''}){
  const heading=s=>{ensure(14);y+=3;doc.setFillColor(...BRAND);doc.rect(M,y-4,1.2,5.6,'F');doc.text(text(s,13,'bold',TEXT),M+4,y);y+=7};
  /* Cabeçalho */
  doc.setFillColor(...SOFT);doc.rect(0,0,W,40,'F');doc.setFillColor(...BRAND);doc.rect(0,40,W,1.2,'F');
- if(img)try{doc.addImage(img,'PNG',M,9,34,19,undefined,'FAST')}catch{}
+ if(img)try{doc.addImage(img,'PNG',M,12,46,16,undefined,'FAST')}catch{}
  const title=relatorio?.titulo||(analise?'Análise do Consultor Financeiro':'Relatório financeiro gerencial');
  doc.text(text('RELATÓRIO FINANCEIRO',8,'bold',BRAND),W-M,13,{align:'right'});
  doc.text(doc.splitTextToSize(text(title,15,'bold'),110),W-M,20,{align:'right'});

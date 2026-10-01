@@ -6,7 +6,7 @@ const aiReceivablesHandler=require('./api/ai-receivables');
 const integracaoFinanceiroIA=require('./api/integracao-financeiro-ia');
 const agenteFinanceiro=require('./api/agente-financeiro');
 const root=path.join(__dirname,'public');
-const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml'};
+const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.webmanifest':'application/manifest+json'};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data))};
 const readJson=req=>new Promise((resolve,reject)=>{let body='';req.on('data',c=>{body+=c;if(body.length>12_000_000){const e=new Error('PAYLOAD_TOO_LARGE');e.statusCode=413;reject(e);req.destroy()}});req.on('end',()=>{try{resolve(body?JSON.parse(body):{})}catch(e){reject(e)}});req.on('error',reject)});
 function vercelResponseCompat(res){
