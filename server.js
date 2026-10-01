@@ -4,6 +4,7 @@ const aiHealthHandler=require('./api/ai-health');
 const aiReceiptHandler=require('./api/ai-receipt');
 const aiReceivablesHandler=require('./api/ai-receivables');
 const integracaoFinanceiroIA=require('./api/integracao-financeiro-ia');
+const agenteFinanceiro=require('./api/agente-financeiro');
 const root=path.join(__dirname,'public');
 const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml'};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data))};
@@ -45,6 +46,7 @@ async function aiReceivables(req,res){return withJsonBody(req,res,aiReceivablesH
 http.createServer((req,res)=>{
  const pathname=(req.url||'/').split('?')[0];
  if(pathname==='/api/ai-classify')return aiClassify(req,res);
+ if(pathname==='/api/agente-financeiro')return withJsonBody(req,res,agenteFinanceiro);
  if(pathname==='/api/ai-account')return aiAccount(req,res);
  if(pathname==='/api/ai-receipt')return aiReceipt(req,res);
  if(pathname==='/api/integracao-financeiro-ia')return withJsonBody(req,res,integracaoFinanceiroIA);

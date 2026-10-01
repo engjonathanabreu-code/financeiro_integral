@@ -104,30 +104,36 @@ async function initialize(){
   return initPromise;
 }
 
-let pushAgain=false,retryTimer=null;
-async function pushChanged(){
-  if(!initialized)return;
-  if(pushing){pushAgain=true;return}
-  const c=client(),s=await session(),d=state();if(!c||!s||!d)return;
+let pushAgain=false,retryTimer=null,pushPromise=null,closingBudget=false,budgetConflict=false;
+function pushChanged(allowDuringClose=false){
+  if(closingBudget&&!allowDuringClose){pushAgain=true;return Promise.resolve(false)}
+  if(pushPromise){pushAgain=true;return pushPromise}
+  if(!initialized)return Promise.resolve(false);
   pushing=true;pushAgain=false;
+  pushPromise=(async()=>{
   const pending={};
   try{
+    const c=client(),s=await session(),d=state();if(!c||!s||!d)return false;
     const rows=[],now=new Date().toISOString();
     for(const [k,v] of Object.entries(d)){
-      if(!validKey(k)||k==='invoiceRequests')continue;
+      if(!validKey(k)||k==='invoiceRequests'||(k==='budgetRecords'&&budgetConflict))continue;
       const j=json(v);if(snapshot[k]===j)continue;
       rows.push({chave:k,dados:clone(v),updated_by:s.user.id,updated_at:now});pending[k]=j;
     }
     await upsertRows(rows);
     /* Só marca como sincronizado depois que o Supabase confirmou a gravação. */
     Object.assign(snapshot,pending);
+    return true;
   }catch(e){
     console.error('Financeiro: falha ao salvar no Supabase; nova tentativa em instantes',e);
     clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(initialized)pushChanged()},5000);
+    return false;
   }finally{
-    pushing=false;
-    if(pushAgain){pushAgain=false;schedulePush()}
+    pushing=false;pushPromise=null;
+    if(pushAgain&&!closingBudget){pushAgain=false;schedulePush()}
   }
+  })();
+  return pushPromise;
 }
 function schedulePush(){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(initialized)pushChanged()},180)}
 
@@ -138,8 +144,63 @@ const cloudSave=function(){
 };
 try{save=cloudSave}catch{window.save=cloudSave}
 
-async function syncNow(){const ok=await initialize();if(!ok)return false;await pushChanged();return true}
-window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged};
+async function syncNow(){const ok=await initialize();if(!ok)return false;return pushChanged()}
+// Serialize closure with saves and reconcile the response against the confirmed
+// baseline. Pending local edits and newly observed server records are preserved.
+async function closeBudget(expected){
+  if(closingBudget)throw Error('Já existe um encerramento em andamento.');
+  const confirmed=clone(expected),id=String(confirmed.id);
+  closingBudget=true;clearTimeout(pushTimer);
+  try{
+    if(!await initialize())throw Error('Não foi possível carregar a base compartilhada.');
+    if(pushPromise&&!await pushPromise)throw Error('Há alterações ainda não salvas. Aguarde a sincronização antes de fechar.');
+    if(!await pushChanged(true))throw Error('Há alterações ainda não salvas. Aguarde a sincronização antes de fechar.');
+    if(budgetConflict)throw Error('Há alterações simultâneas pendentes de revisão.');
+    const baseline=JSON.parse(snapshot.budgetRecords||'[]');
+    const before=clone((state().budgetRecords||[]).find(b=>String(b.id)===id));
+    if(json(before)!==json(confirmed))throw Error('O orçamento mudou. Confira os dados antes de fechar.');
+    const actor=currentUser()?.erpId||currentUser()?.email;
+    const {data,error}=await client().rpc('financeiro_close_budget',{p_id:id,p_expected:confirmed});
+    if(error)throw Error(error.message);
+    const closed=Array.isArray(data)?data.find(b=>String(b.id)===id):null;
+    if(!closed||closed.status!=='Fechado')throw Error('O servidor não confirmou o encerramento. Atualize a tela para conferir.');
+    if(actor!==(currentUser()?.erpId||currentUser()?.email))throw Error('A sessão mudou. Entre novamente para consultar o encerramento.');
+    const d=state(),items=d.budgetRecords||[],local=items.find(b=>String(b.id)===id);
+    const changed=json(local)!==json(before),conflicts=[];
+    const baseMap=new Map(baseline.map(b=>[String(b.id),b]));
+    const localMap=new Map(items.map(b=>[String(b.id),b]));
+    const serverMap=new Map(data.map(b=>[String(b.id),b]));
+    const merged=[];
+    for(const key of new Set([...serverMap.keys(),...localMap.keys(),...baseMap.keys()])){
+      const previous=baseMap.get(key),current=localMap.get(key),remote=serverMap.get(key);
+      let record;
+      if(key===id){
+        record=changed&&current?{...clone(current),status:closed.status,closedAt:closed.closedAt,closedBy:closed.closedBy,history:mergeArray(current.history,closed.history)}:clone(closed);
+      }else if(json(current)===json(previous)){record=clone(remote)}
+      else if(json(remote)===json(previous)||json(current)===json(remote)){record=clone(current)}
+      else if(current&&remote&&previous){
+        record={};
+        for(const field of new Set([...Object.keys(previous),...Object.keys(current),...Object.keys(remote)])){
+          const a=previous[field],l=current[field],r=remote[field];
+          if(json(l)===json(a))record[field]=clone(r);
+          else if(json(r)===json(a)||json(l)===json(r))record[field]=clone(l);
+          else if(field==='history')record[field]=mergeArray(l,r);
+          else{record[field]=clone(l);conflicts.push({id:key,field,local:clone(l),server:clone(r)})}
+        }
+      }else{record=clone(current||remote);conflicts.push({id:key,local:clone(current),server:clone(remote)})}
+      if(record)merged.push(record);
+    }
+    // On a true same-field conflict, keep both copies and stop this module's
+    // automatic writes rather than overwrite either person's pending work.
+    if(conflicts.length){
+      budgetConflict=true;
+      localStorage.setItem('integral_fin_budget_conflicts',JSON.stringify({at:new Date().toISOString(),local:items,server:data,conflicts}));
+    }
+    d.budgetRecords=merged;snapshot.budgetRecords=json(data);cacheAll();
+    return {changedDuringClose:changed,conflicts:conflicts.length};
+  }finally{closingBudget=false;schedulePush()}
+}
+window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged,closeBudget};
 
 let attempts=0;const boot=setInterval(async()=>{attempts++;if(await initialize()||attempts>120)clearInterval(boot)},500);
 /* Renovar o token não recarrega os dados: recarregar substituía o db com modais abertos e descartava edições. */
