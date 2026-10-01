@@ -35,3 +35,17 @@ O encerramento agora aguarda gravações pendentes e interrompe a operação se 
 O total de Fluxo de Caixa do consultor acompanha a tela: lançamentos manuais/importados, contas pagas e gastos de orçamentos, com os ajustes do Fluxo e sem duplicar registros derivados legados. Há regressões específicas para sincronização concorrente e essa composição.
 
 A suite Node foi executada novamente na revisão. O teste real mínimo do provedor pelo endpoint existente ai-health respondeu conectado (sem enviar dados financeiros). A sessão administrativa no navegador de publicação não está autenticada; a conversa integral com dados reais permanece dependente de login. A repetição da suite Playwright neste ambiente foi impedida pela restrição de criação de processo/socket do Chromium; os 26 testes mencionados acima correspondem à validação anterior da implementação.
+
+## Versão 2 — consultor especialista, PDF e gráficos (01/10/2026)
+
+**Comportamento.** O agente fala como um diretor financeiro em reunião com o sócio: começa pela conclusão, sustenta com números da base e fecha com o próximo passo. Ajusta o tamanho da resposta à pergunta, usa Markdown leve (negrito, listas, tabelas) e faz no máximo uma pergunta de volta quando falta premissa. As regras de integridade continuam (nada inventado, observado x estimativa, sem somar bases duplicadas, dados cadastrados tratados como não confiáveis).
+
+**Tela.** Ao abrir, carrega só os indicadores (`mode: 'indicadores'`, sem IA) e mostra quatro cartões e uma saudação escrita a partir dos números, com o gráfico de entradas e saídas. No início do mês (dias 1–5) o período padrão é o mês anterior fechado; há atalhos de período. As respostas chegam em tempo real (streaming NDJSON), com até 2 gráficos escolhidos pelo agente e desenhados com os dados reais. Ícone `bot` na barra lateral; estilos com os tokens do design system (claro/escuro).
+
+**PDF.** "Relatório PDF" pede um relatório estruturado (`mode: 'relatorio'`, JSON schema estrito) e monta no navegador com jsPDF: capa com mensagem-chave e indicadores, resumo executivo, diagnóstico, gráficos vetoriais, recomendações, riscos, próximos passos, DRE, maiores saídas, fontes e limitações. Cada resposta do chat também pode virar PDF. Sem IA, o PDF sai com uma leitura automática dos números.
+
+**Desempenho.** Base e parcelas são lidas em paralelo (páginas de parcelas em lotes de 4) e reaproveitadas por 2 minutos por usuário/sessão (`refresh: true` força nova leitura). Chat com `reasoning.effort: low`; relatório com `medium` (só em modelos gpt-5/o*).
+
+**Dados.** A base ganhou séries mensais (fluxo, recebimentos, planejamento), composição por natureza, DRE gerencial com as mesmas regras da aba DRE (`public/financeiro-dre-shared.js`, usado no navegador e no servidor) e indicadores (margem de caixa, médias, variações, inadimplência do período). As maiores saídas, com descrições, vão para a tela e o PDF, mas não para a IA.
+
+**Validação.** `tests/consultor-agente-v2.test.cjs` cobre séries/DRE/indicadores, marcador de gráficos, modos indicadores/relatório, cache e streaming. Os 8 testes do consultor (4 antigos e 4 novos) passaram num navegador com o mesmo código CommonJS; nesta máquina não há Node, então `npm test` deve ser rodado no CI ou em outra máquina. O teste Playwright foi ajustado aos novos atalhos (que já enviam a pergunta).
