@@ -27,3 +27,11 @@ SQL aditivo: `supabase/financeiro_consultor.sql`, aplicado ao projeto ERP `ycdsy
 - Provedor IA simulado nos testes: valida conteúdo e tratamento de falha; nenhuma chamada real ao modelo foi validada neste ambiente.
 
 Execução: `npm test` e `node tests/browser/consultor.cjs` (Playwright disponível; `BROWSER_CHANNEL=msedge` por padrão). A nova página e API ficam disponíveis após publicação da branch. Não houve merge automático em main.
+
+## Revisão de publicação em 01/10/2026
+
+O encerramento agora aguarda gravações pendentes e interrompe a operação se elas falharem. A resposta do servidor é reconciliada com as alterações locais feitas durante a chamada, preservando novos orçamentos e registros remotos. Conflitos no mesmo campo mantêm as duas versões, interrompem o envio automático do módulo e mostram aviso para revisão.
+
+O total de Fluxo de Caixa do consultor acompanha a tela: lançamentos manuais/importados, contas pagas e gastos de orçamentos, com os ajustes do Fluxo e sem duplicar registros derivados legados. Há regressões específicas para sincronização concorrente e essa composição.
+
+A suite Node foi executada novamente na revisão. O teste real mínimo do provedor pelo endpoint existente ai-health respondeu conectado (sem enviar dados financeiros). A sessão administrativa no navegador de publicação não está autenticada; a conversa integral com dados reais permanece dependente de login. A repetição da suite Playwright neste ambiente foi impedida pela restrição de criação de processo/socket do Chromium; os 26 testes mencionados acima correspondem à validação anterior da implementação.

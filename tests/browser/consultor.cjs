@@ -1,6 +1,6 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
 const root=path.join(__dirname,'../..');
-(async()=>{const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||'msedge'});let checks=0;
+(async()=>{const browser=await chromium.launch({headless:true,...(process.env.BROWSER_EXECUTABLE_PATH?{executablePath:process.env.BROWSER_EXECUTABLE_PATH}:{channel:process.env.BROWSER_CHANNEL||'msedge'})});let checks=0;
 try{
  for(const width of [1440,390]){
  const page=await browser.newPage({viewport:{width,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -12,7 +12,7 @@ try{
  window.v2modal=(name,html)=>{const x=document.createElement('div');x.className='modal-backdrop';x.innerHTML='<div class="modal"><h2>'+name+'</h2>'+html+'</div>';document.body.append(x);return x};window.save=()=>localStorage.setItem('persistedTrips',JSON.stringify(db.trips));
  window.server=structuredClone(db.budgetRecords);window.fail=false;
  window.IntegralERP={sb:{auth:{getSession:async()=>({data:{session:{access_token:'fixture'}}})},rpc:async(name,args)=>{if(fail)return {error:{message:'Conflito'}};server=server.map(b=>String(b.id)===args.p_id?{...b,status:'Fechado',closedAt:'2026-10-01T12:00:00Z',closedBy:'adm',history:[...b.history,{at:'2026-10-01T12:00:00Z',action:'Orçamento fechado',by:'adm'}]}:b);return {data:structuredClone(server)}}}};
- window.IntegralFinanceCloudStorage={acceptModule:(key,value)=>{db[key]=structuredClone(value);localStorage.setItem('persistedBudgets',JSON.stringify(value))}};window.IntegralTripDocuments={};
+ window.IntegralFinanceCloudStorage={closeBudget:async b=>{const {data,error}=await IntegralERP.sb.rpc('financeiro_close_budget',{p_id:String(b.id),p_expected:b});if(error)throw Error(error.message);db.budgetRecords=structuredClone(data);localStorage.setItem('persistedBudgets',JSON.stringify(data));return {changedDuringClose:false}}};window.IntegralTripDocuments={};
  window.fetch=async()=>({ok:true,json:async()=>({resposta:'Observado: R$ 50. Projeções: dados insuficientes.',base:{periodo:{start:'2026-10-01',end:'2026-10-01'},observado:{recebido:50}},modo:'ia'})});
  });
  for(const f of ['patch-v9.js','patch-v26-trip-ai.js','financeiro-lifecycle.js','financeiro-consultor.js'])await page.addScriptTag({content:fs.readFileSync(path.join(root,'public',f),'utf8')});await page.addStyleTag({content:fs.readFileSync(path.join(root,'public/financeiro-consultor.css'),'utf8')});

@@ -26,3 +26,9 @@ test('IA receives only authorized metrics; returns sourced analysis and detects 
  const run=async()=>{let status=200,body;await handler({method:'POST',headers:{authorization:'Bearer adm'},body:{question:'Resumo financeiro',start:'2026-10-01',end:'2026-10-01',cashflow:[{value:99999}]}},{setHeader(){},status(v){status=v;return this},json(v){body=v}});return {status,body}};
  try{const r=await run();assert.equal(r.status,200);assert.equal(r.body.modo,'ia');assert.equal(r.body.base.observado.fluxo_caixa.entradas,100);assert.ok(!JSON.stringify(payload).includes('99999'));assert.match(payload.instructions,/Nunca invente/);assert.match(r.body.resposta,/Base:/);incomplete=true;assert.equal((await run()).status,503)}finally{global.fetch=previous;if(key===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=key}
 });
+
+test('consultant cash totals match displayed paid accounts, budgets and overrides without legacy duplication',()=>{
+ const base={cashflow:[{id:1,date:'2026-10-01',direction:'Entrada',value:100},{id:2,date:'2026-10-01',direction:'Saída',value:999,source:'Conta paga'},{id:3,date:'2026-10-01',direction:'Saída',value:999,source:'Orçamento'}],accountPayments:[{id:1,status:'Paga',value:30,paidAt:'2026-10-01T13:00:00Z',due:'2026-09-30'},{id:2,status:'Pendente',value:50,due:'2026-10-01'}],budgetExpenses:[{id:1,date:'2026-10-01',value:20}],cashflowOverrides:{'account:1':{value:35},'budget:1':{value:15,date:'2026-09-30'}}};
+ const r=analyze(base,[],{start:'2026-10-01',end:'2026-10-01'},'2026-10-01');
+ assert.equal(r.observado.fluxo_caixa.entradas,100);assert.equal(r.observado.fluxo_caixa.saidas,35);assert.equal(r.observado.fluxo_caixa.registros,2);assert.equal(r.observado.comparacao.saidas,15);
+});

@@ -7,11 +7,11 @@ async function closeBudget(b,button){
  if(!confirm(`Fechar o orçamento "${b.name}"? Ele será mantido em Orçamentos fechados, com gastos e histórico para consulta.`))return;
  button.disabled=true;
  try{
-  const sb=window.IntegralERP?.sb;if(!sb)throw Error('Entre novamente para fechar o orçamento com segurança.');
-  const {data,error}=await sb.rpc('financeiro_close_budget',{p_id:String(b.id),p_expected:JSON.parse(JSON.stringify(b))});
-  if(error)throw Error(error.message);
-  window.IntegralFinanceCloudStorage.acceptModule('budgetRecords',data);
+  const storage=window.IntegralFinanceCloudStorage;if(!storage?.closeBudget)throw Error('Entre novamente para fechar o orçamento com segurança.');
+  const result=await storage.closeBudget(b);
   budgets();
+  if(result.conflicts)alert('Orçamento fechado. Há edições simultâneas que precisam de revisão; as duas versões foram preservadas e o envio automático de orçamentos foi interrompido. Mantenha esta tela aberta e solicite suporte.');
+  else if(result.changedDuringClose)alert('Orçamento fechado. As alterações feitas durante o encerramento foram preservadas; confira o histórico.');
  }catch(e){alert('Não foi possível fechar: '+e.message)}finally{button.disabled=false}
 }
 function enhanceDetail(b){
