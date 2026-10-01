@@ -4,7 +4,9 @@ async function gerar(r,{carne=false}={}){
  const C=root.AilosCNAB,c=r.config,hom=c.ambiente==='homologacao';
  C.config(c);if(!hom&&r.boletos.some(b=>r.estados?.[b.id]!=='Registrado'))throw Error('O PDF de cobrança só é liberado após retorno de registro aceito pelo banco. Selecione uma remessa com todos os boletos registrados.');
  const doc=new root.jspdf.jsPDF({unit:'mm',format:'a4'});
- const response=await fetch('ailos-logo.png');if(!response.ok)throw Error('Não foi possível carregar a marca Ailos.');const blob=await response.blob();const logo=await new Promise((resolve,reject)=>{const f=new FileReader();f.onload=()=>resolve(f.result);f.onerror=reject;f.readAsDataURL(blob);});
+ const response=await fetch('ailos-logo.png?v=20261001');if(!response.ok)throw Error('Não foi possível carregar a marca Ailos.');const blob=await response.blob();const logo=await new Promise((resolve,reject)=>{const f=new FileReader();f.onload=()=>resolve(f.result);f.onerror=reject;f.readAsDataURL(blob);});
+ // Marca fornecida pela cooperativa em 01/10/2026; preservar a proporcao original.
+ const logoInfo=doc.getImageProperties(logo),logoHeight=width=>width*logoInfo.height/logoInfo.width;
  const br=d=>d.split('-').reverse().join('/'),money=v=>Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
  let offset=0;
  function text(s,x,y,size=9){doc.setFontSize(size);doc.text(String(s),x,y+offset);}
@@ -15,14 +17,14 @@ async function gerar(r,{carne=false}={}){
  if(carne){if(i&&(b.groupIndex===0||b.groupIndex%2===0))doc.addPage();offset=b.groupIndex%2===0?-73:74; text(`${hom?'HOMOLOGACAO - NAO PAGAR | ':''}CARNE - PARCELA ${b.ordem}/${b.total}`,10,81,9);if(b.groupIndex%2===0){doc.setLineDashPattern([1,1],0);doc.line(10,147,200,147);doc.setLineDashPattern([],0);}}else{offset=0;if(i)doc.addPage();}
  const k=C.boleto(c,b),p=b.pagador,linha=k.linha_digitavel;const formatted=`${linha.slice(0,5)}.${linha.slice(5,10)} ${linha.slice(10,15)}.${linha.slice(15,21)} ${linha.slice(21,26)}.${linha.slice(26,32)} ${linha[32]} ${linha.slice(33)}`;
  if(!carne){text(hom?'HOMOLOGACAO - SEM VALOR PARA PAGAMENTO':'BOLETO DE COBRANCA',10,15,12);
- doc.addImage(logo,'PNG',10,22,28,9);text('085-0',42,29,13);text('RECIBO DO PAGADOR',130,29,11);
+ doc.addImage(logo,'PNG',10,22,28,logoHeight(28));text('085-0',42,29,13);text('RECIBO DO PAGADOR',130,29,11);
  field(10,34,130,12,'Beneficiario / CPF-CNPJ',c.nome+' / '+c.cpf_cnpj);field(140,34,60,12,'Agencia / Conta',`${c.agencia}-${c.agencia_dv} / ${c.conta}-${c.conta_dv}`);
  field(10,46,75,12,'Numero do documento',b.documento);field(85,46,55,12,'Vencimento',br(b.vencimento));field(140,46,60,12,'Valor do documento (R$)',money(b.valor));
  field(10,58,130,12,'Pagador / CPF-CNPJ',p.nome+' / '+p.cpf_cnpj);field(140,58,60,12,'Nosso numero',b.nosso_numero);
  text('Autenticacao mecanica',158,75,7);doc.setLineDashPattern([1,1],0);doc.line(10,81,200,81);doc.setLineDashPattern([],0);
  }
  // Ficha com 190 mm de largura e 104 mm de altura, conforme manual.
- doc.addImage(logo,'PNG',10,87+offset,25,8);text('085-0',39,93,12);text(formatted,58,93,9.5);
+ doc.addImage(logo,'PNG',10,87+offset,25,logoHeight(25));text('085-0',39,93,12);text(formatted,58,93,9.5);
  field(10,98,140,10,'Local de pagamento','Pagar preferencialmente nas cooperativas do Sistema Ailos.');field(150,98,50,10,'Vencimento',br(b.vencimento));
  field(10,108,140,15,'Beneficiario / CPF-CNPJ / Endereco',`${c.nome} / ${c.cpf_cnpj}\n${c.endereco}`);field(150,108,50,15,'Agencia / Codigo do beneficiario',`${c.agencia}-${c.agencia_dv}\n${c.conta}-${c.conta_dv}`);
  field(10,123,32,10,'Data documento',br(r.data));field(42,123,45,10,'Numero documento',b.documento);field(87,123,20,10,'Especie','DS');field(107,123,12,10,'Aceite','N');field(119,123,31,10,'Processamento',br(r.data));field(150,123,50,10,'Nosso numero',b.nosso_numero);

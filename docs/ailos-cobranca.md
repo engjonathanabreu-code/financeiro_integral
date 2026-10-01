@@ -42,6 +42,7 @@ A reserva e a finalização são transacionais e idempotentes. Uma falha no meio
 - Retorno com valor inferior ao nominal cria pagamento parcial para conferência. Pagamento já existente, divergência de cadastro, parcela alterada/inativa/cancelada ou segundo evento de liquidação diferente exige análise; não há sobrescrita silenciosa.
 - Não implementa API, Pix, alterações/baixas por remessa, reemissão de título rejeitado, múltiplos convênios ou criação de novos contratos. Corrigir títulos já emitidos exige conciliação operacional com a cooperativa antes de novos comandos.
 - O histórico guarda até 100 remessas na listagem. Downloads guardam o conteúdo original. A reserva de números é persistente e transacional, nunca feita no armazenamento local do navegador.
+- O PDF usa a marca Ailos enviada pela cooperativa em 01/10/2026, com a proporção original, no recibo e na ficha de compensação (manual v14, páginas 5 e 7). A atualização visual não altera o snapshot, a numeração nem o conteúdo de remessas existentes.
 - O PDF segue o desenho bancário e código 2 de 5 intercalado, com barras de 103 × 13 mm. A leitura física e aceitação definitiva dependem da homologação bancária.
 
 ## Instalação e testes
