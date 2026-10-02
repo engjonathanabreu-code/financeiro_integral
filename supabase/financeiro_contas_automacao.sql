@@ -35,7 +35,8 @@ create table if not exists public.financeiro_pagamentos (
 
 create table if not exists public.financeiro_whatsapp_envios (
   id uuid primary key default gen_random_uuid(),
-  pagamento_id text not null references public.financeiro_pagamentos(id) on delete cascade,
+  -- Sem FK: as contas vêm de financeiro_estado_modulos (accountPayments). Ver fix_whatsapp_envios_fk.sql.
+  pagamento_id text not null,
   destinatario text not null,
   vencimento date not null,
   status text not null default 'enviado',

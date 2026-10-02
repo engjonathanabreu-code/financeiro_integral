@@ -94,8 +94,11 @@ function messageHtml(m,idx){
  const C=window.IntegralAgentCharts;
  const charts=m.base&&m.graficos?.length&&C?m.graficos.map(id=>C.svg(id,m.base)).join(''):'';
  const body=m.pending&&!m.content?`<div class="fin-agent-typing"><i></i><i></i><i></i><span>${E(m.wait||WAIT[0])}</span></div>`:md(stripCharts(m.content));
+ /* Gráficos sob demanda: a sugestão abre a lista dos que têm dados no período; nada é desenhado sem pedido. */
+ const opcoes=!m.pending&&m.content&&m.base&&C?C.ids.filter(id=>!(m.graficos||[]).includes(id)&&C.hasData(id,m.base)):[];
+ const sugestao=opcoes.length?`<div class="fin-agent-chart-suggest">${m.chartMenu?opcoes.map(id=>`<button type="button" class="btn small ghost" data-agent-chart="${idx}:${id}">${E(C.defs[id].titulo)}</button>`).join('')+`<button type="button" class="btn small ghost" data-agent-chart-menu="${idx}">Fechar</button>`:`<button type="button" class="btn small ghost" data-fin-icon="chart-no-axes-combined" data-agent-chart-menu="${idx}">Gerar gráfico</button>`}</div>`:'';
  const tools=!m.pending&&m.content&&!m.intro?`<div class="fin-agent-msg-tools"><button type="button" class="btn small ghost" data-agent-pdf="${idx}">Baixar PDF desta análise</button><button type="button" class="btn small ghost" data-agent-copy="${idx}">Copiar</button></div>`:'';
- return `<article class="fin-agent-assistant${m.error?' is-error':''}"><span class="fin-agent-avatar sm" data-fin-icon="bot" aria-hidden="true"></span><div class="fin-agent-bubble"><div class="fin-agent-md">${body}</div>${charts}${tools}</div></article>`;
+ return `<article class="fin-agent-assistant${m.error?' is-error':''}"><span class="fin-agent-avatar sm" data-fin-icon="bot" aria-hidden="true"></span><div class="fin-agent-bubble"><div class="fin-agent-md">${body}</div>${charts}${sugestao}${tools}</div></article>`;
 }
 function paint(root){
  const log=root.querySelector('.fin-agent-messages');if(!log)return;
@@ -106,6 +109,8 @@ function paint(root){
  root.querySelector('.fin-agent-base').textContent=state.report?JSON.stringify(state.report,null,2):'Carregando indicadores…';
  root.querySelectorAll('[data-agent-prompt],[data-agent-report],[data-agent-reset],.fin-agent-form button,[data-agent-pdf]').forEach(b=>b.disabled=state.busy);
  root.querySelectorAll('[data-agent-pdf]').forEach(b=>b.onclick=()=>pdfFor(+b.dataset.agentPdf,root));
+ root.querySelectorAll('[data-agent-chart-menu]').forEach(b=>b.onclick=()=>{const m=state.messages[+b.dataset.agentChartMenu];if(m){m.chartMenu=!m.chartMenu;paintAll()}});
+ root.querySelectorAll('[data-agent-chart]').forEach(b=>b.onclick=()=>{const [i,id]=b.dataset.agentChart.split(':'),m=state.messages[+i];if(!m)return;m.graficos=[...(m.graficos||[]),id];m.chartMenu=false;paintAll()});
  root.querySelectorAll('[data-agent-copy]').forEach(b=>b.onclick=()=>{const m=state.messages[+b.dataset.agentCopy];navigator.clipboard?.writeText(stripCharts(m.content)).then(()=>{b.textContent='Copiado';setTimeout(()=>b.textContent='Copiar',1500)}).catch(()=>{})});
 }
 const paintAll=()=>document.querySelectorAll('.fin-agent-chat').forEach(paint);
@@ -120,7 +125,7 @@ async function loadBase(root,{silent}={}){
  state.loadingBase=true;const owner=state.owner;
  try{const r=await call({mode:'indicadores',...p});const res=await r.json();if(!r.ok)throw Error(res.erro||'Indicadores indisponíveis.');if(state.owner!==owner)return;
   state.report=res.base;state.baseKey=key;
-  const intro=state.messages.findIndex(m=>m.intro);const msg={role:'assistant',intro:true,content:briefing(res.base),base:res.base,graficos:['fluxo_mensal']};
+  const intro=state.messages.findIndex(m=>m.intro);const msg={role:'assistant',intro:true,content:briefing(res.base),base:res.base,graficos:[]};
   if(intro>=0)state.messages[intro]=msg;else if(!state.messages.length)state.messages.push(msg);
  }catch(e){if(state.owner===owner)setStatus(root,e.message)}finally{state.loadingBase=false;paintAll()}
 }

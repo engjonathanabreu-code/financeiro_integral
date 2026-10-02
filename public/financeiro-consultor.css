@@ -47,6 +47,7 @@
 .fin-agent-typing span{margin-left:6px}
 @keyframes finAgentDot{50%{opacity:1;transform:translateY(-2px)}}
 .fin-agent-msg-tools{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.fin-agent-chart-suggest{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.fin-agent-chart-suggest [data-fin-icon]{display:inline-flex;align-items:center;gap:6px}.fin-agent-chart-suggest [data-fin-icon]::before{content:"";width:14px;height:14px;background:currentColor;mask:var(--fin-icon) center/contain no-repeat;-webkit-mask:var(--fin-icon) center/contain no-repeat}
 .fin-agent-chart{margin:12px 0 0;padding:12px;border:1px solid var(--ds-border,#d6e2df);border-radius:var(--ds-r-card,12px);background:var(--ds-surface,#fff)}
 .fin-agent-chart figcaption b{display:block;font-size:13.5px}.fin-agent-chart figcaption small{color:var(--ds-muted,#5b6b7b);font-size:12px}
 .fin-agent-chart svg{display:block;width:100%;height:auto;margin-top:6px}
