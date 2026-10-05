@@ -35,7 +35,10 @@ async function fixture() {
   context.IntegralERP = { sb: {
     auth: { getSession: async () => ({ data: { session: { user: { id: 'admin' }, access_token: 'fixture' } } }), onAuthStateChange() {} },
     from() { return {
-      select: async () => ({ data: Object.entries(server).map(([chave, dados]) => ({ chave, dados: copy(dados) })) }),
+      select: () => {
+        const rows = keys => ({ data: Object.entries(server).filter(([chave]) => !keys || keys.includes(chave)).map(([chave, dados]) => ({ chave, dados: copy(dados) })) });
+        return { then: (ok, fail) => Promise.resolve(rows()).then(ok, fail), in: async (_column, keys) => rows(keys) };
+      },
       upsert: async rows => {
         const captured = copy(rows); writes.push(captured); events.push('push-start');
         const error = await hooks.upsert?.(captured);
@@ -45,6 +48,7 @@ async function fixture() {
       }
     }; },
     rpc: async (name, args) => {
+      if (name === 'is_admin') return { data: context.user?.role === 'Administrador', error: null };
       rpcs.push({ name, args: copy(args) }); events.push('rpc-start');
       const error = await hooks.rpc?.(name, args);
       if (error) return { error };

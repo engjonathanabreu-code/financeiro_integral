@@ -9,7 +9,7 @@ async function capture(file){
   return {name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString(),dataUrl:await readDataURL(file)};
 }
 function source(record,linked){
-  return [record?.file,record,linked?.file,linked].find(x=>x&&(x.storagePath||[x.dataUrl,x.dataURL,x.fileData].some(v=>typeof v==='string'&&v.startsWith('data:'))))||null;
+  return [record?.file,record,linked?.file,linked].find(x=>x&&(x.storagePath||x.arquivoId||[x.dataUrl,x.dataURL,x.fileData].some(v=>typeof v==='string'&&v.startsWith('data:'))))||null;
 }
 async function blob(record,linked){
   const s=source(record,linked);if(!s)throw new Error('O registro antigo contém apenas o nome do arquivo. Anexe o comprovante em Editar despesa para baixar ou revisar com IA.');
@@ -17,7 +17,8 @@ async function blob(record,linked){
     const sb=window.IntegralERP?.sb;if(!sb)throw new Error('Conexão indisponível. Entre novamente no sistema.');
     const {data,error}=await sb.storage.from(s.storageBucket||'documentos').download(s.storagePath);if(error)throw error;return data;
   }
-  const url=[s.dataUrl,s.dataURL,s.fileData].find(v=>typeof v==='string'&&v.startsWith('data:'));
+  let url=[s.dataUrl,s.dataURL,s.fileData].find(v=>typeof v==='string'&&v.startsWith('data:'));
+  if(!url&&s.arquivoId)url=await window.IntegralFileUploads.storedContent(s.arquivoId);
   const response=await fetch(url);return response.blob();
 }
 async function download(record,linked){

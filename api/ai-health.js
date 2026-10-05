@@ -1,5 +1,7 @@
+const {requireProfile}=require('../lib/auth');
 module.exports=async function handler(req,res){
   if(req.method!=='GET')return res.status(405).json({connected:false,error:'METHOD_NOT_ALLOWED'});
+  if(!await requireProfile(req,res,'ativo'))return;
   if(!process.env.OPENAI_API_KEY)return res.status(500).json({connected:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
   const configured=String(process.env.OPENAI_FINANCE_MODEL||'').trim();
   const model=configured||'gpt-5.6-luna';

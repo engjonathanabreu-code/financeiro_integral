@@ -1,6 +1,8 @@
+const {requireProfile}=require('../lib/auth');
 const {resolveFile}=require('../lib/ai-file');
 module.exports=async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
+  if(!await requireProfile(req,res,'financeiro'))return;
   if(!process.env.OPENAI_API_KEY)return res.status(500).json({ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
   try{
     const {fileName='',accounts=[]}=req.body||{};

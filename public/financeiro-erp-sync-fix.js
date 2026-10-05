@@ -17,6 +17,8 @@ async function robustPlanningSync(){
   const sb=erp?.sb;
   const d=getDb();
   if(!sb||!d||!getUser())return {ok:false,reason:'not-ready'};
+  // Só o ADM atualiza a base compartilhada do ERP: para os demais as consultas vêm filtradas pelo acesso.
+  if(getUser()?.role!=='Administrador')return {ok:false,reason:'Sincronização com o ERP disponível somente para administradores.'};
 
   // O Financeiro resolve os nomes diretamente no ERP antes de montar as previsões.
   // Assim não depende de uma lista de projetos em memória estar previamente carregada.

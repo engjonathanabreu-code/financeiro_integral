@@ -22,7 +22,10 @@
   }
 
   function normalizeAssignments(){
-    /* Ajusta os registros no lugar (sem recriar objetos), para não invalidar edições em modais abertos. */
+    /* Ajusta os registros no lugar (sem recriar objetos), para não invalidar edições em modais abertos.
+       Só o ADM grava essa normalização: para os demais a visibilidade já considera o setor, e regravar
+       budgetRecords a partir de uma cópia antiga desfazia edições do ADM ou travava os salvamentos. */
+    if(!isAdm())return false;
     let changed=false;
     if(!Array.isArray(db.trips))db.trips=[];
     for(const t of db.trips){if(!Array.isArray(t.assigned)){t.assigned=[];changed=true}if(t.sector==null){t.sector='';changed=true}}
@@ -48,8 +51,10 @@
     return (t.assigned||[]).includes(u?.id)||sameSector(t.sector,user?.sector);
   }
 
+  const isFinanceSector=()=>{try{return !!window.IntegralFinanceSectorAccess?.isFinance?.()}catch{return false}};
   function enforceLimitedNav(){
-    if(!user||isAdm())return;
+    /* O setor Financeiro tem menu próprio (financeiro-finance-sector-access.js). */
+    if(!user||isAdm()||isFinanceSector())return;
     const nav=document.querySelector('.nav');
     if(!nav)return;
     nav.querySelectorAll('button[data-view]').forEach(btn=>{btn.style.display=['budgets','trips','invoices'].includes(btn.dataset.view)?'':'none'});
@@ -57,7 +62,7 @@
 
   const baseApp=app;
   app=function(){
-    if(user&&!isAdm()&&!['budgets','trips','invoices'].includes(view))view='budgets';
+    if(user&&!isAdm()&&!isFinanceSector()&&!['budgets','trips','invoices'].includes(view))view='budgets';
     normalizeAssignments();
     baseApp();
     if(window.IntegralERP?.loaded)syncSectorsFromERP();

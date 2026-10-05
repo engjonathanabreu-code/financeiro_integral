@@ -5,6 +5,7 @@ const aiReceiptHandler=require('./api/ai-receipt');
 const aiReceivablesHandler=require('./api/ai-receivables');
 const integracaoFinanceiroIA=require('./api/integracao-financeiro-ia');
 const agenteFinanceiro=require('./api/agente-financeiro');
+const {requireProfile}=require('./lib/auth');
 const root=path.join(__dirname,'public');
 const types={'.html':'text/html','.css':'text/css','.js':'application/javascript','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.webmanifest':'application/manifest+json'};
 const json=(res,status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data))};
@@ -16,6 +17,7 @@ function vercelResponseCompat(res){
 }
 async function aiClassify(req,res){
  if(req.method!=='POST')return json(res,405,{ok:false,error:'METHOD_NOT_ALLOWED'});
+ if(!await requireProfile(req,vercelResponseCompat(res),'financeiro'))return;
  if(!process.env.OPENAI_API_KEY)return json(res,500,{ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
  try{
   const {rows=[],natures=[]}=await readJson(req);

@@ -2,7 +2,25 @@
 (function(){
 'use strict';
 const MAX_FILE=20*1024*1024, INLINE_LIMIT=3*1024*1024;
-const nativeFetch=window.fetch.bind(window);
+const rawFetch=window.fetch.bind(window);
+/* As rotas /api exigem a sessão do ERP: o token vai junto em toda chamada do próprio site. */
+async function authFetch(input,init){
+  try{
+    const href=typeof input==='string'?input:(input&&input.url)||'';
+    const target=new URL(href,location.href);
+    if(target.origin===location.origin&&target.pathname.startsWith('/api/')){
+      const headers=new Headers((init&&init.headers)||(input instanceof Request?input.headers:undefined));
+      if(!headers.has('Authorization')){
+        const sb=window.IntegralERP?.sb;
+        const session=sb?(await sb.auth.getSession())?.data?.session:null;
+        if(session?.access_token){headers.set('Authorization','Bearer '+session.access_token);init={...(init||{}),headers}}
+      }
+    }
+  }catch{}
+  return rawFetch(input,init);
+}
+window.fetch=authFetch;
+const nativeFetch=authFetch;
 function validate(file){if(file.size>MAX_FILE)throw new Error('O arquivo deve ter até 20 MB.')}
 async function storedUrl(file,name){
   const sb=window.IntegralERP?.sb;
@@ -28,5 +46,24 @@ async function request(url,options){
   }
   return nativeFetch(url,{...options,body:JSON.stringify(payload)});
 }
-window.IntegralFileUploads={MAX_FILE,validate,fetch:request};
+/* Anexos guardados em financeiro_arquivos: o módulo tem só o arquivoId. */
+const storedCache=new Map();
+function inlineData(x){return x&&typeof x==='object'?[x.dataUrl,x.dataURL,x.fileData,x.base64,x.content].find(v=>typeof v==='string'&&v.startsWith('data:'))||'':''}
+function storedRef(x){return x&&typeof x==='object'&&typeof x.arquivoId==='string'&&x.arquivoId?x.arquivoId:''}
+async function storedContent(arquivoId){
+  if(!arquivoId)throw new Error('Arquivo não informado.');
+  if(storedCache.has(arquivoId))return storedCache.get(arquivoId);
+  const sb=window.IntegralERP?.sb;if(!sb)throw new Error('Conexão indisponível. Entre novamente no sistema.');
+  const promise=(async()=>{const {data,error}=await sb.from('financeiro_arquivos').select('conteudo').eq('id',arquivoId).maybeSingle();if(error)throw error;if(!data?.conteudo)throw new Error('O arquivo original não foi encontrado.');return data.conteudo})();
+  storedCache.set(arquivoId,promise);promise.catch(()=>storedCache.delete(arquivoId));
+  return promise;
+}
+/* Devolve o data URL do anexo, esteja ele embutido (registros antigos/novos ainda não salvos) ou guardado. */
+async function dataUrlOf(...records){
+  for(const r of records){const d=inlineData(r)||inlineData(r?.file);if(d)return d}
+  for(const r of records){const id=storedRef(r)||storedRef(r?.file);if(id)return storedContent(id)}
+  return '';
+}
+function hasFile(x){return !!(inlineData(x)||storedRef(x))}
+window.IntegralFileUploads={MAX_FILE,validate,fetch:request,storedContent,dataUrlOf,hasFile};
 })();

@@ -20,6 +20,7 @@ async function fileBlob(doc){
   if(direct instanceof Blob)return direct;
   const data=doc?.dataUrl||doc?.dataURL||doc?.base64||doc?.fileData||doc?.content;
   if(typeof data==='string'&&data.startsWith('data:'))return dataUrlToBlob(data);
+  if(typeof doc?.arquivoId==='string'&&doc.arquivoId&&window.IntegralFileUploads?.storedContent)return dataUrlToBlob(await window.IntegralFileUploads.storedContent(doc.arquivoId));
   if(data instanceof ArrayBuffer||ArrayBuffer.isView(data))return new Blob([data],{type:doc?.mimeType||doc?.type||'application/octet-stream'});
   const url=doc?.url||doc?.fileUrl||doc?.downloadUrl||doc?.storageUrl||doc?.publicUrl||doc?.signedUrl;
   if(typeof url==='string'&&url){const r=await fetch(url);if(!r.ok)throw new Error(`HTTP ${r.status}`);return await r.blob()}
