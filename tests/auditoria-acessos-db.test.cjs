@@ -18,6 +18,9 @@ async function setup(){
  alter table financeiro_estado_modulos enable row level security;
  create policy financeiro_estado_modulos_authenticated on financeiro_estado_modulos for all to authenticated using(true) with check(true);
  create policy financeiro_estado_modulos_write on financeiro_estado_modulos for all to authenticated using(true) with check(true);
+ create policy financeiro_estado_modulos_select on financeiro_estado_modulos for select to authenticated using(true);
+ create schema integracao_financeiro_privado;grant usage on schema integracao_financeiro_privado to authenticated;
+ create function integracao_financeiro_privado.operar() returns boolean language sql stable security definer set search_path='' as $$select exists(select 1 from public.profiles where id=auth.uid() and ativo and (tipo in ('Administrador','Financeiro') or lower(trim(setor))='financeiro'))$$;
  grant select,insert,update,delete on financeiro_estado_modulos to authenticated;
  create table financeiro_estado_modulos_history(id bigserial primary key,chave text,dados jsonb,operation text,changed_at timestamptz default now(),changed_by uuid);
  alter table financeiro_estado_modulos_history enable row level security;

@@ -22,18 +22,17 @@ Foco: usuários sem perfil Administrador (colaboradores e setor Financeiro). Nen
 ## Ordem de publicação
 
 1. Publicar o código (este commit) na Vercel.
-2. Aplicar `supabase/auditoria_acessos_20261005.sql` no Supabase do ERP.
+2. Aplicar `supabase/auditoria_acessos_20261005.sql` no Supabase do ERP (feito em 05/10/2026; anexos conferidos byte a byte contra a versão anterior).
 
 O código novo funciona com o banco antigo; o banco novo exige o código novo para quem não é ADM.
 
 ## Reverter as políticas (se necessário)
 
 ```sql
-drop policy financeiro_modulos_ler on financeiro_estado_modulos;
-drop policy financeiro_modulos_criar on financeiro_estado_modulos;
-drop policy financeiro_modulos_alterar on financeiro_estado_modulos;
-drop policy financeiro_modulos_excluir on financeiro_estado_modulos;
-create policy financeiro_estado_modulos_authenticated on financeiro_estado_modulos for all to authenticated using (true) with check (true);
+alter policy financeiro_estado_modulos_select on financeiro_estado_modulos using (true);
+alter policy financeiro_estado_modulos_authenticated on financeiro_estado_modulos using (true) with check (true);
+alter policy financeiro_estado_modulos_write on financeiro_estado_modulos using (true) with check (true);
+drop policy financeiro_modulos_excluir_somente_adm on financeiro_estado_modulos;
 ```
 
 Os anexos convertidos continuam legíveis pelo código novo; para voltar o base64 ao módulo use as versões em `financeiro_estado_modulos_history`.

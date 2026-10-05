@@ -1,3 +1,4 @@
+-- Aplicado no Supabase do ERP em 05/10/2026 (migração financeiro_auditoria_acessos_20261005).
 -- Auditoria 05/10/2026 — acessos de usuários limitados e anexos do Financeiro.
 -- Não apaga nem altera valores: os anexos em base64 saem de dentro dos módulos e vão,
 -- byte a byte, para public.financeiro_arquivos; o registro guarda só o "arquivoId".
@@ -121,20 +122,15 @@ $$;
 revoke all on function public.financeiro_modulo_permitido(text) from public, anon;
 grant execute on function public.financeiro_modulo_permitido(text) to authenticated;
 
-drop policy if exists financeiro_estado_modulos_write on public.financeiro_estado_modulos;
-drop policy if exists financeiro_estado_modulos_authenticated on public.financeiro_estado_modulos;
-drop policy if exists financeiro_estado_modulos_select on public.financeiro_estado_modulos;
-drop policy if exists financeiro_modulos_ler on public.financeiro_estado_modulos;
-drop policy if exists financeiro_modulos_criar on public.financeiro_estado_modulos;
-drop policy if exists financeiro_modulos_alterar on public.financeiro_estado_modulos;
-drop policy if exists financeiro_modulos_excluir on public.financeiro_estado_modulos;
-create policy financeiro_modulos_ler on public.financeiro_estado_modulos for select to authenticated
+-- As três políticas antigas (todas "true") passam a seguir o acesso por módulo; excluir só ADM.
+alter policy financeiro_estado_modulos_select on public.financeiro_estado_modulos
   using ((select public.financeiro_modulo_permitido(chave)));
-create policy financeiro_modulos_criar on public.financeiro_estado_modulos for insert to authenticated
-  with check ((select public.financeiro_modulo_permitido(chave)));
-create policy financeiro_modulos_alterar on public.financeiro_estado_modulos for update to authenticated
+alter policy financeiro_estado_modulos_authenticated on public.financeiro_estado_modulos
   using ((select public.financeiro_modulo_permitido(chave))) with check ((select public.financeiro_modulo_permitido(chave)));
-create policy financeiro_modulos_excluir on public.financeiro_estado_modulos for delete to authenticated
+alter policy financeiro_estado_modulos_write on public.financeiro_estado_modulos
+  using ((select public.financeiro_modulo_permitido(chave))) with check ((select public.financeiro_modulo_permitido(chave)));
+drop policy if exists financeiro_modulos_excluir_somente_adm on public.financeiro_estado_modulos;
+create policy financeiro_modulos_excluir_somente_adm on public.financeiro_estado_modulos as restrictive for delete to authenticated
   using ((select public.is_admin()));
 
 -- 3) Restaurar versão do histórico: antes bastava estar logado.
@@ -152,20 +148,15 @@ grant execute on function public.financeiro_restore_modulo_version(text,bigint) 
 revoke execute on function public.financeiro_estado_modulos_protect_and_history() from public, anon, authenticated;
 
 -- 4) Tabelas espelho/registro do Financeiro: antes qualquer usuário logado lia e gravava.
-drop policy if exists financeiro_contas_authenticated on public.financeiro_contas;
-drop policy if exists financeiro_contas_financeiro on public.financeiro_contas;
-create policy financeiro_contas_financeiro on public.financeiro_contas for all to authenticated
+alter policy financeiro_contas_authenticated on public.financeiro_contas
   using ((select public.can_access_fin_recebimentos())) with check ((select public.can_access_fin_recebimentos()));
-drop policy if exists financeiro_pagamentos_authenticated on public.financeiro_pagamentos;
-drop policy if exists financeiro_pagamentos_financeiro on public.financeiro_pagamentos;
-create policy financeiro_pagamentos_financeiro on public.financeiro_pagamentos for all to authenticated
+alter policy financeiro_pagamentos_authenticated on public.financeiro_pagamentos
   using ((select public.can_access_fin_recebimentos())) with check ((select public.can_access_fin_recebimentos()));
-drop policy if exists financeiro_whatsapp_envios_read on public.financeiro_whatsapp_envios;
-drop policy if exists financeiro_whatsapp_envios_financeiro on public.financeiro_whatsapp_envios;
-create policy financeiro_whatsapp_envios_financeiro on public.financeiro_whatsapp_envios for select to authenticated
+alter policy financeiro_whatsapp_envios_read on public.financeiro_whatsapp_envios
   using ((select public.can_access_fin_recebimentos()));
--- Importações de recebimentos: continuam com quem opera o financeiro (política integracao_financeiro_importar).
-drop policy if exists fin_receb_importacoes_auth_all on public.fin_receb_importacoes;
+-- Importações de recebimentos: mesmo critério da política integracao_financeiro_importar.
+alter policy fin_receb_importacoes_auth_all on public.fin_receb_importacoes
+  using ((select integracao_financeiro_privado.operar())) with check ((select integracao_financeiro_privado.operar()));
 
 -- 5) Converte os anexos já existentes (mesma lista de itens, mesma ordem).
 update public.financeiro_estado_modulos set dados = dados
