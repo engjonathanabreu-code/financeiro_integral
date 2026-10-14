@@ -1,0 +1,847 @@
+/* ATENÇÃO (27/09/2026): esta atribuição lança "ReferenceError: hr is not defined" e interrompe o restante
+   deste arquivo. Assim, as seções V11 a V20 abaixo NÃO são executadas em produção; as telas atuais vêm dos
+   arquivos avulsos carregados depois no index.html. Não corrija esta linha sem revisar tudo que voltaria a rodar:
+   a V19, por exemplo, recarregaria Contas das tabelas financeiro_contas/financeiro_pagamentos e poderia
+   sobrescrever os dados atuais. As funcionalidades úteis dessas seções foram trazidas, como incrementos
+   que não alteram o que existe, para public/financeiro-incrementos.js. */
+hr=function(){
+  if(!isAdm()){view='budgets';return app()};title('RH');const months=Array.from({length:6},(_,i)=>monthOf(addMonths(nowMonth()+'-01',i))),cur=nowMonth();
+  $('#content').innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Selecione um mês para conferir o gasto previsto de pessoal.</div></div><button class="btn" id="v10NewEmployee">+ Cadastrar colaborador</button></div><div class="hr-month-strip">${months.map(m=>{const total=(db.hrPeople||[]).reduce((s,p)=>s+employeeMonthlyCost(p,m),0);return`<button class="card hr-month-card" data-v10-hr-month="${m}"><span>${monthLabel(m)}</span><b>${moneySafe(total)}</b><small>Previsto</small></button>`}).join('')}</div><h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-v10-employee="${p.id}"><div><h3>${esc(p.name)}</h3><span class="badge">${p.end&&p.end<todayISO()?'Encerrado':'Vigente'}</span></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${moneySafe(p.currentValue||p.value)}</b></span><span><small>Contratos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div><h3 class="section-title">Folha do mês vigente</h3><div class="table-wrap"><table class="table"><thead><tr><th>Colaborador</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${(db.hrPeople||[]).filter(p=>employeeMonthlyCost(p,cur)>0).map(p=>{let q=(db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===cur);return`<tr><td><b>${esc(p.name)}</b></td><td>${moneySafe(employeeMonthlyCost(p,cur))}</td><td>${q?.status==='Pago'?badgeStatus('Pago'):'Pendente'}</td><td>${q?.status==='Pago'?'Quitado':`<button class="btn small" data-v10-pay-salary="${p.id}">Marcar pago</button>`}</td></tr>`}).join('')||'<tr><td colspan="4">Sem contratos vigentes neste mês.</td></tr>'}</tbody></table></div>`;
+  $('#v10NewEmployee').onclick=()=>employeeForm();$$('[data-v10-employee]').forEach(b=>b.onclick=()=>employeeForm(b.dataset.v10Employee));$$('[data-v10-hr-month]').forEach(b=>b.onclick=()=>hrMonthDetail(b.dataset.v10HrMonth));$$('[data-v10-pay-salary]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.v10PaySalary));if(!p)return;let q=(db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===cur);if(q){q.status='Pago';q.paidAt=todayISO()}else db.hrPayments.push({id:uid(),personId:p.id,month:cur,value:employeeMonthlyCost(p,cur),status:'Pago',paidAt:todayISO()});save();hr()});
+};
+
+function duplicateCandidates(){
+  const paid=(db.accountPayments||[]).filter(p=>p.status==='Paga').map(p=>{const a=(db.accountMasters||[]).find(x=>x.id===p.accountId);return{id:`acc-${p.id}`,date:p.paidAt||p.due,description:a?.name||'Conta paga',value:+p.value||0,source:'Conta paga'}});
+  const budgets=(db.budgetExpenses||[]).map(e=>({id:`bud-${e.id}`,date:e.date,description:e.description,value:+e.value||0,source:'Orçamento'}));
+  const cash=(db.cashflow||[]).map(e=>({id:`cash-${e.id}`,date:e.date,description:e.description,value:+e.value||0,source:e.source||'Fluxo'}));return [...paid,...budgets,...cash];
+}
+async function analyzeDocument(file){const image=await readDataURL(file),r=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,sector:'',candidates:duplicateCandidates()})}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.details||d.error||'Falha na IA');return d}
+function documentUpload(){
+  const x=v2modal('Enviar documento fiscal',`<form id="v10DocUpload"><div class="modal-body"><div class="dropzone"><h3>Documento fiscal ou comprovante</h3><p>A IA identifica valor, fornecedor, data e verifica se o gasto já existe antes de lançá-lo no Fluxo de Caixa.</p><input id="v10DocFile" type="file" accept="image/*,.pdf" required></div><div class="field"><label>Setor</label><select name="sector"><option value="">Não informado</option>${opt(sectorNames())}</select></div><div id="v10DocStatus" class="notice">Aguardando arquivo.</div></div><div class="modal-foot"><button class="btn">Analisar e salvar</button></div></form>`);x.querySelector('#v10DocUpload').onsubmit=async e=>{e.preventDefault();const file=x.querySelector('#v10DocFile').files[0],status=x.querySelector('#v10DocStatus');if(!file)return;status.textContent='IA analisando o documento...';try{const ai=await analyzeDocument(file),sector=new FormData(e.target).get('sector')||'',doc={id:uid(),name:file.name,type:file.type||'Documento',supplier:ai.origin||'',date:ai.date||todayISO(),cat:'Documento fiscal',sector,value:+ai.value||0,status:ai.duplicate?'Duplicidade identificada':'Confirmado',file:fmeta(file),aiData:ai};db.docs.push(doc);if(!ai.duplicate&&doc.value>0){db.cashflow.push({id:uid(),date:doc.date,direction:'Saída',description:ai.description||`Documento fiscal • ${doc.supplier||file.name}`,kind:'Despesa variável',value:doc.value,source:'Documento fiscal',documentId:doc.id})}save();x.remove();documents()}catch(err){status.textContent=err.message}};
+}
+documents=function(){title('Documentos Fiscais');const m=v2state?.docsMonth||nowMonth(),docs=(db.docs||[]).filter(d=>monthOf(d.date)===m).sort((a,b)=>(b.date||'').localeCompare(a.date||''));$('#content').innerHTML=`<div class="toolbar"><div><input type="month" id="v10DocsMonth" value="${m}"><div class="muted">Documentos novos são analisados pela IA antes de alimentar o Fluxo de Caixa.</div></div><button class="btn" id="v10UploadDoc">+ Enviar documento</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Documento</th><th>Fornecedor</th><th>Data</th><th>Setor</th><th>Valor</th><th>IA / Fluxo</th></tr></thead><tbody>${docs.map(d=>`<tr><td><b>${esc(d.name)}</b></td><td>${esc(d.supplier||'—')}</td><td>${d.date?fmt(d.date):'—'}</td><td>${esc(d.sector||'—')}</td><td>${moneySafe(d.value)}</td><td>${badgeStatus(d.status||'Confirmado')}</td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Nenhum documento neste mês.</div></td></tr>'}</tbody></table></div>`;$('#v10DocsMonth').onchange=e=>{if(v2state)v2state.docsMonth=e.target.value;documents()};$('#v10UploadDoc').onclick=documentUpload};
+
+async function analyzeAccount(file){const image=await readDataURL(file),accounts=(db.accountMasters||[]).map(a=>({id:a.id,name:a.name,supplier:a.supplier,registration:a.registration||'',category:a.category,sector:a.sector})),r=await window.IntegralFileUploads.fetch('/api/ai-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,accounts})}),d=await r.json();if(!r.ok||!d.ok)throw Error(d.details||d.error||'Falha na leitura da conta');return d}
+function applyAnalyzedAccount(ai,file){
+  let master=(db.accountMasters||[]).find(a=>String(a.id)===String(ai.matchedAccountId));
+  if(!master&&ai.registration)master=(db.accountMasters||[]).find(a=>norm(a.registration)===norm(ai.registration)&&norm(a.supplier)===norm(ai.supplier));
+  if(!master){master={id:uid(),name:ai.name||ai.supplier||'Conta',supplier:ai.supplier||'',registration:ai.registration||'',recurrence:ai.recurrence||'Não identificada',category:ai.category||'Outros',sector:ai.sector||'Administrativo',method:ai.paymentMethod||'Outro',active:true,createdByAI:true};db.accountMasters.push(master)}
+  else{if(ai.registration&&!master.registration)master.registration=ai.registration;if(ai.recurrence)master.recurrence=ai.recurrence;if(ai.paymentMethod)master.method=ai.paymentMethod}
+  const duplicate=(db.accountPayments||[]).find(p=>p.accountId===master.id&&p.due===ai.dueDate&&Math.abs((+p.value||0)-(+ai.value||0))<.01);
+  if(!duplicate)db.accountPayments.push({id:uid(),accountId:master.id,value:+ai.value||0,due:ai.dueDate||todayISO(),status:'A vencer',barcode:ai.paymentCode||'',competence:ai.competence||monthOf(ai.dueDate),source:'IA • Conta enviada',file:fmeta(file)});
+  return {master,duplicate};
+}
+function accountAIUpload(){const x=v2modal('Cadastrar / atualizar conta com IA',`<form id="v10AccountAI"><div class="modal-body"><div class="dropzone"><h3>Envie uma conta, fatura ou boleto</h3><p>A IA identifica fornecedor, matrícula/número do cliente, recorrência, vencimento, valor e código de pagamento. Se a conta já existir, cria somente o novo pagamento.</p><input id="v10AccountFiles" type="file" accept="image/*,.pdf" multiple required><div style="margin-top:14px"><button class="btn" id="v10AccountAISubmit" type="submit" disabled>Enviar para análise da IA</button></div></div><div id="v10AccountAIStatus" class="notice">Selecione uma ou mais contas para habilitar o envio.</div></div></form>`);const aiFiles=x.querySelector('#v10AccountFiles'),aiSubmit=x.querySelector('#v10AccountAISubmit'),aiStatus=x.querySelector('#v10AccountAIStatus');aiFiles.onchange=()=>{const n=aiFiles.files.length;aiSubmit.disabled=!n;aiStatus.textContent=n?n+' arquivo(s) selecionado(s). Clique em Enviar para análise da IA.':'Selecione uma ou mais contas para habilitar o envio.'};x.querySelector('#v10AccountAI').onsubmit=async e=>{e.preventDefault();const files=[...aiFiles.files],status=aiStatus;if(!files.length)return;aiSubmit.disabled=true;aiSubmit.textContent='Enviando para IA...';let done=0,newMasters=0,newPays=0;try{for(const file of files){status.textContent=`Analisando ${done+1} de ${files.length}: ${file.name}`;const ai=await analyzeAccount(file),before=db.accountMasters.length,{duplicate}=applyAnalyzedAccount(ai,file);if(db.accountMasters.length>before)newMasters++;if(!duplicate)newPays++;done++}save();x.remove();accounts();alert(`${done} arquivo(s) analisado(s). ${newMasters} nova(s) conta(s) cadastrada(s) e ${newPays} pagamento(s) incluído(s).`)}catch(err){status.textContent=err.message;aiSubmit.disabled=false;aiSubmit.textContent='Enviar para análise da IA'}};}
+accounts=function(){if(!isAdm())return documents();title('Contas');const mode=v2state?.accountsMode||'month',m=v2state?.accountsMonth||nowMonth();if(mode==='all'){$('#content').innerHTML=`<div class="toolbar"><div class="segmented"><button id="v10MonthMode">Contas do mês</button><button class="active">Todas as contas cadastradas</button></div><button class="btn" id="v10AccountAI">+ Enviar conta para IA</button></div><div class="grid cols-3 responsive-cards">${(db.accountMasters||[]).map(a=>{const ps=(db.accountPayments||[]).filter(p=>p.accountId===a.id).sort((x,y)=>(y.due||'').localeCompare(x.due||''));return`<button class="card account-master-card" data-v10-account="${a.id}"><span class="badge ${a.active===false?'':'ok'}">${a.active===false?'Inativa':'Ativa'}</span><h3>${esc(a.name)}</h3><p>${esc(a.supplier||'')}</p><div class="account-meta"><span>${esc(a.category||'')}</span><span>${esc(a.sector||'')}</span></div><small>Matrícula / cadastro: <b>${esc(a.registration||'Não informado')}</b></small><small>Recorrência: <b>${esc(a.recurrence||'Não identificada')}</b></small><b>${ps.length} pagamento(s)</b></button>`}).join('')||'<div class="empty">Nenhuma conta cadastrada.</div>'}</div>`;$('#v10MonthMode').onclick=()=>{v2state.accountsMode='month';accounts()};$('#v10AccountAI').onclick=accountAIUpload;$$('[data-v10-account]').forEach(b=>b.onclick=()=>typeof v2AccountModal==='function'?v2AccountModal(+b.dataset.v10Account):null);return}
+  const payments=(db.accountPayments||[]).filter(p=>monthOf(p.due)===m).map(p=>({...p,master:(db.accountMasters||[]).find(a=>a.id===p.accountId)}));$('#content').innerHTML=`<div class="toolbar"><div class="left"><div class="segmented"><button class="active">Contas do mês</button><button id="v10AllAccounts">Todas as contas cadastradas</button></div><input type="month" id="v10AccountsMonth" value="${m}"></div><button class="btn" id="v10AccountAI">+ Enviar conta para IA</button></div><div class="table-wrap"><table class="table"><thead><tr><th>Conta</th><th>Matrícula</th><th>Vencimento</th><th>Forma</th><th>Valor</th><th>Status</th></tr></thead><tbody>${payments.map(p=>`<tr><td><b>${esc(p.master?.name||'')}</b><small>${esc(p.master?.supplier||'')}</small></td><td>${esc(p.master?.registration||'—')}</td><td>${p.due?fmt(p.due):'—'}</td><td>${esc(p.master?.method||'—')}</td><td>${moneySafe(p.value)}</td><td>${badgeStatus(p.status||'A vencer')}</td></tr>`).join('')||'<tr><td colspan="6"><div class="empty">Nenhuma conta neste mês.</div></td></tr>'}</tbody></table></div>`;$('#v10AllAccounts').onclick=()=>{v2state.accountsMode='all';accounts()};$('#v10AccountsMonth').onchange=e=>{v2state.accountsMonth=e.target.value;accounts()};$('#v10AccountAI').onclick=accountAIUpload};
+})();
+
+;
+
+/* ===== SOURCE: patch-v11.js ===== */
+/* Integral Financeiro V11 - Dashboard real e consolidação das previsões ERP */
+(function(){
+'use strict';
+const monthOf=d=>String(d||'').slice(0,7);
+const todayISO=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+const moneySafe=v=>money(Number(v||0));
+const dateObj=v=>v?new Date(`${String(v).slice(0,10)}T12:00:00`):null;
+const daysFromToday=v=>{const d=dateObj(v);if(!d)return null;const t=dateObj(todayISO());return Math.ceil((d-t)/86400000)};
+const isActiveTrip=t=>!['Concluída','Concluida','Finalizada','Cancelada'].includes(String(t.status||''));
+const accountName=p=>(db.accountMasters||[]).find(a=>String(a.id)===String(p.accountId))?.name||'Conta';
+const paidAccountRows=()=> (db.accountPayments||[]).filter(p=>p.status==='Paga').map(p=>({date:(p.paidAt||p.due||'').slice(0,10),direction:'Saída',value:+p.value||0}));
+const budgetRows=()=> (db.budgetExpenses||[]).map(e=>({date:e.date,direction:'Saída',value:+e.value||0}));
+const cashRows=()=>[...(db.cashflow||[]),...paidAccountRows(),...budgetRows()];
+const cashBalance=()=>cashRows().reduce((s,r)=>s+(r.direction==='Entrada'?+r.value||0:-(+r.value||0)),0);
+
+async function refreshERPPlanning(){
+  try{await window.IntegralFinanceERPPlanning?.sync?.();}catch(e){console.warn('Falha ao atualizar previsões ERP no dashboard',e)}
+}
+
+function upcomingAccounts(){
+  return (db.accountPayments||[]).filter(p=>p.status!=='Paga'&&p.status!=='Cancelada'&&p.due).map(p=>({...p,days:daysFromToday(p.due)})).filter(p=>p.days!==null&&p.days>=0).sort((a,b)=>a.due.localeCompare(b.due)).slice(0,8);
+}
+function upcomingERP(){
+  return (db.erpPlannedRevenues||[]).filter(r=>r.remaining>0&&r.dueDate).map(r=>({...r,days:daysFromToday(r.dueDate)})).filter(r=>r.days===null||r.days>=0).sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).slice(0,8);
+}
+function expiringContracts(){
+  return (db.hrPeople||[]).filter(p=>p.end).map(p=>({...p,days:daysFromToday(p.end)})).filter(p=>p.days!==null&&p.days>=0&&p.days<=60).sort((a,b)=>a.end.localeCompare(b.end));
+}
+function openBudgets(){
+  return (db.budgetRecords||[]).filter(b=>b.active!==false).map(b=>{const spent=(db.budgetExpenses||[]).filter(e=>String(e.budgetId)===String(b.id)).reduce((s,e)=>s+(+e.value||0),0);return {...b,spent,open:Math.max(0,(+b.limit||0)-spent)}}).filter(b=>b.open>0).sort((a,b)=>b.open-a.open);
+}
+function activeTrips(){
+  return (db.trips||[]).filter(isActiveTrip).map(t=>{const spent=(db.tripExpenses||[]).filter(e=>String(e.tripId)===String(t.id)).reduce((s,e)=>s+(+e.proven||+e.declared||+e.value||0),0);return {...t,spent}});
+}
+function recentDocs(){return [...(db.docs||[])].sort((a,b)=>String(b.addedAt||b.createdAt||b.date||'').localeCompare(String(a.addedAt||a.createdAt||a.date||''))).slice(0,8)}
+
+function emptyRow(cols,text){return `<tr><td colspan="${cols}"><div class="empty">${esc(text)}</div></td></tr>`}
+function dashboardTable(titleText,headers,rows){return `<section class="card dashboard-section"><div class="section-head"><h3>${esc(titleText)}</h3></div><div class="table-wrap"><table class="table compact-dashboard-table"><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div></section>`}
+
+async function renderDashboardV11(){
+  title('Visão Geral');
+  await refreshERPPlanning();
+  const accounts=upcomingAccounts(),erp=upcomingERP(),contracts=expiringContracts(),budgets=openBudgets(),trips=activeTrips(),docs=recentDocs(),balance=cashBalance();
+  const accountOpen=accounts.reduce((s,x)=>s+(+x.value||0),0),erpOpen=erp.reduce((s,x)=>s+(+x.remaining||0),0),budgetOpen=budgets.reduce((s,x)=>s+x.open,0),tripSpent=trips.reduce((s,x)=>s+x.spent,0);
+  $('#content').innerHTML=`
+    <div class="dashboard-kpis grid cols-4">
+      <div class="card metric"><h3>Saldo atual do caixa</h3><b class="${balance>=0?'kpi-positive':'kpi-negative'}">${moneySafe(balance)}</b><small>Movimentações realizadas</small></div>
+      <div class="card metric"><h3>Contas a vencer</h3><b>${moneySafe(accountOpen)}</b><small>${accounts.length} próxima(s) conta(s)</small></div>
+      <div class="card metric"><h3>Entradas previstas ERP</h3><b>${moneySafe(erpOpen)}</b><small>${erp.length} próxima(s) etapa(s)</small></div>
+      <div class="card metric"><h3>Orçamentos em aberto</h3><b>${moneySafe(budgetOpen)}</b><small>${budgets.length} orçamento(s) ativo(s)</small></div>
+    </div>
+    <div class="dashboard-grid">
+      ${dashboardTable('Contas a vencer',['Conta','Vencimento','Valor'],accounts.map(p=>`<tr><td><b>${esc(accountName(p))}</b></td><td>${fmt(p.due)}</td><td>${moneySafe(p.value)}</td></tr>`).join('')||emptyRow(3,'Nenhuma conta futura cadastrada.'))}
+      ${dashboardTable('Próximas entradas do ERP',['Projeto / etapa','Vencimento','Saldo previsto'],erp.map(r=>`<tr><td><b>${esc(r.project)}</b><small>${esc(r.origin)}</small></td><td>${fmt(r.dueDate)}</td><td>${moneySafe(r.remaining)}</td></tr>`).join('')||emptyRow(3,'Nenhuma entrada futura encontrada no ERP.'))}
+      ${dashboardTable('Contratos de funcionários a vencer em 60 dias',['Colaborador','Fim do contrato','Valor mensal'],contracts.map(p=>`<tr><td><b>${esc(p.name||p.nome||'Colaborador')}</b></td><td>${fmt(p.end)}</td><td>${moneySafe(p.currentValue||p.value||0)}</td></tr>`).join('')||emptyRow(3,'Nenhum contrato vence nos próximos 60 dias.'))}
+      ${dashboardTable('Orçamentos abertos',['Orçamento','Setor','Disponível'],budgets.slice(0,8).map(b=>`<tr><td><b>${esc(b.name)}</b></td><td>${esc(b.sector||'—')}</td><td>${moneySafe(b.open)}</td></tr>`).join('')||emptyRow(3,'Nenhum orçamento em aberto.'))}
+      ${dashboardTable('Viagens ativas',['Destino / projeto','Status','Gasto comprovado'],trips.slice(0,8).map(t=>`<tr><td><b>${esc(t.city||'Viagem')}</b><small>${esc(t.project||t.objective||'')}</small></td><td>${esc(t.status||'Ativa')}</td><td>${moneySafe(t.spent)}</td></tr>`).join('')||emptyRow(3,'Nenhuma viagem ativa.'))}
+      ${dashboardTable('Últimos documentos fiscais',['Documento','Data','Valor'],docs.map(d=>`<tr><td><b>${esc(d.name||'Documento')}</b><small>${esc(d.supplier||d.origin||'')}</small></td><td>${d.date?fmt(d.date):'—'}</td><td>${moneySafe(d.value)}</td></tr>`).join('')||emptyRow(3,'Nenhum documento fiscal enviado.'))}
+    </div>
+    <div class="dashboard-footer-summary card"><div><span>Viagens ativas</span><b>${trips.length}</b></div><div><span>Gasto nas viagens ativas</span><b>${moneySafe(tripSpent)}</b></div><div><span>Contratos vencendo em 60 dias</span><b>${contracts.length}</b></div><div><span>Documentos fiscais recentes</span><b>${docs.length}</b></div></div>`;
+}
+
+dashboard=function(){renderDashboardV11().catch(e=>{console.error(e);title('Visão Geral');$('#content').innerHTML=`<div class="notice danger">Não foi possível montar a Visão Geral: ${esc(e.message||String(e))}</div>`})};
+
+// Reforça no Planejamento as parcelas do ERP recebidas na tabela pagamentos.
+/* O painel canônico já se redesenha neste evento; chamar o V11 aqui sincronizava o ERP em loop. */
+
+// Garante que a tela do usuário enviado como exemplo apareça assim que o Supabase retornar os dados.
+setTimeout(()=>{if(view==='dashboard')dashboard()},700);
+})();
+
+;
+
+/* ===== SOURCE: patch-v12.js ===== */
+/* Integral Financeiro V12 - entradas ERP condensadas por fonte */
+(function(){
+'use strict';
+const moneySafe=v=>money(Number(v||0));
+const groupERP=()=>{
+  const map=new Map();
+  (db.erpPlannedRevenues||[]).forEach(r=>{
+    const key=String(r.projectId||r.project||'erp');
+    if(!map.has(key))map.set(key,{key,source:r.project||'Projeto ERP',rows:[],total:0});
+    const g=map.get(key);g.rows.push(r);g.total+=Number(r.remaining||0);
+  });
+  return [...map.values()].sort((a,b)=>a.source.localeCompare(b.source,'pt-BR'));
+};
+function detail(group){
+  const rows=[...group.rows].sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
+  v2modal(`Entradas previstas • ${esc(group.source)}`,`<div class="modal-body"><div class="card metric mini erp-source-total"><h3>Total em aberto</h3><b>${moneySafe(group.total)}</b><small>${rows.length} parcela(s)/etapa(s) prevista(s)</small></div><div class="table-wrap"><table class="table"><thead><tr><th>Parcela / etapa</th><th>Vencimento</th><th>Previsto</th><th>Recebido</th><th>Saldo a entrar</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${esc(r.origin||'Recebimento')}</b></td><td>${r.dueDate?fmt(r.dueDate):'—'}</td><td>${moneySafe(r.total)}</td><td>${moneySafe(r.received)}</td><td><b>${moneySafe(r.remaining)}</b></td></tr>`).join('')||'<tr><td colspan="5">Nenhuma parcela em aberto.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);
+}
+function decorate(){
+  if(view!=='planning')return;
+  const sections=[...document.querySelectorAll('#content section.card')];
+  const target=sections.find(s=>s.querySelector('.section-head h3')?.textContent.trim()==='Entradas previstas do ERP');
+  if(!target)return;
+  const groups=groupERP();
+  target.innerHTML=`<div class="section-head"><div><h3>Entradas previstas do ERP</h3><div class="muted">Condensadas por fonte. Clique para ver cada parcela e vencimento.</div></div></div><div class="erp-source-list">${groups.map((g,i)=>`<button class="erp-source-row" data-erp-source="${i}"><span><b>${esc(g.source)}</b><small>${g.rows.length} parcela(s) em aberto</small></span><strong>${moneySafe(g.total)}</strong><span class="erp-source-chevron">›</span></button>`).join('')||'<div class="empty">Nenhuma entrada prevista no ERP.</div>'}</div>`;
+  target.querySelectorAll('[data-erp-source]').forEach(b=>b.onclick=()=>detail(groups[Number(b.dataset.erpSource)]));
+}
+const basePlanning=planning;
+planning=function(){const r=basePlanning();setTimeout(decorate,0);return r;};
+window.addEventListener('integral:erp-planning-synced',()=>{if(view==='planning')setTimeout(decorate,0)});
+})();
+
+;
+
+/* ===== SOURCE: patch-v13.js ===== */
+/* Integral Financeiro V13 - RH estável com projeção mensal de 6 meses */
+(function(){
+'use strict';
+const uid13=()=>typeof v2uid==='function'?v2uid():Date.now()+Math.floor(Math.random()*9999);
+const today13=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+const month13=d=>String(d||'').slice(0,7);
+const addMonths13=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
+const label13=m=>{const [y,n]=String(m).split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
+const money13=v=>money(Number(v||0));
+const isAdm13=()=>user?.role==='Administrador';
+let selectedHrMonth=month13(today13());
+
+function valueForMonth(p,m){
+  const first=`${m}-01`, last=`${m}-31`;
+  if(p.start&&p.start>last)return 0;
+  if(p.end&&p.end<first)return 0;
+  const hist=[...(p.history||[])].filter(h=>h.date&&h.date<=last).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  return Number(hist.at(-1)?.value ?? p.currentValue ?? p.value ?? 0);
+}
+function paymentFor(p,m){return (db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===m)}
+function activePeople(m){return (db.hrPeople||[]).filter(p=>valueForMonth(p,m)>0)}
+function totalMonth(m){return activePeople(m).reduce((s,p)=>s+valueForMonth(p,m),0)}
+
+function openHrMonth(m){
+  selectedHrMonth=m;
+  hr();
+  setTimeout(()=>document.querySelector('.hr-selected-payroll')?.scrollIntoView({behavior:'smooth',block:'start'}),40);
+}
+
+const previousHr=window.hr;
+window.hr=hr=function(){
+  if(!isAdm13()){
+    if(typeof previousHr==='function')return previousHr();
+    return;
+  }
+  title('RH');
+  const current=month13(today13());
+  const months=Array.from({length:6},(_,i)=>addMonths13(current,i));
+  if(!months.includes(selectedHrMonth))selectedHrMonth=current;
+  const people=activePeople(selectedHrMonth), monthTotal=totalMonth(selectedHrMonth);
+  const paidTotal=people.reduce((s,p)=>{const q=paymentFor(p,selectedHrMonth);return s+(q?.status==='Pago'?Number(q.value||valueForMonth(p,selectedHrMonth)):0)},0);
+
+  $('#content').innerHTML=`
+    <div class="toolbar hr13-toolbar">
+      <div><b>Gestão de colaboradores e contratos</b><div class="muted">Consulte a projeção da folha para os próximos 6 meses.</div></div>
+      <button class="btn" id="hr13NewEmployee">+ Cadastrar colaborador</button>
+    </div>
+
+    <section class="card hr13-projection">
+      <div class="section-head"><div><h3>Projeção de pagamentos de colaboradores</h3><p class="muted">Selecione um mês para ver quem estará vigente e quanto está previsto para pagamento.</p></div></div>
+      <div class="hr13-months">${months.map(m=>`<button class="hr13-month ${m===selectedHrMonth?'active':''}" data-hr13-month="${m}"><span>${label13(m)}</span><b>${money13(totalMonth(m))}</b><small>${activePeople(m).length} colaborador(es)</small></button>`).join('')}</div>
+    </section>
+
+    <section class="hr-selected-payroll">
+      <div class="page-intro hr13-month-head"><div><h3>${label13(selectedHrMonth)}</h3><p>${selectedHrMonth===current?'Folha do mês vigente':'Projeção de folha futura'}</p></div><div class="hr13-summary"><span><small>Previsto</small><b>${money13(monthTotal)}</b></span><span><small>Quitado</small><b>${money13(paidTotal)}</b></span><span><small>Em aberto</small><b>${money13(Math.max(0,monthTotal-paidTotal))}</b></span></div></div>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Colaborador</th><th>Contrato</th><th>Valor previsto</th><th>Status</th><th></th></tr></thead><tbody>${people.map(p=>{const q=paymentFor(p,selectedHrMonth),isPaid=q?.status==='Pago';return`<tr><td><b>${esc(p.name)}</b></td><td>${p.start?fmt(p.start):'—'} → ${p.end?fmt(p.end):'Indeterminado'}</td><td><b>${money13(valueForMonth(p,selectedHrMonth))}</b></td><td>${isPaid?badgeStatus('Pago'):(selectedHrMonth===current?'Pendente':'Previsto')}</td><td>${selectedHrMonth===current&&!isPaid?`<button class="btn small" data-hr13-pay="${p.id}">Marcar pago</button>`:isPaid?'Quitado':'—'}</td></tr>`}).join('')||'<tr><td colspan="5"><div class="empty">Nenhum colaborador com contrato vigente neste mês.</div></td></tr>'}</tbody></table></div>
+    </section>
+
+    <h3 class="section-title">Funcionários cadastrados</h3>
+    <div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-hr13-employee="${p.id}"><div><h3>${esc(p.name)}</h3><span class="badge">${p.end&&p.end<today13()?'Encerrado':'Vigente'}</span></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${money13(p.currentValue||p.value)}</b></span><span><small>Contratos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div>`;
+
+  $('#hr13NewEmployee').onclick=()=>{ if(typeof employeeForm==='function') employeeForm(); };
+  $$('[data-hr13-employee]').forEach(b=>b.onclick=()=>{ if(typeof employeeForm==='function') employeeForm(b.dataset.hr13Employee); });
+  $$('[data-hr13-month]').forEach(b=>b.onclick=()=>openHrMonth(b.dataset.hr13Month));
+  $$('[data-hr13-pay]').forEach(b=>b.onclick=()=>{
+    const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr13Pay)); if(!p)return;
+    let q=paymentFor(p,current),val=valueForMonth(p,current);
+    if(q){q.status='Pago';q.paidAt=today13();q.value=val;}
+    else (db.hrPayments=db.hrPayments||[]).push({id:uid13(),personId:p.id,month:current,value:val,status:'Pago',paidAt:today13()});
+    save();hr();
+  });
+};
+})();
+
+;
+
+/* ===== SOURCE: patch-v14.js ===== */
+/* Integral Financeiro V14 - exportações CSV/PDF e ZIP de documentos fiscais */
+(function(){
+'use strict';
+const monthOf=d=>String(d||'').slice(0,7);
+const nowMonth=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
+const safe=s=>String(s||'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_');
+const csvCell=v=>`"${String(v??'').replace(/"/g,'""')}"`;
+const downloadBlob=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800)};
+const moneyNum=v=>Number(v||0);
+function realRows(){
+  const paid=(db.accountPayments||[]).filter(p=>p.status==='Paga').map(p=>{const m=(db.accountMasters||[]).find(a=>a.id===p.accountId);return{date:(p.paidAt||p.due||'').slice(0,10),description:m?.name||'Conta paga',kind:m?.category||'Despesa fixa',direction:'Saída',value:moneyNum(p.value),source:'Conta paga'}});
+  const budget=(db.budgetExpenses||[]).map(e=>({date:e.date,description:e.description||'Gasto de orçamento',kind:'Despesa variável',direction:'Saída',value:moneyNum(e.value),source:'Orçamento'}));
+  const manual=(db.cashflow||[]).filter(r=>!['Conta paga','Orçamento'].includes(r.source));
+  return [...manual,...paid,...budget];
+}
+function exportCashCsv(month){
+  const rows=realRows().filter(r=>monthOf(r.date)===month).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const lines=[['Data','Descrição','Natureza','Origem','Tipo','Valor'].map(csvCell).join(';'),...rows.map(r=>[r.date,r.description,r.kind||'',r.source||'',r.direction||'',Number(r.value||0).toFixed(2).replace('.',',')].map(csvCell).join(';'))];
+  downloadBlob(new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}),`fluxo-caixa-${month}.csv`);
+}
+function exportCashPdf(month){
+  if(!window.jspdf?.jsPDF){alert('Biblioteca de PDF não carregou. Recarregue a página e tente novamente.');return;}
+  const rows=realRows().filter(r=>monthOf(r.date)===month).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const ins=rows.filter(r=>r.direction==='Entrada').reduce((s,r)=>s+moneyNum(r.value),0),outs=rows.filter(r=>r.direction==='Saída').reduce((s,r)=>s+moneyNum(r.value),0);
+  const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  doc.setFontSize(16);doc.text(`Fluxo de Caixa - ${month}`,14,16);doc.setFontSize(10);doc.text(`Entradas: ${money(ins)}   Saídas: ${money(outs)}   Saldo: ${money(ins-outs)}`,14,23);
+  const body=rows.map(r=>[r.date||'',r.description||'',r.kind||'',r.source||'',r.direction||'',money(r.value)]);
+  if(typeof doc.autoTable==='function')doc.autoTable({startY:28,head:[['Data','Descrição','Natureza','Origem','Tipo','Valor']],body,styles:{fontSize:8},columnStyles:{5:{halign:'right'}}});
+  else {let y=31;body.slice(0,28).forEach(r=>{doc.text(r.join(' | ').slice(0,180),14,y);y+=6})}
+  doc.save(`fluxo-caixa-${month}.pdf`);
+}
+async function fetchStoredFile(doc){
+  if(doc.storagePath){const sb=window.IntegralERP?.sb;if(!sb)throw new Error('Supabase indisponível');const {data,error}=await sb.storage.from(doc.storageBucket||'documentos').download(doc.storagePath);if(error)throw error;return data;}
+  if(doc.fileData&&String(doc.fileData).startsWith('data:')){const res=await fetch(doc.fileData);return await res.blob();}
+  return null;
+}
+async function exportFiscalZip(month,button){
+  if(!window.JSZip){alert('Biblioteca ZIP não carregou. Recarregue a página e tente novamente.');return;}
+  const docs=(db.docs||[]).filter(d=>monthOf(d.date)===month);
+  if(!docs.length){alert('Não há documentos fiscais neste mês.');return;}
+  const old=button?.textContent;if(button){button.disabled=true;button.textContent='Preparando ZIP...'}
+  try{
+    const zip=new JSZip();let added=0;const missing=[];
+    for(const d of docs){try{const blob=await fetchStoredFile(d);if(blob){zip.file(safe(d.name||`documento-${d.id}`),blob);added++;}else missing.push(d.name||`Documento ${d.id}`);}catch(e){missing.push(d.name||`Documento ${d.id}`)}}
+    if(missing.length)zip.file('_arquivos_legados_indisponiveis.txt',`Os seguintes registros possuem apenas metadados e não têm arquivo físico disponível para exportação:\n\n${missing.join('\n')}`);
+    if(!added&&missing.length===0){alert('Nenhum arquivo físico disponível para este mês.');return;}
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});downloadBlob(blob,`documentos-fiscais-${month}.zip`);
+  }finally{if(button){button.disabled=false;button.textContent=old}}
+}
+async function analyzeDocument(file){
+  const dataUrl=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=no;r.readAsDataURL(file)});
+  const candidates=realRows().map((r,i)=>({id:String(r.id||i),date:r.date||'',description:r.description||'',value:moneyNum(r.value),source:r.source||''}));
+  const r=await window.IntegralFileUploads.fetch('/api/ai-receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:dataUrl,fileName:file.name,sector:'',candidates})});const d=await r.json();if(!r.ok||!d.ok)throw new Error(d.details||d.error||'Falha na IA');return d;
+}
+async function uploadFiscalDocument(){
+  const x=v2modal('Enviar documento fiscal',`<form id="v14DocUpload"><div class="modal-body"><div class="dropzone"><h3>Documento fiscal ou comprovante</h3><p>A IA identifica valor, fornecedor e data. O arquivo será armazenado no Supabase para permitir exportação em ZIP.</p><input id="v14DocFile" type="file" accept="image/*,.pdf" required></div><div class="field"><label>Setor</label><select name="sector"><option value="">Não informado</option>${(db.sectors||[]).filter(s=>s.active!==false).map(s=>`<option>${esc(s.name)}</option>`).join('')}</select></div><div id="v14DocStatus" class="notice">Aguardando arquivo.</div></div><div class="modal-foot"><button class="btn">Analisar e salvar</button></div></form>`);
+  x.querySelector('#v14DocUpload').onsubmit=async e=>{e.preventDefault();const file=x.querySelector('#v14DocFile').files[0],status=x.querySelector('#v14DocStatus');if(!file)return;status.textContent='Analisando e armazenando documento...';try{
+    const ai=await analyzeDocument(file),sector=new FormData(e.target).get('sector')||'',sb=window.IntegralERP?.sb;if(!sb)throw new Error('Conexão com Supabase indisponível.');const {data:{user:authUser}}=await sb.auth.getUser();if(!authUser)throw new Error('Sessão do ERP não encontrada.');const date=ai.date||new Date().toISOString().slice(0,10),month=monthOf(date),path=`${authUser.id}/financeiro-fiscal/${month}/${Date.now()}-${safe(file.name)}`;const up=await sb.storage.from('documentos').upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});if(up.error)throw up.error;
+    const doc={id:Date.now()+Math.floor(Math.random()*9999),name:file.name,type:file.type||'Documento',supplier:ai.origin||'',date,cat:'Documento fiscal',sector,value:moneyNum(ai.value),status:ai.duplicate?'Duplicidade identificada':'Confirmado',file:{name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString()},storageBucket:'documentos',storagePath:path,aiData:ai};db.docs=db.docs||[];db.docs.push(doc);if(!ai.duplicate&&doc.value>0){db.cashflow=db.cashflow||[];db.cashflow.push({id:Date.now()+Math.floor(Math.random()*9999),date:doc.date,direction:'Saída',description:ai.description||`Documento fiscal • ${doc.supplier||file.name}`,kind:'Despesa variável',value:doc.value,source:'Documento fiscal',documentId:doc.id})}save();x.remove();documents();
+  }catch(err){status.textContent=`Não foi possível salvar: ${err.message}`}}
+}
+function installCashExports(){
+  const old=window.cashflow;if(typeof old!=='function'||old.__v14)return;const wrapped=function(){const out=old.apply(this,arguments);setTimeout(()=>{const toolbar=document.querySelector('#content .toolbar');if(!toolbar||document.querySelector('#v14CashCsv'))return;const box=document.createElement('div');box.className='right export-actions';box.innerHTML='<button class="btn ghost" id="v14CashCsv">Exportar CSV</button><button class="btn ghost" id="v14CashPdf">Exportar PDF</button>';toolbar.appendChild(box);document.querySelector('#v14CashCsv').onclick=()=>exportCashCsv(v2state.cashMonth||nowMonth());document.querySelector('#v14CashPdf').onclick=()=>exportCashPdf(v2state.cashMonth||nowMonth());},0);return out};wrapped.__v14=true;window.cashflow=wrapped;cashflow=wrapped;
+}
+function installDocumentExports(){
+  const old=window.documents;if(typeof old!=='function'||old.__v14)return;const wrapped=function(){const out=old.apply(this,arguments);setTimeout(()=>{const toolbar=document.querySelector('#content .toolbar');if(!toolbar)return;const upload=document.querySelector('#v10UploadDoc');if(upload)upload.onclick=uploadFiscalDocument;if(!document.querySelector('#v14DocsZip')){const b=document.createElement('button');b.id='v14DocsZip';b.className='btn ghost';b.textContent='Exportar mês em ZIP';b.onclick=()=>exportFiscalZip(v2state?.docsMonth||nowMonth(),b);toolbar.appendChild(b)}},0);return out};wrapped.__v14=true;window.documents=wrapped;documents=wrapped;
+}
+/* Botões de exportação do Fluxo de Caixa: acrescentados sempre que a tela aparece, usando o mês selecionado nela.
+   (Antes eram instalados por um temporizador e sumiam quando o editor canônico redesenhava a tela.) */
+function ensureCashExportButtons(){
+  if((document.querySelector('#title')?.textContent||'').trim()!=='Fluxo de Caixa')return;
+  const toolbar=document.querySelector('#content .toolbar');if(!toolbar||document.querySelector('#v14CashCsv'))return;
+  const month=()=>document.querySelector('#cashEditMonth')?.value||v2state?.cashMonth||nowMonth();
+  const box=document.createElement('div');box.className='right export-actions';box.innerHTML='<button class="btn ghost" id="v14CashCsv">Exportar CSV</button><button class="btn ghost" id="v14CashPdf">Exportar PDF</button>';
+  toolbar.appendChild(box);box.querySelector('#v14CashCsv').onclick=()=>exportCashCsv(month());box.querySelector('#v14CashPdf').onclick=()=>exportCashPdf(month());
+}
+new MutationObserver(ensureCashExportButtons).observe(document.documentElement,{childList:true,subtree:true});
+})();
+
+;
+
+/* ===== SOURCE: patch-v16.js ===== */
+/* Integral Financeiro V16 - sincronização ERP somente manual e planejamento estável */
+(function(){
+'use strict';
+
+// Restaura APIs globais interceptadas antes do V10.
+const originals=window.__IntegralERPManualSyncOriginals;
+if(originals){
+  window.setTimeout=originals.setTimeout;
+  window.setInterval=originals.setInterval;
+  Document.prototype.addEventListener=originals.addEventListener;
+}
+
+const isAdm=()=>user?.role==='Administrador';
+const safeMoney=v=>money(Number(v||0));
+
+// Impede que abrir Planejamento provoque nova consulta ao ERP.
+const previousPlanning=planning;
+planning=function(){
+  const erp=window.IntegralERP;
+  const sb=erp?.sb;
+  if(erp)erp.sb=null;
+  try{return previousPlanning();}
+  finally{if(erp)erp.sb=sb;}
+};
+
+async function manualSyncERP(button){
+  if(!isAdm())return;
+  const oldText=button.textContent;
+  button.disabled=true;
+  button.textContent='Sincronizando...';
+  try{
+    if(!window.IntegralERP?.sync)throw new Error('Sincronização do ERP indisponível.');
+    await window.IntegralERP.sync();
+    if(window.IntegralFinanceERPPlanning?.sync)await window.IntegralFinanceERPPlanning.sync();
+    db.lastErpManualSync=new Date().toISOString();
+    save();
+    button.textContent='ERP sincronizado';
+    if(view==='planning')planning();
+    else if(view==='dashboard'&&typeof dashboard==='function')dashboard();
+    setTimeout(()=>{if(document.body.contains(button)){button.disabled=false;button.textContent=oldText;}},1400);
+  }catch(e){
+    console.error('Sincronização manual ERP:',e);
+    button.disabled=false;
+    button.textContent='Falha ao sincronizar';
+    alert(`Não foi possível sincronizar com o ERP: ${e.message||e}`);
+    setTimeout(()=>{if(document.body.contains(button))button.textContent=oldText;},1800);
+  }
+}
+
+function installManualSync(){
+  const foot=document.querySelector('.sidebar-foot');
+  if(!foot||!isAdm()||foot.querySelector('#manualErpSync'))return;
+  const userMini=foot.querySelector('.user-mini');
+  const wrap=document.createElement('div');
+  wrap.className='manual-erp-sync-wrap';
+  const btn=document.createElement('button');
+  btn.id='manualErpSync';
+  btn.className='btn secondary wide';
+  btn.type='button';
+  btn.textContent='Sincronizar com ERP';
+  const small=document.createElement('small');
+  small.className='muted manual-sync-time';
+  small.textContent=db.lastErpManualSync?`Última: ${new Date(db.lastErpManualSync).toLocaleString('pt-BR')}`:'Sincronização somente manual';
+  btn.addEventListener('click',async()=>{await manualSyncERP(btn);if(db.lastErpManualSync)small.textContent=`Última: ${new Date(db.lastErpManualSync).toLocaleString('pt-BR')}`;});
+  wrap.append(btn,small);
+  foot.insertBefore(wrap,userMini||foot.firstChild);
+}
+
+const previousApp=app;
+app=function(){
+  previousApp();
+  setTimeout(installManualSync,0);
+};
+
+// Garante botão na sessão que já estiver aberta quando o patch carregar.
+setTimeout(installManualSync,0);
+
+// Reforça o clique das fontes ERP sem re-render periódico.
+function wireERPSourceRows(){
+  if(view!=='planning')return;
+  document.querySelectorAll('[data-erp-source]').forEach(btn=>{
+    btn.style.cursor='pointer';
+    btn.setAttribute('aria-label',(btn.textContent||'Entrada prevista do ERP').trim());
+  });
+}
+const oldPlanningStable=planning;
+planning=function(){const r=oldPlanningStable();setTimeout(wireERPSourceRows,0);return r;};
+
+})();
+
+;
+
+/* ===== SOURCE: patch-v17.js ===== */
+/* Integral Financeiro V17 - RH consolidado e relatório dentro de Viagens */
+(function(){
+'use strict';
+const $q=q=>document.querySelector(q), $$q=q=>[...document.querySelectorAll(q)];
+const uid=()=>window.integralUid?window.integralUid():Date.now()+Math.floor(Math.random()*9999);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+const currentMonth=()=>today().slice(0,7);
+const addMonth=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
+const monthLabel=m=>{const[y,n]=String(m).split('-');return new Date(+y,+n-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
+const money17=v=>money(Number(v||0));
+const isAdm=()=>user?.role==='Administrador';
+let selectedMonth=currentMonth();
+
+function valueForMonth(p,m){
+  const first=`${m}-01`, last=`${m}-31`;
+  if(p.start&&p.start>last)return 0;
+  if(p.end&&p.end<first)return 0;
+  const hist=[...(p.history||[])].filter(h=>h.date&&h.date<=last).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  return Number(hist.at(-1)?.value ?? p.currentValue ?? p.value ?? 0);
+}
+function activePeople(m){return (db.hrPeople||[]).filter(p=>valueForMonth(p,m)>0)}
+function paymentFor(p,m){return (db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===m)}
+
+function employeeModal(id){
+  const p=(db.hrPeople||[]).find(x=>String(x.id)===String(id));
+  const x=v2modal(p?'Editar colaborador':'Cadastrar colaborador',`<form id="hr17Form"><div class="modal-body"><div class="form-section"><h4>Contrato do colaborador</h4><div class="form-grid"><div class="field full"><label>Nome do colaborador</label><input name="name" value="${esc(p?.name||'')}" required></div><div class="field"><label>Início do contrato</label><input name="start" type="date" value="${p?.start||today()}" required></div><div class="field"><label>Fim do contrato</label><input name="end" type="date" value="${p?.end||''}"></div><div class="field"><label>Valor mensal atual</label><input name="value" type="number" step="0.01" min="0" value="${p?.currentValue??p?.value??''}" required></div><div class="field"><label>Adicionar contrato/arquivo</label><input id="hr17File" type="file"></div></div></div><div class="notice">Alterações no valor mensal ficam registradas no histórico e passam a valer nas projeções futuras.</div>${p?.history?.length?`<div class="form-section"><h4>Histórico de valores</h4><div class="history-list">${[...p.history].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(h=>`<div><b>${h.date?fmt(h.date):'—'}</b><span>${money17(h.value)}</span></div>`).join('')}</div></div>`:''}</div><div class="modal-foot">${p?'<button type="button" class="btn danger" id="hr17Delete">Excluir colaborador</button>':''}<button class="btn">Salvar</button></div></form>`);
+  const form=x.querySelector('#hr17Form');
+  form.onsubmit=e=>{e.preventDefault();const f=new FormData(form),val=Number(f.get('value')||0),old=Number(p?.currentValue??p?.value??0),file=x.querySelector('#hr17File').files[0],files=[...(p?.files||[])],history=[...(p?.history||[])];if(file)files.push({name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString()});if(!p||val!==old)history.push({date:today(),value:val,by:user?.name||''});const o={id:p?.id||uid(),name:String(f.get('name')||'').trim(),start:f.get('start'),end:f.get('end')||'',currentValue:val,files,history};if(p)Object.assign(p,o);else (db.hrPeople=db.hrPeople||[]).push(o);save();x.remove();hr();};
+  if(p)x.querySelector('#hr17Delete').onclick=()=>{if(confirm(`Excluir ${p.name}?`)){db.hrPeople=db.hrPeople.filter(q=>q.id!==p.id);db.hrPayments=(db.hrPayments||[]).filter(q=>String(q.personId)!==String(p.id));save();x.remove();hr();}};
+}
+
+window.hr=hr=function(){
+  if(!isAdm()){view='budgets';return app();}
+  title('RH');
+  const start=currentMonth();
+  const months=Array.from({length:6},(_,i)=>addMonth(start,i));
+  if(!months.includes(selectedMonth))selectedMonth=start;
+  const people=activePeople(selectedMonth);
+  const total=people.reduce((s,p)=>s+valueForMonth(p,selectedMonth),0);
+  const paid=people.reduce((s,p)=>{const q=paymentFor(p,selectedMonth);return s+(q?.status==='Pago'?Number(q.value||valueForMonth(p,selectedMonth)):0)},0);
+  $('#content').innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Projeção dos pagamentos dos próximos 6 meses.</div></div><button class="btn" id="hr17New">+ Cadastrar colaborador</button></div>
+  <section class="card hr17-month-panel"><div class="section-head"><div><h3>Próximos 6 meses</h3><p class="muted">Clique em um mês para abrir a folha projetada daquele período.</p></div></div><div class="hr17-months">${months.map(m=>{const ps=activePeople(m),t=ps.reduce((s,p)=>s+valueForMonth(p,m),0);return`<button class="hr17-month ${m===selectedMonth?'active':''}" data-hr17-month="${m}"><span>${monthLabel(m)}</span><b>${money17(t)}</b><small>${ps.length} colaborador(es)</small></button>`}).join('')}</div></section>
+  <section class="hr17-payroll"><div class="page-intro"><div><h3>${monthLabel(selectedMonth)}</h3><p>${selectedMonth===start?'Folha do mês vigente':'Projeção de pagamentos futuros'}</p></div><div class="hr17-summary"><span><small>Previsto</small><b>${money17(total)}</b></span><span><small>Quitado</small><b>${money17(paid)}</b></span><span><small>Em aberto</small><b>${money17(Math.max(0,total-paid))}</b></span></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Colaborador</th><th>Vigência</th><th>Valor previsto</th><th>Status</th><th></th></tr></thead><tbody>${people.map(p=>{const q=paymentFor(p,selectedMonth),done=q?.status==='Pago';return`<tr><td><b>${esc(p.name)}</b></td><td>${p.start?fmt(p.start):'—'} → ${p.end?fmt(p.end):'Indeterminado'}</td><td><b>${money17(valueForMonth(p,selectedMonth))}</b></td><td>${done?badgeStatus('Pago'):(selectedMonth===start?'Pendente':'Previsto')}</td><td>${selectedMonth===start&&!done?`<button class="btn small" data-hr17-pay="${p.id}">Marcar pago</button>`:done?'Quitado':'—'}</td></tr>`}).join('')||'<tr><td colspan="5"><div class="empty">Nenhum colaborador vigente neste mês.</div></td></tr>'}</tbody></table></div></section>
+  <h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-hr17-person="${p.id}"><div><h3>${esc(p.name)}</h3><span class="badge">${p.end&&p.end<today()?'Encerrado':'Vigente'}</span></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${money17(p.currentValue||p.value)}</b></span><span><small>Arquivos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div>`;
+  $('#hr17New').onclick=()=>employeeModal();
+  $$q('[data-hr17-person]').forEach(b=>b.onclick=()=>employeeModal(b.dataset.hr17Person));
+  $$q('[data-hr17-month]').forEach(b=>b.onclick=()=>{selectedMonth=b.dataset.hr17Month;hr();});
+  $$q('[data-hr17-pay]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr17Pay));if(!p)return;let q=paymentFor(p,start),v=valueForMonth(p,start);if(q){q.status='Pago';q.paidAt=today();q.value=v}else(db.hrPayments=db.hrPayments||[]).push({id:uid(),personId:p.id,month:start,value:v,status:'Pago',paidAt:today()});save();hr();});
+};
+
+function travelReport(){
+  const trips=(db.trips||[]), active=trips.filter(t=>!['Finalizada','Aprovada','Encerrada'].includes(t.status)), spent=trips.reduce((s,t)=>s+Number(t.proven||t.spent||0),0), declared=trips.reduce((s,t)=>s+Number(t.declared||0),0), divergence=trips.filter(t=>String(t.status||'').includes('Diverg'));
+  v2modal('Relatório de Viagens',`<div class="modal-body"><div class="grid cols-3 compact-metrics"><div class="card metric mini"><h3>Viagens registradas</h3><b>${trips.length}</b></div><div class="card metric mini"><h3>Comprovado</h3><b>${money17(spent)}</b></div><div class="card metric mini"><h3>Declarado</h3><b>${money17(declared)}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Projeto</th><th>Declarado</th><th>Comprovado</th><th>Status</th></tr></thead><tbody>${trips.map(t=>`<tr><td><b>${esc(t.city||t.destination||'—')}</b></td><td>${esc(t.period||'—')}</td><td>${esc(t.employee||t.team||'—')}</td><td>${esc(t.project||'—')}</td><td>${money17(t.declared)}</td><td>${money17(t.proven||t.spent)}</td><td>${esc(t.status||'—')}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma viagem registrada.</td></tr>'}</tbody></table></div>${divergence.length?`<div class="notice warn">${divergence.length} viagem(ns) com divergência de prestação de contas.</div>`:''}</div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);
+}
+
+// Remove Relatórios do menu lateral: relatório passa a ser parte de Viagens.
+for(let i=adminNav.length-1;i>=0;i--)if(adminNav[i]?.[0]==='reports')adminNav.splice(i,1);
+if(Array.isArray(staffNav))for(let i=staffNav.length-1;i>=0;i--)if(staffNav[i]?.[0]==='reports')staffNav.splice(i,1);
+
+const previousTrips=trips;
+window.trips=trips=function(){
+  const r=previousTrips();
+  const toolbar=$q('#content .toolbar');
+  if(toolbar&&!$q('#travelReportBtn')){
+    let right=toolbar.querySelector('.right');if(!right){right=document.createElement('div');right.className='right';toolbar.appendChild(right);}
+    const btn=document.createElement('button');btn.className='btn ghost';btn.id='travelReportBtn';btn.type='button';btn.textContent='Relatório de Viagens';btn.onclick=travelReport;right.prepend(btn);
+  }
+  return r;
+};
+
+// Força o roteamento final do RH consolidado.
+const previousRender17=render;
+render=function(){if(view==='hr')return hr();return previousRender17();};
+})();
+
+;
+
+/* ===== SOURCE: patch-v18.js ===== */
+/* Integral Financeiro V18 - correção final independente de RH e Relatórios */
+(function(){
+'use strict';
+
+const qs=(s)=>document.querySelector(s), qsa=(s)=>Array.from(document.querySelectorAll(s));
+const now=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+const currentMonth=()=>now().slice(0,7);
+const addMonth=(m,n)=>{const d=new Date(m+'-01T12:00:00');d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
+const monthLabel=(m)=>{const parts=String(m).split('-');return new Date(Number(parts[0]),Number(parts[1])-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
+const money18=(v)=>money(Number(v||0));
+let selectedMonth18=currentMonth();
+
+function valueForMonth18(p,m){
+  const first=m+'-01', last=m+'-31';
+  if(p.start&&p.start>last)return 0;
+  if(p.end&&p.end<first)return 0;
+  const hist=(p.history||[]).filter(h=>h.date&&h.date<=last).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const lastHist=hist.length?hist[hist.length-1]:null;
+  return Number(lastHist&&lastHist.value!=null?lastHist.value:(p.currentValue!=null?p.currentValue:(p.value||0)));
+}
+function activePeople18(m){return (db.hrPeople||[]).filter(p=>valueForMonth18(p,m)>0)}
+function paymentFor18(p,m){return (db.hrPayments||[]).find(x=>String(x.personId)===String(p.id)&&x.month===m)}
+
+function renderHr18(){
+  if(!user||user.role!=='Administrador'){view='budgets';app();return;}
+  title('RH');
+  const start=currentMonth();
+  const months=Array.from({length:6},(_,i)=>addMonth(start,i));
+  if(months.indexOf(selectedMonth18)===-1)selectedMonth18=start;
+  const people=activePeople18(selectedMonth18);
+  const total=people.reduce((s,p)=>s+valueForMonth18(p,selectedMonth18),0);
+  const paid=people.reduce((s,p)=>{const q=paymentFor18(p,selectedMonth18);return s+(q&&q.status==='Pago'?Number(q.value||valueForMonth18(p,selectedMonth18)):0)},0);
+
+  qs('#content').innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Projeção de pagamentos para os próximos 6 meses.</div></div><button class="btn" id="hr18New">+ Colaborador</button></div>
+  <section class="card hr17-month-panel"><div class="section-head"><div><h3>Próximos 6 meses</h3><p class="muted">Clique em um mês para visualizar a folha projetada.</p></div></div><div class="hr17-months">${months.map(m=>{const ps=activePeople18(m),t=ps.reduce((s,p)=>s+valueForMonth18(p,m),0);return `<button class="hr17-month ${m===selectedMonth18?'active':''}" data-hr18-month="${m}"><span>${monthLabel(m)}</span><b>${money18(t)}</b><small>${ps.length} colaborador(es)</small></button>`}).join('')}</div></section>
+  <section class="hr17-payroll"><div class="page-intro"><div><h3>${monthLabel(selectedMonth18)}</h3><p>${selectedMonth18===start?'Folha do mês vigente':'Projeção de pagamentos futuros'}</p></div><div class="hr17-summary"><span><small>Previsto</small><b>${money18(total)}</b></span><span><small>Quitado</small><b>${money18(paid)}</b></span><span><small>Em aberto</small><b>${money18(Math.max(0,total-paid))}</b></span></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>Vigência</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${people.map(p=>{const q=paymentFor18(p,selectedMonth18),done=q&&q.status==='Pago';return `<tr><td><b>${esc(p.name||'')}</b></td><td>${p.start?fmt(p.start):'—'} → ${p.end?fmt(p.end):'Indeterminado'}</td><td><b>${money18(valueForMonth18(p,selectedMonth18))}</b></td><td>${done?badgeStatus('Pago'):(selectedMonth18===start?'Pendente':'Previsto')}</td><td>${selectedMonth18===start&&!done?`<button class="btn small" data-hr18-pay="${p.id}">Marcar pago</button>`:(done?'Quitado':'—')}</td></tr>`}).join('')||'<tr><td colspan="5"><div class="empty">Nenhum colaborador vigente neste mês.</div></td></tr>'}</tbody></table></div></section>
+  <h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-hr18-person="${p.id}"><div><h3>${esc(p.name||'')}</h3></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${money18(p.currentValue||p.value)}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div>`;
+
+  qsa('[data-hr18-month]').forEach(b=>b.onclick=()=>{selectedMonth18=b.dataset.hr18Month;renderHr18();});
+  qsa('[data-hr18-pay]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr18Pay));if(!p)return;let q=paymentFor18(p,start),v=valueForMonth18(p,start);if(q){q.status='Pago';q.paidAt=now();q.value=v}else{db.hrPayments=db.hrPayments||[];db.hrPayments.push({id:Date.now(),personId:p.id,month:start,value:v,status:'Pago',paidAt:now()});}save();renderHr18();});
+  if(qs('#hr18New'))qs('#hr18New').onclick=()=>{if(typeof employeeForm==='function')employeeForm();else if(window.employeeForm)window.employeeForm();};
+  qsa('[data-hr18-person]').forEach(b=>b.onclick=()=>{if(typeof employeeForm==='function')employeeForm(b.dataset.hr18Person);else if(window.employeeForm)window.employeeForm(b.dataset.hr18Person);});
+}
+
+function removeReportsEverywhere(){
+  try{
+    if(Array.isArray(adminNav))for(let i=adminNav.length-1;i>=0;i--)if(adminNav[i]&&adminNav[i][0]==='reports')adminNav.splice(i,1);
+    if(typeof staffNav!=='undefined'&&Array.isArray(staffNav))for(let i=staffNav.length-1;i>=0;i--)if(staffNav[i]&&staffNav[i][0]==='reports')staffNav.splice(i,1);
+  }catch(e){console.warn('Falha ao limpar menu Relatórios:',e);}
+  qsa('[data-view="reports"]').forEach(el=>el.remove());
+  qsa('.nav button').forEach(el=>{if((el.textContent||'').trim()==='Relatórios')el.remove();});
+}
+
+function installTripReportButton(){
+  if(view!=='trips')return;
+  const toolbar=qs('#content .toolbar');
+  if(!toolbar||qs('#tripReport18'))return;
+  let right=toolbar.querySelector('.right');
+  if(!right){right=document.createElement('div');right.className='right';toolbar.appendChild(right);}
+  const btn=document.createElement('button');btn.id='tripReport18';btn.className='btn ghost';btn.type='button';btn.textContent='Relatório de Viagens';
+  btn.onclick=()=>{/* Só as viagens que o usuário pode ver */const canSee=t=>user?.role==='Administrador'||(typeof window.IntegralTripVisible==='function'?window.IntegralTripVisible(t):false);const tripsList=(db.trips||[]).filter(canSee);const declared=tripsList.reduce((s,t)=>s+Number(t.declared||0),0);const proven=tripsList.reduce((s,t)=>s+Number(t.proven||t.spent||0),0);v2modal('Relatório de Viagens',`<div class="modal-body"><div class="grid cols-3"><div class="card metric"><h3>Viagens</h3><b>${tripsList.length}</b></div><div class="card metric"><h3>Declarado</h3><b>${money18(declared)}</b></div><div class="card metric"><h3>Comprovado</h3><b>${money18(proven)}</b></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Projeto</th><th>Declarado</th><th>Comprovado</th><th>Status</th></tr></thead><tbody>${tripsList.map(t=>`<tr><td><b>${esc(t.city||t.destination||'—')}</b></td><td>${esc(t.period||'—')}</td><td>${esc(t.employee||t.team||'—')}</td><td>${esc(t.project||'—')}</td><td>${money18(t.declared)}</td><td>${money18(t.proven||t.spent)}</td><td>${esc(t.status||'—')}</td></tr>`).join('')||'<tr><td colspan="7">Nenhuma viagem registrada.</td></tr>'}</tbody></table></div></div><div class="modal-foot"><button class="btn" data-v2close>Fechar</button></div>`);};
+  right.prepend(btn);
+}
+
+const previousRender18=render;
+render=function(){
+  removeReportsEverywhere();
+  if(view==='hr')return renderHr18();
+  const r=previousRender18();
+  setTimeout(()=>{removeReportsEverywhere();installTripReportButton();},0);
+  return r;
+};
+
+const previousApp18=app;
+app=function(){const r=previousApp18();setTimeout(removeReportsEverywhere,0);return r;};
+
+const obs=new MutationObserver(()=>removeReportsEverywhere());
+obs.observe(document.documentElement,{childList:true,subtree:true});
+setTimeout(removeReportsEverywhere,0);
+
+})();
+
+;
+
+/* ===== SOURCE: patch-v19.js ===== */
+/* Integral Financeiro V19 - Contas/Pagamentos persistidos no Supabase */
+(function(){
+'use strict';
+const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
+let pushing=false, loading=false, pushTimer=null, ready=false;
+
+const sb=()=>window.IntegralERP?.sb||null;
+const hasSession=()=>!!user;
+const id=v=>String(v??'');
+const clean=o=>JSON.parse(JSON.stringify(o||{}));
+
+function mapAccount(a){
+  return {
+    id:id(a.id),
+    nome:a.name||a.nome||a.supplier||'Conta',
+    fornecedor:a.supplier||a.fornecedor||a.name||'',
+    categoria:a.category||a.categoria||'',
+    setor:a.sector||a.setor||'',
+    matricula_cadastro:a.registration||a.matricula||a.matriculaCadastro||'',
+    recorrencia:a.recurrence||a.recorrencia||'',
+    ativo:a.active!==false,
+    dados:clean(a),
+    updated_at:new Date().toISOString()
+  };
+}
+function mapPayment(p){
+  return {
+    id:id(p.id),
+    conta_id:id(p.accountId||p.contaId),
+    vencimento:p.due||p.vencimento||new Date().toISOString().slice(0,10),
+    valor:Number(p.value||p.valor||0),
+    status:p.status||'Pendente',
+    forma_pagamento:p.paymentMethod||p.method||p.formaPagamento||'',
+    codigo_pagamento:p.paymentCode||p.code||p.codigoPagamento||'',
+    pago_em:p.paidAt||p.pagoEm||null,
+    dados:clean(p),
+    updated_at:new Date().toISOString()
+  };
+}
+function restoreAccount(r){
+  const a={...(r.dados||{})};
+  a.id=a.id??r.id;
+  a.name=a.name||r.nome;
+  a.supplier=a.supplier||r.fornecedor;
+  a.category=a.category||r.categoria;
+  a.sector=a.sector||r.setor;
+  a.registration=a.registration||r.matricula_cadastro;
+  a.recurrence=a.recurrence||r.recorrencia;
+  a.active=r.ativo!==false;
+  return a;
+}
+function restorePayment(r){
+  const p={...(r.dados||{})};
+  p.id=p.id??r.id;
+  p.accountId=p.accountId??r.conta_id;
+  p.due=p.due||r.vencimento;
+  p.value=Number(p.value??r.valor??0);
+  p.status=p.status||r.status;
+  p.paymentMethod=p.paymentMethod||r.forma_pagamento||'';
+  p.paymentCode=p.paymentCode||r.codigo_pagamento||'';
+  p.paidAt=p.paidAt||r.pago_em||null;
+  return p;
+}
+
+async function tableAvailable(){
+  const c=sb(); if(!c||!hasSession())return false;
+  const {error}=await c.from('financeiro_contas').select('id').limit(1);
+  if(error){
+    if(String(error.code)==='42P01'||/does not exist/i.test(error.message||'')) console.warn('Integral Financeiro: schema de contas ainda não foi criado no Supabase.');
+    else console.warn('Integral Financeiro: Supabase indisponível para contas.',error);
+    return false;
+  }
+  return true;
+}
+
+async function push(){
+  if(pushing||loading||!ready)return false;
+  const c=sb(); if(!c||!hasSession())return false;
+  pushing=true;
+  try{
+    const accounts=(db.accountMasters||[]).map(mapAccount);
+    const payments=(db.accountPayments||[]).map(mapPayment).filter(p=>p.conta_id);
+    if(accounts.length){const {error}=await c.from('financeiro_contas').upsert(accounts,{onConflict:'id'});if(error)throw error;}
+    if(payments.length){const {error}=await c.from('financeiro_pagamentos').upsert(payments,{onConflict:'id'});if(error)throw error;}
+    db.financeCloudLastSync=new Date().toISOString();
+    try{localStorage.setItem('integralFinanceiro',JSON.stringify(db));}catch{}
+    return true;
+  }catch(e){console.warn('Falha ao sincronizar Contas/Pagamentos com Supabase:',e);return false;}
+  finally{pushing=false;}
+}
+function schedulePush(){
+  clearTimeout(pushTimer);
+  pushTimer=setTimeout(()=>push(),500);
+}
+
+async function load(){
+  if(loading||!hasSession())return false;
+  const c=sb(); if(!c)return false;
+  loading=true;
+  try{
+    if(!await tableAvailable())return false;
+    ready=true;
+    const [ca,pa]=await Promise.all([
+      c.from('financeiro_contas').select('*').order('nome'),
+      c.from('financeiro_pagamentos').select('*').order('vencimento')
+    ]);
+    if(ca.error)throw ca.error;if(pa.error)throw pa.error;
+    const cloudAccounts=(ca.data||[]), cloudPayments=(pa.data||[]);
+    if(!cloudAccounts.length && (db.accountMasters||[]).length){await push();return true;}
+    if(cloudAccounts.length){
+      db.accountMasters=cloudAccounts.map(restoreAccount);
+      db.accountPayments=cloudPayments.map(restorePayment);
+      db.financeCloudLastSync=new Date().toISOString();
+      try{localStorage.setItem('integralFinanceiro',JSON.stringify(db));}catch{}
+      if(view==='accounts'&&typeof accounts==='function')accounts();
+      if(view==='dashboard'&&typeof dashboard==='function')dashboard();
+    }
+    return true;
+  }catch(e){console.warn('Falha ao carregar Contas/Pagamentos do Supabase:',e);return false;}
+  finally{loading=false;}
+}
+
+// Persiste no Supabase sempre que o Financeiro salva uma alteração local.
+const originalSave=window.save;
+if(typeof originalSave==='function'){
+  window.save=function(){const r=originalSave.apply(this,arguments);if(ready)schedulePush();return r;};
+}
+
+async function boot(){
+  for(let i=0;i<20;i++){
+    if(sb()&&hasSession()){await load();return;}
+    await wait(350);
+  }
+}
+setTimeout(boot,300);
+window.addEventListener('integral:erp-ready',boot);
+window.IntegralFinanceCloud={load,push,get ready(){return ready;}};
+})();
+
+;
+
+/* ===== SOURCE: patch-v20.js ===== */
+/* Integral Financeiro V20 - estabilização de navegação e RH */
+(function(){
+'use strict';
+
+const q=(s)=>document.querySelector(s);
+const qa=(s)=>Array.from(document.querySelectorAll(s));
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
+const monthNow=()=>today().slice(0,7);
+const addMonth=(m,n)=>{const d=new Date(`${m}-01T12:00:00`);d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,7)};
+const monthLabel=(m)=>{const [y,mm]=String(m).split('-');return new Date(Number(y),Number(mm)-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase())};
+const mny=(v)=>money(Number(v||0));
+let selectedHrMonth=monthNow();
+
+function hrBaseValueForMonth(person,month){
+  const first=`${month}-01`, last=`${month}-31`;
+  if(person.start&&person.start>last)return 0;
+  if(person.end&&person.end<first)return 0;
+  const hist=[...(person.history||[])].filter(h=>h.date&&h.date<=last).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const item=hist.length?hist[hist.length-1]:null;
+  return Number(item?.value ?? person.currentValue ?? person.value ?? 0);
+}
+function hrMonthlyVariable(person,month){
+  db.hrMonthlyVariables=db.hrMonthlyVariables||[];
+  return db.hrMonthlyVariables.find(x=>String(x.personId)===String(person.id)&&x.month===month)||null;
+}
+function hrValueForMonth(person,month){
+  const base=hrBaseValueForMonth(person,month);
+  if(!base)return 0;
+  const variable=hrMonthlyVariable(person,month);
+  return base+Number(variable?.overtime||0)+Number(variable?.bonus||0);
+}
+function hrPeopleForMonth(month){return (db.hrPeople||[]).filter(p=>hrBaseValueForMonth(p,month)>0)}
+function hrPayment(person,month){return (db.hrPayments||[]).find(x=>String(x.personId)===String(person.id)&&x.month===month)}
+function hrMonthlyVariableModal(person,month){
+  if(!person||!month)return;
+  db.hrMonthlyVariables=db.hrMonthlyVariables||[];
+  const current=hrMonthlyVariable(person,month);
+  const base=hrBaseValueForMonth(person,month);
+  const overtime=Number(current?.overtime||0), bonus=Number(current?.bonus||0);
+  const modal=v2modal(`RH • ${person.name} • ${monthLabel(month)}`,`<form id="hrMonthlyVariableForm"><div class="modal-body"><div class="notice">Estes valores valem somente para <b>${monthLabel(month)}</b> e não serão repetidos nos meses seguintes.</div><div class="form-grid"><div class="field"><label>Valor base do mês</label><input id="hrMonthBase" type="number" step="0.01" value="${base}" readonly></div><div class="field"><label>Horas extras — valor total</label><input id="hrMonthOvertime" name="overtime" type="number" step="0.01" min="0" value="${overtime}"></div><div class="field"><label>Bônus / Comissões — valor total</label><input id="hrMonthBonus" name="bonus" type="number" step="0.01" min="0" value="${bonus}"></div><div class="field"><label>Total do mês</label><input id="hrMonthTotal" type="text" value="${mny(base+overtime+bonus)}" readonly></div></div></div><div class="modal-foot"><button type="button" class="btn ghost" data-v2close>Cancelar</button><button class="btn">Salvar variáveis do mês</button></div></form>`);
+  const form=modal.querySelector('#hrMonthlyVariableForm');
+  const overtimeInput=modal.querySelector('#hrMonthOvertime'),bonusInput=modal.querySelector('#hrMonthBonus'),totalInput=modal.querySelector('#hrMonthTotal');
+  const refreshTotal=()=>{totalInput.value=mny(base+Number(overtimeInput.value||0)+Number(bonusInput.value||0))};
+  overtimeInput.oninput=refreshTotal;bonusInput.oninput=refreshTotal;
+  form.onsubmit=e=>{
+    e.preventDefault();
+    const overtimeValue=Math.max(0,Number(overtimeInput.value||0));
+    const bonusValue=Math.max(0,Number(bonusInput.value||0));
+    const existing=hrMonthlyVariable(person,month);
+    if(existing){Object.assign(existing,{overtime:overtimeValue,bonus:bonusValue,updatedAt:new Date().toISOString(),by:user?.name||''});}
+    else db.hrMonthlyVariables.push({id:uid(),personId:person.id,month,overtime:overtimeValue,bonus:bonusValue,updatedAt:new Date().toISOString(),by:user?.name||''});
+    const payment=hrPayment(person,month);
+    if(payment?.status==='Pago')payment.value=base+overtimeValue+bonusValue;
+    save();modal.remove();renderHr20();
+  };
+}
+
+function closeModal(el){if(el&&el.parentNode)el.remove()}
+
+function hrEmployeeModal(id){
+  const person=(db.hrPeople||[]).find(x=>String(x.id)===String(id));
+  const modal=document.createElement('div');
+  modal.className='modal-backdrop';
+  modal.innerHTML=`<div class="modal"><div class="modal-head"><h3>${person?'Editar colaborador':'Cadastrar colaborador'}</h3><button class="btn ghost small" type="button" data-close>Fechar</button></div><form id="hr20Form"><div class="modal-body"><div class="form-section"><h4>Dados do contrato</h4><div class="form-grid"><div class="field full"><label>Nome do colaborador</label><input name="name" value="${esc(person?.name||'')}" required></div><div class="field"><label>Início do contrato</label><input name="start" type="date" value="${person?.start||today()}" required></div><div class="field"><label>Fim do contrato</label><input name="end" type="date" value="${person?.end||''}"></div><div class="field"><label>Valor mensal atual</label><input name="value" type="number" min="0" step="0.01" value="${person?.currentValue??person?.value??''}" required></div><div class="field"><label>Adicionar contrato/arquivo</label><input id="hr20File" type="file"></div></div></div>${person?.history?.length?`<div class="form-section"><h4>Histórico de valores</h4><div class="history-list">${[...person.history].sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(h=>`<div><b>${h.date?fmt(h.date):'—'}</b><span>${mny(h.value)}</span></div>`).join('')}</div></div>`:''}</div><div class="modal-foot">${person?'<button type="button" class="btn danger" id="hr20Delete">Excluir colaborador</button>':''}<button class="btn" type="submit">Salvar</button></div></form></div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('[data-close]').onclick=()=>closeModal(modal);
+  modal.addEventListener('click',e=>{if(e.target===modal)closeModal(modal)});
+  const form=modal.querySelector('#hr20Form');
+  form.onsubmit=(e)=>{
+    e.preventDefault();
+    const fd=new FormData(form);
+    const value=Number(fd.get('value')||0);
+    const old=Number(person?.currentValue??person?.value??0);
+    const file=modal.querySelector('#hr20File')?.files?.[0];
+    const files=[...(person?.files||[])];
+    const history=[...(person?.history||[])];
+    if(file)files.push({name:file.name,type:file.type,size:file.size,addedAt:new Date().toISOString()});
+    if(!person||value!==old)history.push({date:today(),value,by:user?.name||''});
+    const obj={id:person?.id||Date.now()+Math.floor(Math.random()*10000),name:String(fd.get('name')||'').trim(),start:String(fd.get('start')||''),end:String(fd.get('end')||''),currentValue:value,value,files,history};
+    db.hrPeople=db.hrPeople||[];
+    if(person)Object.assign(person,obj);else db.hrPeople.push(obj);
+    save();
+    closeModal(modal);
+    renderHr20();
+  };
+  const del=modal.querySelector('#hr20Delete');
+  if(del)del.onclick=()=>{if(confirm(`Excluir ${person.name}?`)){db.hrPeople=(db.hrPeople||[]).filter(x=>String(x.id)!==String(person.id));db.hrPayments=(db.hrPayments||[]).filter(x=>String(x.personId)!==String(person.id));save();closeModal(modal);renderHr20();}};
+}
+
+function renderHr20(){
+  if(!user||user.role!=='Administrador'){view='budgets';return typeof render==='function'?render():undefined;}
+  title('RH');
+  const start=monthNow();
+  const months=Array.from({length:6},(_,i)=>addMonth(start,i));
+  if(!months.includes(selectedHrMonth))selectedHrMonth=start;
+  const people=hrPeopleForMonth(selectedHrMonth);
+  const total=people.reduce((s,p)=>s+hrValueForMonth(p,selectedHrMonth),0);
+  const paid=people.reduce((s,p)=>{const x=hrPayment(p,selectedHrMonth);return s+(x?.status==='Pago'?Number(x.value||hrValueForMonth(p,selectedHrMonth)):0)},0);
+  const content=q('#content'); if(!content)return;
+  content.innerHTML=`<div class="toolbar"><div><b>Gestão de colaboradores e contratos</b><div class="muted">Projeção dos pagamentos para os próximos 6 meses.</div></div><button class="btn" id="hr20New">+ Colaborador</button></div><section class="card hr17-month-panel"><div class="section-head"><div><h3>Próximos 6 meses</h3><p class="muted">Clique em um mês para visualizar a projeção da folha.</p></div></div><div class="hr17-months">${months.map(m=>{const ps=hrPeopleForMonth(m),v=ps.reduce((s,p)=>s+hrValueForMonth(p,m),0);return`<button class="hr17-month ${m===selectedHrMonth?'active':''}" data-hr20-month="${m}"><span>${monthLabel(m)}</span><b>${mny(v)}</b><small>${ps.length} colaborador(es)</small></button>`}).join('')}</div></section><section class="hr17-payroll"><div class="page-intro"><div><h3>${monthLabel(selectedHrMonth)}</h3><p>${selectedHrMonth===start?'Folha do mês vigente':'Projeção de pagamentos futuros'}</p></div><div class="hr17-summary"><span><small>Previsto</small><b>${mny(total)}</b></span><span><small>Quitado</small><b>${mny(paid)}</b></span><span><small>Em aberto</small><b>${mny(Math.max(0,total-paid))}</b></span></div></div><div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>Valor base</th><th>Hora Extra</th><th>Bônus / Comissões</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${people.map(p=>{const x=hrPayment(p,selectedHrMonth),done=x?.status==='Pago',v=hrMonthlyVariable(p,selectedHrMonth),base=hrBaseValueForMonth(p,selectedHrMonth),overtime=Number(v?.overtime||0),bonus=Number(v?.bonus||0),total=base+overtime+bonus;return`<tr><td><button type="button" class="linklike" data-hr20-variable="${p.id}"><b>${esc(p.name||'')}</b><small class="muted" style="display:block">Clique para editar variáveis</small></button></td><td><b>${mny(base)}</b></td><td>${overtime?`<b>${mny(overtime)}</b>`:'—'}</td><td>${bonus?`<b>${mny(bonus)}</b>`:'—'}</td><td><b>${mny(total)}</b></td><td>${done?badgeStatus('Pago'):(selectedHrMonth===start?'Pendente':'Previsto')}</td><td class="actions"><button class="btn small ghost" data-hr20-variable="${p.id}">Editar variáveis</button>${selectedHrMonth===start&&!done?`<button class="btn small" data-hr20-pay="${p.id}">Marcar pago</button>`:(done?'<span class="muted">Quitado</span>':'')}</td></tr>`}).join('')||'<tr><td colspan="7"><div class="empty">Nenhum colaborador vigente neste mês.</div></td></tr>'}</tbody></table></div></section><h3 class="section-title">Funcionários cadastrados</h3><div class="employee-grid">${(db.hrPeople||[]).map(p=>`<button class="card employee-card" data-hr20-person="${p.id}"><div><h3>${esc(p.name||'')}</h3></div><div class="employee-facts"><span><small>Início</small><b>${p.start?fmt(p.start):'—'}</b></span><span><small>Fim</small><b>${p.end?fmt(p.end):'Indeterminado'}</b></span><span><small>Mensal atual</small><b>${mny(p.currentValue??p.value)}</b></span><span><small>Arquivos</small><b>${(p.files||[]).length}</b></span></div></button>`).join('')||'<div class="empty">Nenhum colaborador cadastrado.</div>'}</div>`;
+  q('#hr20New').onclick=()=>hrEmployeeModal();
+  qa('[data-hr20-person]').forEach(b=>b.onclick=()=>hrEmployeeModal(b.dataset.hr20Person));
+  qa('[data-hr20-month]').forEach(b=>b.onclick=()=>{selectedHrMonth=b.dataset.hr20Month;renderHr20()});
+  qa('[data-hr20-variable]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr20Variable));if(p)hrMonthlyVariableModal(p,selectedHrMonth)});
+  qa('[data-hr20-pay]').forEach(b=>b.onclick=()=>{const p=(db.hrPeople||[]).find(x=>String(x.id)===String(b.dataset.hr20Pay));if(!p)return;db.hrPayments=db.hrPayments||[];let x=hrPayment(p,selectedHrMonth);const value=hrValueForMonth(p,selectedHrMonth);if(x)Object.assign(x,{status:'Pago',paidAt:today(),value});else db.hrPayments.push({id:Date.now()+Math.floor(Math.random()*10000),personId:p.id,month:selectedHrMonth,value,status:'Pago',paidAt:today()});save();renderHr20()});
+}
+
+// Última definição do RH: elimina dependência de employeeForm de patches anteriores.
+window.hr=renderHr20;
+try{hr=renderHr20}catch{}
+
+// Última definição de render para garantir RH estável e manter todas as demais telas existentes.
+const renderBefore20=window.render||render;
+const render20=function(){if(view==='hr')return renderHr20();return renderBefore20.apply(this,arguments)};
+window.render=render20;
+try{render=render20}catch{}
+
+// Clique único no menu: usa delegação em capture e evita rerender duplo do app inteiro.
+document.addEventListener('click',function(e){
+  const btn=e.target.closest?.('.nav [data-view]');
+  if(!btn)return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const next=btn.dataset.view;
+  if(!next)return;
+  view=next;
+  qa('.nav [data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
+  render20();
+},{capture:true});
+
+// Remove Relatórios do menu caso algum patch anterior volte a inseri-lo.
+function cleanupMenu(){qa('.nav [data-view="reports"]').forEach(x=>x.remove());qa('.nav button').filter(x=>(x.textContent||'').trim()==='Relatórios').forEach(x=>x.remove());}
+cleanupMenu();
+
+// Diagnóstico passivo: erros deixam rastros no console sem interromper a navegação.
+window.addEventListener('error',e=>console.error('Integral Financeiro UI error:',e.error||e.message));
+window.addEventListener('unhandledrejection',e=>console.error('Integral Financeiro async error:',e.reason));
+
+})();
+
+;
