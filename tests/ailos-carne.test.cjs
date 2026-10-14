@@ -30,7 +30,7 @@ test('carnê transacional, busca completa, homologação isolada e retorno no me
  await assert.rejects(rpc('finalizar',{id:r.id,...out,codigos:out.codigos.map((b,i)=>i===2?{...b,codigo_barras:'bad'}:b)}),/inválido/);assert.equal((await rpc('cliente',{id:id(10)})).parcelas.length,0);
  await rpc('finalizar',{id:r.id,...out});await rpc('finalizar',{id:r.id,...out});let ps=(await rpc('cliente',{id:id(10)})).parcelas;assert.equal(ps.length,3);assert.deepEqual(ps.map(p=>p.numero),[1,2,3]);assert.ok(ps.every(p=>p.cliente_id===id(10)&&p.valor_previsto===100&&p.vencimento===date));assert.equal(new Set(ps.map(p=>p.nosso_numero)).size,3);
  await assert.rejects(rpc('preparar_carne',{...request,id:id(32)}),/adicionar novas cobranças/);
- const today=(await db.query('select current_date::text as d')).rows[0].d,b=r.boletos[1];
+ const today=(await db.query("select (now() at time zone 'America/Sao_Paulo')::date::text as d")).rows[0].d,b=r.boletos[1];
  await rpc('retorno',{hash:'a'.repeat(64),nome:'retorno.ret',ambiente:'producao',eventos:[{nosso_numero:b.nosso_numero,documento:b.documento,cpf_cnpj:pagador.cpf_cnpj,valor_centavos:10000,vencimento:date,pago_centavos:10000,liquido_centavos:9800,data:today,credito:today,ocorrencia:'06',motivos:'0000000000'}]});
  ps=(await rpc('cliente',{id:id(10)})).parcelas;assert.equal(ps.filter(p=>p.status==='Pago').length,1);assert.equal(ps.find(p=>p.id===b.parcela_id).valor_liquidado,100);
  await assert.rejects(rpc('preparar_carne',{...request,id:id(33),adicionar_cobrancas:true,parcelas:[{valor:-1,vencimento:date}]}),/valores/);
