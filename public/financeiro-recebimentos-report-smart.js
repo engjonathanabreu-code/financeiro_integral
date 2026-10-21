@@ -55,7 +55,8 @@ async function parseCsvText(text){
 async function parseSpreadsheetFile(file){
  if(/\.csv$/i.test(file.name)){const text=await file.text();return parseCsvText(text)}
  if(!window.XLSX)throw new Error('Leitor de planilha não carregou. Atualize a página e tente novamente.');
- const buf=await file.arrayBuffer(),wb=XLSX.read(buf,{type:'array',raw:true});
+ window.IntegralSafeReaders.check(file,'planilha');
+ const buf=await file.arrayBuffer(),wb=window.IntegralSafeReaders.workbook(file,buf,{type:'array',raw:true});
  const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:null});
  return rowsToEntries(rows);
 }
@@ -81,7 +82,8 @@ async function extractReportRows(pdf){
 async function parsePdfLocally(file){
  if(!window.pdfjsLib)throw new Error('Leitor de PDF não carregou. Atualize a página e tente novamente.');
  window.pdfjsLib.GlobalWorkerOptions.workerSrc||(window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js');
- const buf=await file.arrayBuffer(),pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
+ window.IntegralSafeReaders.check(file,'pdf');
+ const buf=await file.arrayBuffer(),pdf=await window.IntegralSafeReaders.pdfDocument(file,buf);
  const rawRows=await extractReportRows(pdf);
  const out=[];
  for(const raw of rawRows){

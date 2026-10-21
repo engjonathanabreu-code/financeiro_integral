@@ -51,7 +51,7 @@ function col(headers,aliases){const n=headers.map(norm);for(const a of aliases){
 function parseWorkbook(file){
  return file.arrayBuffer().then(buf=>{
   if(!window.XLSX)throw new Error('Leitor Excel não carregado. Atualize a página e tente novamente.');
-  const wb=XLSX.read(buf,{type:'array',cellDates:false});let entries=[];
+  const wb=window.IntegralSafeReaders.workbook(file,buf,{type:'array',cellDates:false});let entries=[];
   wb.SheetNames.forEach(sheetName=>{
    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,raw:true,defval:null});const hi=findHeader(rows);if(hi<0)return;
    const h=rows[hi]||[],ci=col(h,['COD','CÓDIGO','CODIGO']),ni=col(h,['NOME','CLIENTE']),ii=col(h,['INÍCIO','INICIO','1º VENCIMENTO','PRIMEIRO VENCIMENTO']),fi=col(h,['FIM','ÚLTIMO VENCIMENTO','ULTIMO VENCIMENTO']),vi=col(h,['VLR.PARC.','VLR PARC','VALOR PARCELA','PARCELA','VALOR']);
