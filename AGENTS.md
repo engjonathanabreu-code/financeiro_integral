@@ -2,7 +2,7 @@
 
 Estas instruções se aplicam a todo este repositório: `engjonathanabreu-code/financeiro_integral`. Confirme o remote e os arquivos antes de trabalhar; este projeto não é o Financeiro MCL nem o sistema de finanças pessoais.
 
-Leia também a documentação pertinente em `docs/`, incluindo `agente-financeiro.md`, `ailos-cobranca.md` e a auditoria de acessos quando a mudança envolver esses fluxos. Preserve as orientações compatíveis. O README contém descrições de um protótipo; confirme o estado atual no código e nas migrations antes de tomar decisões.
+Leia também a documentação pertinente em `docs/`, incluindo `ARCHITECTURE.md`, `DATABASE.md`, `SECURITY.md`, `TESTING.md`, `DEPLOYMENT.md`, `DESIGN_SYSTEM.md`, `agente-financeiro.md`, `ailos-cobranca.md` e a auditoria de acessos quando a mudança envolver esses fluxos. Preserve as orientações compatíveis. O README contém descrições de um protótipo; confirme o estado atual no código e nas migrations antes de tomar decisões.
 
 O projeto tem frontend em `public/`, rotas em `api/`, código compartilhado em `lib/`, servidor local em `server.js`, SQL em `supabase/` e testes em `tests/`. Inspecione os vínculos entre essas camadas e os dados compartilhados com o Integração antes de alterar um fluxo. Não use essa visão geral como substituto da inspeção.
 
@@ -29,6 +29,9 @@ Prefira uma branch isolada. Antes de push ou abertura de PR, inspecione o fluxo 
 ## Relatório final
 Apresente modificações, arquivos alterados, branches, commits e PRs efetivamente verificados, testes e resultados, riscos remanescentes, limites de validação e prontidão para publicação. Diferencie resultado comprovado de hipótese ou pendência.
 
+## Persistência e banco (desde 21/10/2026)
+Grave módulos de `financeiro_estado_modulos` somente por `financeiro-cloud-storage.js` (função `financeiro_salvar_modulo`, com revisão esperada); não introduza `upsert` direto nem resolva conflitos sobrescrevendo um dos lados. Migrations ficam em `supabase/*.sql` com cabeçalho de problema, efeito, pré-condições e rollback; a situação de cada uma (preparada × aplicada) está em `docs/DATABASE.md`. Nenhum rollback pode recriar políticas abertas a qualquer usuário.
+
 ## Comandos de validação existentes
 
-`npm test` executa a suíte Node; `npm run test:ailos` é o recorte de cobrança. Confira `package.json` e os próprios testes antes de executar, incluindo dependências e eventuais integrações. Não há scripts de lint ou tipos declarados no package.json inspecionado; registre essa ausência e verifique novamente se o projeto evoluir. Para mudanças só de documentação, revise o diff e use `git diff --check`, sem afirmar validação de comportamento da aplicação.
+`npm test` executa a suíte Node (inclui testes de banco em PGlite e, se houver PostgreSQL local, um teste de concorrência real); `npm run test:ailos` é o recorte de cobrança. O CI (`.github/workflows/ci.yml`) roda `npm test` em PRs. Confira `package.json` e os próprios testes antes de executar, incluindo dependências e eventuais integrações. Não há scripts de lint ou tipos declarados no package.json inspecionado; registre essa ausência e verifique novamente se o projeto evoluir. Para mudanças só de documentação, revise o diff e use `git diff --check`, sem afirmar validação de comportamento da aplicação.

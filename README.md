@@ -1,5 +1,7 @@
 # Integral Financeiro — V1 protótipo
 
+> Estado atual: o sistema em produção usa Supabase (Auth, banco compartilhado com o ERP/Integração), OpenAI e automação de WhatsApp. O texto abaixo descreve o protótipo original; veja `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md` e `CHANGELOG.md`.
+
 Protótipo navegável do sistema financeiro da Integral. Esta versão usa dados locais de demonstração (localStorage), sem Supabase, OpenAI ou WhatsApp reais.
 
 ## Teste local
