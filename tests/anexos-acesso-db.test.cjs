@@ -19,8 +19,8 @@ test('anexos: ADM, enviado por mim, documento fiscal (Financeiro), viagem visív
    tripExpenses:[{id:10,tripId:1,file:{name:'a',arquivoId:f.setor}},{id:11,tripId:2,file:{name:'b',arquivoId:f.outro}},{id:13,tripId:4,file:{name:'d',arquivoId:f.fin}}],
    tripDocuments:[{id:12,tripId:3,expenseId:99,file:{name:'c',arquivoId:f.atrib}}],
    docs:[{id:20,name:'nf',arquivoId:f.doc}],
-   budgetRecords:[{id:'b1',sector:'Comercial',assigned:[],assignedDirect:[]}],
-   budgetExpenses:[{id:30,budgetId:'b1',file:{name:'o',arquivoId:f.orc}}]
+   budgetRecords:[{id:'b1',sector:'Comercial',assigned:[],assignedDirect:[]},{id:'b2',sector:'Outro',assigned:null,assignedDirect:{x:1}}],
+   budgetExpenses:[{id:30,budgetId:'b1',file:{name:'o',arquivoId:f.orc}},{id:31,budgetId:'b2',file:{name:'p',arquivoId:f.orc}}]   // b2: responsáveis em formato inválido não derrubam a consulta
   };
   await db.exec('reset role');
   for(const [k,v] of Object.entries(mods))await db.query('insert into financeiro_estado_modulos(chave,dados,updated_at) values($1,$2,now())',[k,JSON.stringify(v)]);

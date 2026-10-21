@@ -74,8 +74,8 @@ begin
        and b->>'id' = x->>'budgetId'
        and jsonb_path_exists(x, '$.** ? (@ == $id)', alvo)
        and (
-         exists (select 1 from jsonb_array_elements_text(case when financeiro then coalesce(b->'assignedDirect', b->'assigned', '[]')
-                                                              else coalesce(b->'assigned', '[]') end) a where a = meu)
+         exists (select 1 from jsonb_array_elements_text(case when financeiro and jsonb_typeof(b->'assignedDirect') = 'array' then b->'assignedDirect'
+                                                              when jsonb_typeof(b->'assigned') = 'array' then b->'assigned' else '[]' end) a where a = meu)
          or (not financeiro and coalesce(b->>'sector', '') <> ''
              and lower(trim(b->>'sector')) = lower(trim(coalesce(p.tipo, ''))))
        )) then

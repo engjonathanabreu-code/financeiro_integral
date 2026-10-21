@@ -9,7 +9,8 @@
 -- não é ADM. Regras ambíguas (visibilidade por setor/atribuição, "Concluir" viagem, dono de despesa)
 -- não são aplicadas aqui e estão listadas em docs/SECURITY.md para decisão.
 --   trips          : não-ADM não exclui viagem (patch-v26:82-87), não aprova (patch-v26:25, v31:19)
---                    e não altera "assigned" de viagem existente (v31:18-20; ADM em v26:24, bundle:468).
+--                    e não altera "assigned" de viagem existente, exceto incluir a si mesmo, como a
+--                    edição do v31 faz (v31:18-20; ADM em v26:24, bundle:468).
 --   tripExpenses   : não-ADM não exclui despesa (botão só ADM, patch-v26:82).
 --   tripDocuments  : não-ADM não exclui documento (só em cascata da exclusão do ADM, patch-v26).
 --   budgetRecords  : não-ADM não cria, altera nem exclui orçamento (bundle:547-560; patch-v8:24-28).
@@ -30,6 +31,24 @@ returns setof text language sql immutable set search_path = '' as $$
    where jsonb_typeof(a) = 'object' and coalesce(a->>'id','') <> ''
      and not exists (select 1 from jsonb_array_elements(coalesce(novo,'[]')) n where n->>'id' = a->>'id');
 $$;
+
+-- Id local de atribuição = hashId(profiles.id) do navegador (financeiro.bundle.js:304). Mesma
+-- definição de financeiro_anexos_acesso_20261021.sql (idempotente).
+create or replace function financeiro_privado.id_local(p_id uuid)
+returns bigint language plpgsql immutable set search_path = '' as $$
+declare h bigint := 0; s text := p_id::text; i int;
+begin
+  for i in 1..length(s) loop h := (h * 31 + ascii(substr(s, i, 1))) % 4294967296; end loop;
+  return case when h = 0 then 1 else h end;
+end $$;
+revoke all on function financeiro_privado.id_local(uuid) from public, anon, authenticated;
+
+-- Lista de responsáveis como conjunto de textos (null/objeto viram lista vazia).
+create or replace function financeiro_privado.ids_texto(v jsonb)
+returns text[] language sql immutable set search_path = '' as $$
+  select coalesce(array_agg(distinct x), '{}') from jsonb_array_elements_text(case when jsonb_typeof(v) = 'array' then v else '[]'::jsonb end) x;
+$$;
+revoke all on function financeiro_privado.ids_texto(jsonb) from public, anon, authenticated;
 
 create or replace function financeiro_privado.guardar_registros()
 returns trigger language plpgsql security definer set search_path = '' as $$
@@ -54,7 +73,10 @@ begin
       if item->>'status' = 'Aprovada' and (antes is null or antes->>'status' is distinct from 'Aprovada') then
         raise exception using errcode = '42501', message = 'Somente ADM pode aprovar viagens.';
       end if;
-      if antes is not null and antes->'assigned' is distinct from item->'assigned' then
+      -- Permitido só o que a interface faz para não-ADM: incluir a si mesmo (patch-v31:20).
+      if antes is not null and antes->'assigned' is distinct from item->'assigned'
+         and not (financeiro_privado.ids_texto(antes->'assigned') <@ financeiro_privado.ids_texto(item->'assigned')
+                  and financeiro_privado.ids_texto(item->'assigned') <@ (financeiro_privado.ids_texto(antes->'assigned') || financeiro_privado.id_local(auth.uid())::text)) then
         raise exception using errcode = '42501', message = 'Somente ADM pode alterar os responsáveis da viagem.';
       end if;
     end loop;

@@ -21,5 +21,11 @@ branch e configurações de Auth aguardam autorização. Ordem e rollback: `docs
 - FIN-14: cache por identidade, limpeza no logout e rascunho guardado só para o dono.
 - FIN-16: indicador salvando/salvo/pendente/conflito/falha; aviso de erro sem mandar recarregar; modal de conflitos acessível.
 
+### Correções da revisão interna (antes do PR)
+- Comparação canônica de JSON: o `jsonb` devolve chaves em outra ordem, o que deixava módulos sempre "pendentes", reenviava módulos inteiros e podia restaurar registros excluídos por outra pessoa.
+- Troca de usuário na mesma aba esvazia (não apaga) módulos sem acesso; Solicitações não viram rascunho; envio interrompido se a sessão mudar; ids duplicados não fundem registros; sem "reaplicar" de conflito no módulo inteiro; indisponibilidade passageira da função não desliga o controle de versão.
+- Guarda de viagens aceita a auto-inclusão em responsáveis feita pela edição do colaborador; acesso a anexos tolera responsáveis em formato inválido.
+- Lembretes: chave de idempotência estável e nova tentativa só após recusa explícita; publicação documentada com `--no-verify-jwt`.
+
 ### Mudança de regra
 - Mesmo campo alterado por duas pessoas: antes o último salvamento vencia em silêncio; agora fica o valor já salvo e o outro é apresentado como conflito, com opção de reaplicar.

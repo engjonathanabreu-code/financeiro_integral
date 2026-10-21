@@ -11,7 +11,7 @@ function shared(server){
  const table=fakeModules(server,{beforeWrite:async row=>{writes.push(row);return (await hooks.write?.(row))||null}});
  return {server,table,hooks,writes};
 }
-async function client(world,{uid='u1',admin=false,store=new Map(),local={},versioned=true,modal=false}={}){
+async function client(world,{uid='u1',admin=false,store=new Map(),local={},versioned=true,modal=false,hidden={}}={}){
  const listeners={};
  const context={console:{log(){},warn(){},error(){}},structuredClone,
   db:copy(local),user:{role:admin?'Administrador':'Funcionário',erpId:uid,name:uid},
@@ -27,10 +27,11 @@ async function client(world,{uid='u1',admin=false,store=new Map(),local={},versi
   auth:{getSession:async()=>({data:{session:sessionRef.uid?{user:{id:sessionRef.uid},access_token:'t'}:null}}),onAuthStateChange(fn){auth=fn}},
   from(){return{select:cols=>{
    if(!versioned&&/revisao/.test(cols))return {then:(ok,f)=>Promise.resolve({data:null,error:{code:'42703',message:'column financeiro_estado_modulos.revisao does not exist'}}).then(ok,f),in:async()=>({data:null,error:{code:'42703',message:'column revisao does not exist'}})};
-   return {then:(ok,f)=>Promise.resolve(world.table.rows()).then(ok,f),in:async(_c,keys)=>world.table.rows(keys)};
+   const vis=r=>({...r,data:r.data.filter(x=>!(hidden[sessionRef.uid]||[]).includes(x.chave))});   // RLS por usuário
+   return {then:(ok,f)=>Promise.resolve(vis(world.table.rows())).then(ok,f),in:async(_c,keys)=>vis(world.table.rows(keys))};
   },upsert:async rows=>{for(const r of rows){world.writes.push({chave:r.chave,dados:r.dados,legado:true});world.server[r.chave]=copy(r.dados)}return {error:null}}}},
   rpc:async(name,args)=>{
-   if(name==='is_admin')return {data:admin,error:null};
+   if(name==='is_admin')return {data:typeof admin==='function'?admin(sessionRef.uid):admin,error:null};
    if(name==='financeiro_salvar_modulo')return versioned?world.table.save(args):{data:null,error:{code:'PGRST202',message:'Could not find the function public.financeiro_salvar_modulo'}};
    if(name==='financeiro_guardar_arquivo')return {data:'arq',error:null};
    return {data:null,error:{message:'rpc inesperada '+name}};
@@ -169,4 +170,76 @@ test('erro permanente: aviso não manda recarregar; descartar volta à versão d
  world.hooks.write=()=>({code:'42501',message:'Somente ADM pode aprovar.'});
  a.context.db.trips[0].status='Aprovada';assert.equal(await a.api.push(),false);
  assert.equal(a.api.status(),'falha');assert.equal(a.context.db.trips[0].status,'Aprovada','alteração local preservada até a pessoa decidir');
+});
+
+// ---- Regressões da revisão de 21/10/2026 ----
+test('ordem das chaves do jsonb: depois de salvar nada fica pendente nem é regravado; exclusão alheia não ressuscita',async()=>{
+ const world=shared(base());const store=new Map();
+ const a=await client(world,{uid:'a',store}),b=await client(world,{uid:'b'});
+ a.context.db.trips.push({id:3,city:'C',status:'Planejada',start:'2026-11-01',sector:'Comercial',assigned:[]});
+ assert.equal(await a.api.push(),true);
+ const writes=world.writes.length;
+ assert.equal(await a.api.push(),true);assert.equal(world.writes.length,writes,'nada é reenviado');
+ assert.equal(store.has('integral_fin_pendente_v2:a'),false,'sem rascunho pendente');
+ await b.api.refresh();b.context.db.trips=b.context.db.trips.filter(t=>t.id!==3);assert.equal(await b.api.push(),true);
+ assert.equal(await a.api.refresh(),true);await a.api.push();
+ assert.deepEqual(world.server.trips.map(t=>t.id),[1,2],'registro excluído por B continua excluído');
+ assert.equal(a.api.conflicts().length,0,'sem conflito falso');
+});
+
+test('troca de usuário na mesma aba: módulos sem acesso ficam vazios, não somem',async()=>{
+ const world=shared({...base(),hrPeople:[{id:1,name:'Pessoa sintética'}],accounts:[{id:1}]});
+ const a=await client(world,{uid:'a',admin:u=>u==='a',hidden:{b:['hrPeople','accounts']}});
+ assert.equal(a.context.db.hrPeople.length,1);
+ a.signOut();a.signIn('b');await a.api.initialize();
+ assert.deepEqual(copy(a.context.db.hrPeople),[],'dados de RH de A não ficam para B');
+ assert.ok(Array.isArray(a.context.db.accounts),'chave mantida como lista vazia (telas legadas fazem .filter)');
+ assert.equal(a.context.db.trips.length,2);
+});
+
+test('Solicitações (gravadas pela RPC própria) nunca ficam pendentes nem viram rascunho',async()=>{
+ const world=shared({...base(),invoiceRequests:[]});const store=new Map();
+ const a=await client(world,{uid:'a',store});
+ a.context.db.invoiceRequests=[{id:'r1',status:'Pendente'}];a.context.save();
+ assert.equal(store.has('integral_fin_pendente_v2:a'),false);
+ world.server.invoiceRequests=[{id:'r1',status:'Aprovada'}];
+ assert.equal(await a.api.refresh(),true);assert.equal(a.context.db.invoiceRequests[0].status,'Aprovada');
+ assert.equal(a.api.conflicts().length,0);
+});
+
+test('logout durante um envio: o restante não é gravado com a sessão seguinte',async()=>{
+ const world=shared(base());const a=await client(world,{uid:'a'});
+ const gate=deferred();let first=true;
+ world.hooks.write=async()=>{if(first){first=false;await gate.promise}};
+ a.context.db.trips[0].city='x';a.context.db.tripExpenses[0].value=99;
+ const p=a.api.push();await turn();
+ a.signOut();gate.resolve();await p;
+ assert.equal(world.server.tripExpenses[0].value,5,'segundo módulo não foi enviado depois do logout');
+ assert.equal(world.writes.filter(w=>w.chave==='tripExpenses').length,0);
+});
+
+test('ids duplicados no servidor não fundem registros diferentes',async()=>{
+ const world=shared({trips:[{id:1,city:'A'},{id:1,city:'B'}]});const a=await client(world,{uid:'a'});
+ world.server.trips=[{id:1,city:'A'},{id:1,city:'B2'}];
+ assert.equal(await a.api.refresh(),true);
+ assert.deepEqual(copy(a.context.db.trips).map(t=>t.city),['A','B2']);
+ assert.equal(await a.api.push(),true);assert.deepEqual(world.server.trips.map(t=>t.city),['A','B2']);
+});
+
+test('conflito no módulo inteiro não oferece reaplicar (desfaria o trabalho dos outros)',async()=>{
+ const world=shared({lastErpSyncReason:'a'});const a=await client(world,{uid:'a',admin:true});
+ world.server.lastErpSyncReason='servidor';a.context.db.lastErpSyncReason='local';
+ assert.equal(await a.api.push(),true);
+ const c=a.api.conflicts();assert.equal(c.length,1);assert.deepEqual(copy(c[0].path),[]);
+ assert.equal(a.api.resolveConflict(c[0].id,true),false);assert.equal(world.server.lastErpSyncReason,'servidor');
+ assert.equal(a.api.resolveConflict(c[0].id,false),true);
+});
+
+test('função versionada fora do ar por instantes não derruba para o UPSERT sem versão',async()=>{
+ const world=shared(base());const a=await client(world,{uid:'a'});
+ const save=world.table.save;let fail=true;
+ world.table.save=async args=>fail?{data:null,error:{code:'PGRST202',message:'Could not find the function public.financeiro_salvar_modulo'}}:save(args);
+ a.context.db.trips[0].city='depois';
+ assert.equal(await a.api.push(),false);assert.equal(world.writes.some(w=>w.legado),false,'nada pelo caminho antigo');
+ fail=false;assert.equal(await a.api.push(),true);assert.equal(world.server.trips[0].city,'depois');
 });

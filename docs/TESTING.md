@@ -27,6 +27,9 @@ o provedor de WhatsApp.
 | `ia-respostas.test.cjs` | FIN-12: tempo limite, indisponibilidade, resposta incompleta/inválida, conteúdo injetado, erro sem detalhes internos. |
 | `paginacao-recuperacao.test.cjs` | FIN-10 (leitura completa com qualquer `max_rows`) e FIN-13 (nenhum SQL ou documento recomenda política aberta a todos). |
 
+O simulador `tests/fake-modulos-supabase.cjs` devolve as chaves na ordem do `jsonb` (tamanho, depois
+bytes), como o PostgreSQL — comparações sensíveis à ordem quebram os testes.
+
 Alterados: `auditoria-storage`/`consultor-storage` (simulam a RPC versionada; asserções mantidas,
 exceto "mesmo campo… prevalece o valor local", que codificava a sobrescrita silenciosa proibida —
 substituído por conflito informado), `legacy-boundary` (FIN-09, finais de linha), fixture de banco

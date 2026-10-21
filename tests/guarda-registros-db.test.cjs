@@ -3,6 +3,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {setup,login,id,ADM,STAFF,FIN,INATIVO}=require('./financeiro-db-fixture.cjs');
 const sql=f=>fs.readFileSync(path.join(__dirname,'../supabase',f),'utf8');
+const hashId=s=>{let h=0;for(const c of String(s||''))h=(h*31+c.charCodeAt(0))>>>0;return h||1};
 const trips=()=>[{id:1,city:'A',status:'Planejada',sector:'Comercial',assigned:[11]},{id:2,city:'B',status:'Aprovada',sector:'Comercial',assigned:[12]}];
 const budgets=()=>[{id:'b1',name:'Aberto',sector:'Comercial',active:true,history:[]},{id:'b2',name:'Fechado',active:true,status:'Fechado',closedAt:'2026-10-01',closedBy:'x',history:[]}];
 const bexp=()=>[{id:'e1',budgetId:'b1',value:10},{id:'e2',budgetId:'b2',value:20,file:{name:'n.pdf'}}];
@@ -88,5 +89,20 @@ test('documentos fiscais: colaborador só inclui; Financeiro e ADM alteram e exc
   await assert.rejects(put(db,'docs',[{id:7,name:'nf',value:1}]),/Financeiro ou ADM/);
   await login(db,FIN);assert.equal((await save(db,'docs',[{id:7,name:'nf',value:2}])).status,'salvo');
   await login(db,INATIVO);await assert.rejects(db.query('select financeiro_salvar_modulo($1,$2,$3)',['docs','[]',1]),/sem permissão/);
+ }finally{await db.close()}
+});
+
+test('edição de viagem pelo colaborador (v31) pode incluir a si mesmo em responsáveis, mas não outros',async()=>{
+ const db=await prepared();
+ try{
+  await login(db,STAFF);const eu=hashId(id(STAFF));
+  const legado=trips().map(t=>t.id===1?{...t,assigned:undefined,city:'editada'}:t);   // viagem antiga sem responsáveis
+  await login(db,ADM);await put(db,'trips',trips().map(t=>t.id===1?{...t,assigned:undefined}:t));await login(db,STAFF);
+  assert.equal((await save(db,'trips',legado.map(t=>t.id===1?{...t,assigned:[eu]}:t))).status,'salvo','sem responsáveis → [eu]');
+  const cur=(await read(db,'trips')).dados;
+  assert.equal((await save(db,'trips',cur.map(t=>t.id===2?{...t,assigned:[...t.assigned,eu]}:t))).status,'salvo','[x] → [x, eu]');
+  const cur2=(await read(db,'trips')).dados;
+  await assert.rejects(put(db,'trips',cur2.map(t=>t.id===2?{...t,assigned:[...t.assigned,hashId(id(FIN))]}:t)),/responsáveis/,'incluir outra pessoa');
+  await assert.rejects(put(db,'trips',cur2.map(t=>t.id===2?{...t,assigned:[eu]}:t)),/responsáveis/,'remover alguém');
  }finally{await db.close()}
 });

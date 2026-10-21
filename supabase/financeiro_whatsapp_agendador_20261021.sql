@@ -1,7 +1,8 @@
 -- PREPARADA, NÃO APLICADA. FIN-06 — agendador autenticado do lembrete WhatsApp.
 -- Ordem (cada passo com autorização): 1) criar o segredo no Vault e o mesmo valor em
 -- FINANCE_CRON_SECRET da Edge Function (fora do repositório; nunca registrar o valor);
--- 2) aplicar financeiro_whatsapp_reserva_20261021.sql; 3) publicar a Edge Function nova;
+-- 2) aplicar financeiro_whatsapp_reserva_20261021.sql; 3) publicar a Edge Function nova com
+-- --no-verify-jwt (sem isso o gateway exige JWT e recusa o agendador);
 -- 4) aplicar este arquivo. Entre 3 e 4 a chamada do agendador recebe 401 e nada é enviado — faça
 -- os passos 3 e 4 fora da janela 09:00–09:20 (horário de Brasília).
 --

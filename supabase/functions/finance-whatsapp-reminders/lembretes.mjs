@@ -18,6 +18,21 @@ export function sameSecret(a, b) {
   return diff === 0;
 }
 
+// Mesma chave em todas as tentativas do mesmo lembrete: o receptor pode descartar repetições.
+export async function idempotencyKey(paymentId, phone, date) {
+  const bytes = new TextEncoder().encode(`finance-reminder|${paymentId}|${phone}|${date}`);
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Só uma recusa explícita do receptor (4xx, exceto 408) prova que nada foi enviado. 5xx, 2xx sem
+// confirmação, tempo esgotado e falha de rede podem ter enviado: ficam "incerto", sem reenvio.
+export function classify(r) {
+  if (r.ok && r.body?.ok === true) return 'enviado';
+  if (!r.ok && r.status >= 400 && r.status < 500 && r.status !== 408) return 'erro';
+  return 'incerto';
+}
+
 export function duePayments(payments, masters, date) {
   const list = Array.isArray(payments) ? payments : [];
   return list
@@ -50,17 +65,17 @@ export async function run({ db, send, now = localParts(), phone, timeoutMs = 150
       const { data: tentativa, error } = await db.rpc('financeiro_whatsapp_reservar', { p_pagamento_id: payment.id, p_destinatario: phone, p_vencimento: now.date });
       if (error) throw error;
       if (!tentativa) { count.skipped++; continue; }                       // já enviado, em andamento ou incerto
-      let status = 'erro', erro = null, accepted = false;
+      let status = 'incerto', erro = null;
       try {
         const signal = AbortSignal.timeout(timeoutMs);
-        const r = await send({ phone, payment }, { idempotencyKey: String(tentativa), signal });
-        accepted = r.ok && r.body?.ok === true;
-        status = accepted ? 'enviado' : 'erro';
-        if (!accepted) erro = String(r.body?.error || `HTTP ${r.status}`).slice(0, 300);
+        const r = await send({ phone, payment }, { idempotencyKey: await idempotencyKey(payment.id, phone, now.date), signal });
+        status = classify(r);
+        if (status !== 'enviado') erro = String(r.body?.error || `HTTP ${r.status}`).slice(0, 300);
       } catch (e) {
-        // Tempo esgotado ou conexão caída depois do envio: o provedor pode ter recebido. Não reenviar.
-        status = 'incerto'; erro = String(e?.name === 'TimeoutError' ? 'tempo esgotado' : (e?.message || e)).slice(0, 300);
+        // Tempo esgotado ou conexão caída: o provedor pode ter recebido. Não reenviar sozinho.
+        erro = String(e?.name === 'TimeoutError' ? 'tempo esgotado' : (e?.message || e)).slice(0, 300);
       }
+      if (status === 'incerto') log('incerto: conferir no CRM antes de reenviar', payment.id);
       const { data: ok, error: finalError } = await db.rpc('financeiro_whatsapp_finalizar', { p_pagamento_id: payment.id, p_destinatario: phone, p_tentativa: tentativa, p_status: status, p_erro: erro });
       if (finalError || ok !== true) {
         // Envio pode ter sido aceito sem registro: a reserva fica "enviando" e vira "incerto" depois.

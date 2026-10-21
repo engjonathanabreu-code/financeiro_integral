@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../public/financeiro-cloud-storage.js'), 'utf8');
-const { fakeModules, copy } = require('./fake-modulos-supabase.cjs');
+const { fakeModules, copy, jsonbOrder } = require('./fake-modulos-supabase.cjs');
 const turn = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
   let resolve;
@@ -50,10 +50,11 @@ async function fixture() {
       const error = await hooks.rpc?.(name, args);
       if (error) return { error };
       const budget = server.budgetRecords.find(item => String(item.id) === args.p_id);
-      if (!budget || JSON.stringify(budget) !== JSON.stringify(args.p_expected)) return { error: { message: 'O orçamento mudou.' } };
+      // jsonb compara conteúdo, não a ordem das chaves (como `b is distinct from p_expected` no banco).
+      if (!budget || JSON.stringify(jsonbOrder(budget)) !== JSON.stringify(jsonbOrder(args.p_expected))) return { error: { message: 'O orçamento mudou.' } };
       Object.assign(budget, { status: 'Fechado', closedAt: '2026-10-01T12:00:00Z', closedBy: 'admin' });
       budget.history.push({ at: '2026-10-01T12:00:00Z', action: 'Orçamento fechado', by: 'admin' });
-      events.push('rpc-done'); return { data: copy(server.budgetRecords), error: null };
+      events.push('rpc-done'); return { data: jsonbOrder(copy(server.budgetRecords)), error: null };
     }
   } };
   vm.createContext(context); vm.runInContext(source, context);

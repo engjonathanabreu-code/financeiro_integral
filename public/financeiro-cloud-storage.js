@@ -17,12 +17,20 @@ let initialized=false, initializing=false, pushing=false, pushTimer=null, initPr
 let snapshot={};          // última versão confirmada pelo servidor (JSON): base da mescla em três vias
 let revisions={};         // revisão do servidor correspondente ao snapshot
 let versioned=true;       // false enquanto a migration de revisão não estiver aplicada
-let sessionUid=null, signedOutUid=null;
+let sessionUid=null, signedOutUid=null, sessionEpoch=0, revisionSeen=false;
 
 function client(){return window.IntegralERP?.sb||null}
 function state(){try{return typeof db!=='undefined'?db:null}catch{return null}}
 function clone(v){try{return structuredClone(v)}catch{try{return JSON.parse(JSON.stringify(v))}catch{return v}}}
-function json(v){try{return JSON.stringify(v)}catch{return 'null'}}
+/* JSON canônico (chaves ordenadas): o jsonb do banco devolve as chaves em outra ordem, e comparar
+   pela ordem de criação marcava como "alterado" um conteúdo idêntico ao do servidor. */
+function canon(v){
+  if(v&&typeof v.toJSON==='function')v=v.toJSON();
+  if(Array.isArray(v))return v.map(canon);
+  if(v&&typeof v==='object'){const o={};for(const k of Object.keys(v).sort())o[k]=canon(v[k]);return o}
+  return v;
+}
+function json(v){try{return JSON.stringify(canon(v))}catch{return 'null'}}
 function parse(s){try{return s===undefined?undefined:JSON.parse(s)}catch{return undefined}}
 function validKey(k){return !!k&&!VOLATILE.has(k)&&!String(k).startsWith('__')}
 function currentUser(){try{return typeof user!=='undefined'?user:null}catch{return null}}
@@ -75,7 +83,9 @@ function mergeLocalSources(sources){
    feitas: depois de recarregar, cair a conexão ou a sessão expirar, são reaplicadas pela mesma mescla. */
 function pendingKey(uid){return PENDING_PREFIX+uid}
 function readPending(uid){const p=parse(lsGet(pendingKey(uid))||'null');return p&&p.uid===uid&&p.keys&&typeof p.keys==='object'?p:{uid,keys:{}}}
-function pendingKeys(){const d=state();if(!d)return [];return Object.keys(d).filter(k=>validKey(k)&&snapshot[k]!==undefined&&snapshot[k]!==json(d[k]))}
+// Solicitações (invoiceRequests) são gravadas só pela RPC própria; nunca contam como pendência local.
+const RPC_ONLY=new Set(['invoiceRequests']);
+function pendingKeys(){const d=state();if(!d)return [];return Object.keys(d).filter(k=>validKey(k)&&!RPC_ONLY.has(k)&&snapshot[k]!==undefined&&snapshot[k]!==json(d[k]))}
 function cacheAll(){
   const d=state();if(!d)return;
   lsSet(CACHE_KEY,JSON.stringify(d));
@@ -100,6 +110,7 @@ async function readRows(keys,columns='chave,dados,revisao'){
   let {data,error}=await run();
   if(error&&versioned&&missingColumn(error)){versioned=false;({data,error}=await run())}
   if(error)throw error;
+  if(versioned&&(data||[]).some(r=>r.revisao!==undefined&&r.revisao!==null))revisionSeen=true;
   return data||[];
 }
 
@@ -187,6 +198,7 @@ function mergeValue3(base,local,server,ctx=null,path=[]){
 function applyInPlace(d,k,value){
   const cur=d[k];
   if(Array.isArray(cur)&&Array.isArray(value)){
+    if(!(uniqueIds(cur.filter(x=>x&&typeof x==='object'&&x.id!=null))&&uniqueIds(value.filter(x=>x&&typeof x==='object'&&x.id!=null)))){cur.splice(0,cur.length,...clone(value));return}
     const byId=new Map(cur.filter(x=>x&&typeof x==='object'&&x.id!=null).map(x=>[String(x.id),x]));
     const next=value.map(v=>{const o=v&&typeof v==='object'&&v.id!=null?byId.get(String(v.id)):null;if(o&&!Array.isArray(o)&&!Array.isArray(v)){if(!same(o,v)){for(const f of Object.keys(o))if(!(f in v))delete o[f];Object.assign(o,v)}return o}return v});
     cur.splice(0,cur.length,...next);return;
@@ -249,9 +261,9 @@ function resolveConflict(id,keepLocal){
   const all=readConflicts(),c=all.find(x=>x.id===id);if(!c)return false;
   const d=state();
   if(keepLocal){
-    if(!d)return false;
-    if(!c.path.length)d[c.chave]=clone(c.local);
-    else{
+    // Conflito no módulo inteiro (lista sem ids únicos): reaplicar desfaria o trabalho dos outros.
+    if(!d||!c.path.length)return false;
+    {
       const holder=locate(d[c.chave],c.path.slice(0,-1)),last=c.path[c.path.length-1];
       if(!holder||typeof holder!=='object')return false;
       if(last&&typeof last==='object'){
@@ -292,6 +304,7 @@ function openConflicts(){
       const p2=document.createElement('p');p2.textContent=`Versão salva no servidor: ${show(c.servidor)}`;row.append(p1,p2);
       const actions=document.createElement('div');actions.className='fin-conflict-actions';
       const keep=document.createElement('button');keep.type='button';keep.className='btn small';keep.textContent='Reaplicar minha versão';
+      if(!c.path.length){keep.disabled=true;keep.title='Conflito no módulo inteiro: peça a revisão a um ADM.'}
       const drop=document.createElement('button');drop.type='button';drop.className='btn ghost small';drop.textContent='Manter a do servidor';
       keep.onclick=()=>{if(!resolveConflict(c.id,true)){p1.textContent+=' — o registro não existe mais no servidor; não foi possível reaplicar.';return}draw()};
       drop.onclick=()=>{resolveConflict(c.id,false);draw()};
@@ -324,7 +337,7 @@ async function initialize(){
       cloudKeys=new Set(cloud.keys());
       const local=mergeLocalSources(localCandidates(uid));
       const pending=readPending(uid);
-      sessionUid=uid;signedOutUid=null;
+      sessionUid=uid;signedOutUid=null;sessionEpoch++;
       const keys=new Set([...Object.keys(local),...cloud.keys()]);
       const merged={},created=[],found=[];
       snapshot={};revisions={};
@@ -344,7 +357,7 @@ async function initialize(){
           if(k!=='invoiceRequests')created.push(k);
         }
       }
-      const d=state();if(d){for(const k of Object.keys(d))if(validKey(k)&&!(k in merged))delete d[k];Object.assign(d,merged)}
+      const d=state();if(d){for(const k of Object.keys(d))if(validKey(k)&&!(k in merged))d[k]=emptyLike(d[k]);Object.assign(d,merged)}
       for(const k of created){
         try{const r=await writeModule(k,merged[k],null);if(r.status==='salvo'){snapshot[k]=json(r.dados);revisions[k]=r.revisao??undefined;cloudKeys.add(k)}}
         catch(e){console.warn(`Financeiro: módulo local ${k} não pôde ser criado no Supabase`,e)}
@@ -373,6 +386,9 @@ async function writeModule(k,value,revisao){
       return data;
     }
     if(!missingFunction(error))throw error;
+    // Com a coluna de revisão confirmada, "função não encontrada" é passageiro (recarga do cache do
+    // PostgREST): tenta de novo depois, sem cair no UPSERT sem controle de versão.
+    if(revisionSeen)throw Object.assign(Error('Salvamento versionado indisponível no momento.'),{code:'FIN_RPC_INDISPONIVEL'});
     versioned=false;console.warn('Financeiro: salvamento versionado indisponível; usando gravação compatível.');
   }
   const s=await session();
@@ -419,6 +435,7 @@ function pushChanged(allowDuringClose=false){
   try{
     const c=client(),s=await session(),d=state();if(!c||!s||!d){transient=true;return false}
     if(s.user.id!==sessionUid){console.warn('Financeiro: a sessão mudou; alterações não enviadas com a nova identidade.');return false}
+    const epoch=sessionEpoch,sameSession=()=>epoch===sessionEpoch&&initialized;
     const changed=[];
     for(const k of Object.keys(d)){
       if(!validKey(k)||k==='invoiceRequests'||(k==='budgetRecords'&&budgetConflict))continue;
@@ -431,6 +448,7 @@ function pushChanged(allowDuringClose=false){
     setStatus('salvando');
     for(const k of changed)await externalizeFiles(k,d[k]);
     for(const k of changed){
+      if(!sameSession()){allOk=false;break}               // logout/troca de usuário durante o envio
       const localJson=json(d[k]),local=JSON.parse(localJson);
       try{
         let base=parse(snapshot[k]),rev=revisions[k],value=local,result=null;
@@ -440,12 +458,14 @@ function pushChanged(allowDuringClose=false){
           if(row){value=base===undefined?local:mergeValue3(base,local,row.dados,ctx);base=row.dados;rev=row.revisao}
         }
         for(let attempt=0;attempt<MAX_ATTEMPTS;attempt++){
+          if(!sameSession())throw Object.assign(Error('A sessão mudou durante o envio.'),{code:'FIN_SESSAO'});
           result=await writeModule(k,value,cloudKeys.has(k)?rev:null);
           if(result.status==='salvo')break;
           // Outra pessoa salvou antes: nada foi gravado. Mescla sobre a versão atual e tenta de novo.
           value=mergeValue3(base,value,result.dados,ctx);base=result.dados;rev=result.revisao;cloudKeys.add(k);result=null;
         }
         if(!result)throw Object.assign(Error('Muitas gravações simultâneas; nova tentativa em instantes.'),{code:'FIN_CONCORRENCIA'});
+        if(!sameSession())break;
         cloudKeys.add(k);delete blocked[k];wrote=true;
         const stored=result.dados;
         snapshot[k]=json(stored);revisions[k]=result.revisao??undefined;
@@ -509,7 +529,7 @@ async function refresh(){
       for(const r of rows){
         const k=r.chave;if(revisions[k]!=null&&Number(r.revisao)<=Number(revisions[k]))continue;
         const base=parse(snapshot[k]),local=d[k];
-        if(snapshot[k]===undefined||json(local)===snapshot[k])applyInPlace(d,k,clone(r.dados));
+        if(RPC_ONLY.has(k)||snapshot[k]===undefined||json(local)===snapshot[k])applyInPlace(d,k,clone(r.dados));
         else{const ctx=[];applyInPlace(d,k,mergeValue3(base,JSON.parse(json(local)),r.dados,ctx));recordConflicts(k,ctx)}
         snapshot[k]=json(r.dados);revisions[k]=r.revisao;cloudKeys.add(k);applied.push(k);
       }
@@ -615,7 +635,7 @@ function forgetSession(){
   for(const k of Object.keys(blocked))delete blocked[k];
   lsDel(CACHE_KEY);lsDel(OWNER_KEY);for(const k of LEGACY_KEYS)lsDel(k);
   const d=state();if(d)for(const k of Object.keys(d))if(validKey(k))d[k]=emptyLike(d[k]);
-  sessionUid=null;
+  sessionUid=null;sessionEpoch++;
 }
 window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged,closeBudget,refresh,
   conflicts:()=>readConflicts(),resolveConflict,openConflicts,status:()=>saveState,forgetSession};

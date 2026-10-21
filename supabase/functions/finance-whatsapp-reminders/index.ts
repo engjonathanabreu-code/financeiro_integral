@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.4';
 import { localParts, run, sameSecret } from './lembretes.mjs';
 
 // Lembrete diário das contas a pagar que vencem hoje, enviado ao WhatsApp do sócio pelo agente do CRM.
+// Publicar com --no-verify-jwt: a autenticação é o x-cron-secret abaixo (docs/DEPLOYMENT.md).
 // Segredos e destinatário vêm da configuração da função (nunca do código):
 //   FINANCE_AGENT_TOKEN, FINANCE_CRON_SECRET, FINANCE_REMINDER_PHONE, FINANCE_AGENT_URL (opcional).
 const AGENT_TOKEN = Deno.env.get('FINANCE_AGENT_TOKEN') ?? '';

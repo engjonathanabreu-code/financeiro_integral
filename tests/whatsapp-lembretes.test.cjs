@@ -42,16 +42,19 @@ test('recusa do provedor permite nova tentativa; tempo esgotado vira incerto e n
  const {db,client}=await setupDb();
  try{
   let calls=0;
-  const send=async(payload,{signal})=>{calls++;if(payload.payment.id==='p1')return {ok:false,status:503,body:{ok:false,error:'indisponível'}};
+  const keys={};
+  const send=async(payload,{signal,idempotencyKey})=>{calls++;(keys[payload.payment.id]=keys[payload.payment.id]||[]).push(idempotencyKey);if(payload.payment.id==='p1')return {ok:false,status:422,body:{ok:false,error:'número inválido'}};
    // provedor que não responde; o timer mantém o processo vivo até o tempo limite da função
    return new Promise((_,rej)=>{const keep=setTimeout(()=>{},5000);signal.addEventListener('abort',()=>{clearTimeout(keep);rej(signal.reason)})})};
   const r=await run({db:client,send,now:NOW,phone:PHONE,timeoutMs:30});
   assert.equal(r.body.error,1);assert.equal(r.body.uncertain,1);
   assert.deepEqual(await rows(db),['p1:erro','p2:incerto']);
-  const ok=async()=>{calls++;return {ok:true,status:200,body:{ok:true}}};
+  const ok=async(payload,{idempotencyKey})=>{calls++;keys[payload.payment.id].push(idempotencyKey);return {ok:true,status:200,body:{ok:true}}};
   const r2=await run({db:client,send:ok,now:NOW,phone:PHONE});
   assert.equal(r2.body.sent,1,'só a recusa confirmada é tentada de novo');
   assert.deepEqual(await rows(db),['p1:enviado','p2:incerto']);
+  assert.equal(keys.p1.length,2);assert.equal(keys.p1[0],keys.p1[1],'mesma chave de idempotência nas tentativas');
+  assert.notEqual(keys.p1[0],keys.p2[0]);assert.match(keys.p1[0],/^[0-9a-f]{64}$/);
  }finally{await db.close()}
 });
 
@@ -71,7 +74,8 @@ test('provedor aceitou e o registro falhou: fica enviando, vira incerto e nunca 
 });
 
 test('falha em uma conta não interrompe as demais; fora da janela e sem configuração não envia',async()=>{
- const {run,sameSecret}=await import(path.join(dir,'lembretes.mjs'));
+ const {run,sameSecret,classify}=await import(path.join(dir,'lembretes.mjs'));
+ for(const [r,esperado] of [[{ok:true,status:200,body:{ok:true}},'enviado'],[{ok:false,status:422,body:{ok:false}},'erro'],[{ok:false,status:429,body:null},'erro'],[{ok:false,status:503,body:null},'incerto'],[{ok:false,status:504,body:null},'incerto'],[{ok:false,status:408,body:null},'incerto'],[{ok:true,status:200,body:null},'incerto']])assert.equal(classify(r),esperado,JSON.stringify(r));
  const {db,client}=await setupDb();
  try{
   const flaky={...client,rpc:(n,a)=>n==='financeiro_whatsapp_reservar'&&a.p_pagamento_id==='p1'?Promise.resolve({data:null,error:{message:'x'}}):client.rpc(n,a)};

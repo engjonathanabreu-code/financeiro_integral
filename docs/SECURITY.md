@@ -54,7 +54,9 @@ Conferido na função **publicada** (v3, 25/08/2026): token do agente do CRM **e
 `verify_jwt` desligado, agendador sem autenticação (qualquer pessoa pode disparar entre 09:00 e
 09:20), sem tempo limite, falha de registro interrompe o lote. A versão do repositório (02/10) nunca
 foi publicada. Preparado: função com segredo do agendador, credenciais e telefone só em
-configuração, reserva atômica, "incerto" sem reenvio, resposta sem dados.
+configuração, reserva atômica, chave de idempotência estável por conta/destinatário/vencimento,
+nova tentativa só após recusa explícita (4xx), "incerto" (5xx, tempo esgotado, rede) sem reenvio
+automático e registrado em log, resposta sem dados.
 **Ação necessária (com autorização):** rotacionar o token do CRM em coordenação com o serviço
 receptor — o valor atual está exposto no código publicado.
 
