@@ -26,6 +26,8 @@ comment on column public.financeiro_estado_modulos.revisao is
 create or replace function financeiro_privado.revisar_modulo()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
+  -- Autor registrado pelo banco: antes vinha do navegador e podia ser qualquer valor.
+  if auth.uid() is not null then new.updated_by := auth.uid(); end if;
   if tg_op = 'INSERT' then
     new.revisao := 1;
   elsif new.dados is distinct from old.dados or new.chave is distinct from old.chave then
