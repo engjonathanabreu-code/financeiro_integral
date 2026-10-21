@@ -335,7 +335,7 @@ async function loadRecebimentos(force){
     const rows=[];let from=0;const size=1000;
     try{
       for(;;){
-        const {data,error}=await c.from('fin_receb_parcelas').select('id,vencimento,pago_em,valor_previsto,valor_liquidado,status,ativo').range(from,from+size-1);
+        const {data,error}=await c.from('fin_receb_parcelas').select('id,vencimento,pago_em,valor_previsto,valor_liquidado,status,ativo').order('id').range(from,from+size-1);
         if(error)throw error;rows.push(...(data||[]));if(!data||data.length<size)break;from+=size;
       }
       recState.rows=rows.filter(p=>p.ativo!==false);recState.loaded=true;recState.error='';

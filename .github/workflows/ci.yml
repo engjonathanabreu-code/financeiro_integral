@@ -1,0 +1,32 @@
+# FIN-08: verificação obrigatória antes do merge. Não publica nada: o deploy continua sendo feito
+# pela integração Git da Vercel (produção só a partir de main). Para bloquear o merge sem testes,
+# marque "testes" como verificação obrigatória na proteção da branch main (docs/DEPLOYMENT.md).
+name: testes
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  testes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # O runner do Ubuntu traz PostgreSQL; o teste de concorrência real sobe um cluster temporário.
+      - run: echo "$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)" >> "$GITHUB_PATH"
+      - run: npm test
+      - name: Sintaxe dos scripts do navegador
+        run: for f in public/*.js; do node --check "$f" || exit 1; done

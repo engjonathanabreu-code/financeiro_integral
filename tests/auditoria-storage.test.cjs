@@ -1,14 +1,15 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../public/financeiro-cloud-storage.js'),'utf8');
-const copy=v=>JSON.parse(JSON.stringify(v));
+const {fakeModules,copy}=require('./fake-modulos-supabase.cjs');
 
 async function fixture({admin=false,server,local={},cache=null,upsertError}={}){
  const store=new Map(),writes=[],rpcs=[];
+ const table=fakeModules(server,{beforeWrite:row=>{writes.push([row]);return upsertError?.(row)||null}});
  if(cache)store.set('integral_fin_v1',JSON.stringify(cache));
  const files=new Map();
  const context={console:{log(){},warn(){},error(){}},structuredClone,
   db:copy(local),user:{role:admin?'Administrador':'Funcionário',erpId:'u1',name:'U'},
-  localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v)},
+  localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   setTimeout(){return 1},clearTimeout(){},setInterval(){return 1},clearInterval(){},
   document:{dispatchEvent(){}},CustomEvent:function(){},render(){},addEventListener(){},
   save(){store.set('integral_fin_v1',JSON.stringify(context.db))}};
@@ -16,10 +17,9 @@ async function fixture({admin=false,server,local={},cache=null,upsertError}={}){
  context.IntegralERP={sb:{
   auth:{getSession:async()=>({data:{session:{user:{id:'u1'},access_token:'t'}}}),onAuthStateChange(){}},
   from(){return{
-   select:()=>{const rows=keys=>({data:Object.entries(server).filter(([k])=>!keys||keys.includes(k)).map(([chave,dados])=>({chave,dados:copy(dados)}))});return{then:(ok,fail)=>Promise.resolve(rows()).then(ok,fail),in:async(_c,keys)=>rows(keys)}},
-   upsert:async rows=>{writes.push(copy(rows));for(const r of rows){const e=upsertError?.(r);if(e)return{error:e}}for(const r of rows)server[r.chave]=copy(r.dados);return{error:null}}
+   select:()=>({then:(ok,fail)=>Promise.resolve(table.rows()).then(ok,fail),in:async(_c,keys)=>table.rows(keys)})
   }},
-  rpc:async(name,args)=>{rpcs.push(name);if(name==='is_admin')return{data:admin,error:null};if(name==='financeiro_guardar_arquivo'){const id='arq-'+(files.size+1);files.set(id,args.p_conteudo);return{data:id,error:null}}return{error:{message:'rpc inesperada'}}}
+  rpc:async(name,args)=>{rpcs.push(name);if(name==='is_admin')return{data:admin,error:null};if(name==='financeiro_salvar_modulo')return table.save(args);if(name==='financeiro_guardar_arquivo'){const id='arq-'+(files.size+1);files.set(id,args.p_conteudo);return{data:id,error:null}}return{error:{message:'rpc inesperada'}}}
  }};
  vm.createContext(context);vm.runInContext(source,context);
  const api=context.IntegralFinanceCloudStorage;assert.equal(await api.initialize(),true);
@@ -50,13 +50,22 @@ test('salvar viagem não desfaz o que outro usuário gravou depois do carregamen
  assert.deepEqual(copy(f.context.db.tripExpenses),f.server.tripExpenses,'tela recebe a versão mesclada');
 });
 
-test('mesmo campo alterado nos dois lados: prevalece o valor local, como antes',async()=>{
+// Regra alterada em 21/10/2026 (FIN-01): antes o valor local vencia e o do outro usuário sumia sem
+// aviso. Agora nenhum dos dois é sobrescrito em silêncio: o servidor mantém o valor já salvo, o local
+// fica registrado como conflito e só volta por escolha explícita de quem editou.
+test('mesmo campo alterado nos dois lados: conflito informado, nada sobrescrito em silêncio',async()=>{
  const server={budgetExpenses:[{id:1,value:10,history:['a']}]};
  const f=await fixture({server});
  server.budgetExpenses=[{id:1,value:11,history:['a','b']}];
  f.context.db.budgetExpenses[0].value=12;f.context.db.budgetExpenses[0].history.push('c');
  assert.equal(await f.api.push(),true);
- assert.deepEqual(f.server.budgetExpenses,[{id:1,value:12,history:['a','c','b']}]);
+ assert.deepEqual(f.server.budgetExpenses,[{id:1,value:11,history:['a','c','b']}],'campos sem conflito (histórico) são mesclados');
+ const conflitos=f.api.conflicts();assert.equal(conflitos.length,1);
+ assert.deepEqual(copy(conflitos[0].path),[{id:'1'},'value']);assert.equal(conflitos[0].local,12);assert.equal(conflitos[0].servidor,11);
+ assert.equal(f.api.status(),'conflito');
+ assert.equal(f.context.db.budgetExpenses[0].value,11,'a tela mostra o valor salvo');
+ assert.equal(f.api.resolveConflict(conflitos[0].id,true),true);await f.api.push();
+ assert.equal(f.server.budgetExpenses[0].value,12,'reaplicar é uma decisão explícita');assert.equal(f.api.conflicts().length,0);
 });
 
 test('erro permanente em um módulo não trava os outros nem repete sem parar',async()=>{

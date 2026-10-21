@@ -1,0 +1,3 @@
+# Conteúdo comparado byte a byte em testes: mesmo final de linha em qualquer sistema (FIN-09).
+public/financeiro.bundle.js text eol=lf
+legacy/financeiro-bundle-inativo.js.txt text eol=lf

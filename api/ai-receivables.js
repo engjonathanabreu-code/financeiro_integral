@@ -1,5 +1,6 @@
 const {requireProfile}=require('../lib/auth');
 const {resolveFile}=require('../lib/ai-file');
+const {callResponses,sendError}=require('../lib/openai-responses');
 module.exports=async function handler(req,res){
  if(req.method!=='POST')return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
   if(!await requireProfile(req,res,'financeiro'))return;
@@ -31,10 +32,7 @@ module.exports=async function handler(req,res){
    name='integral_receivables_report_compact';
    prompt='Leia integralmente o relatorio bancario. Extraia SOMENTE registros da secao de LIQUIDACAO, ou seja, titulos efetivamente pagos. Para cada boleto liquidado retorne um objeto com exatamente estas chaves: p = nome do pagador; d = documento ou codigo do boleto; v = data de vencimento no formato YYYY-MM-DD; g = data de pagamento no formato YYYY-MM-DD; n = valor nominal como numero; l = valor efetivamente pago como numero. Preserve cada vencimento separadamente, inclusive vencimentos de meses futuros e multiplos titulos do mesmo pagador: nunca agrupe, some ou deduplique linhas. Use ponto como separador decimal e nao inclua simbolo de moeda. Ignore Entrada Confirmada, TOTAL, subtotais, cabecalhos e rodapes. Se um campo nao existir use string vazia ou zero. Nao invente dados.';
   }
-  const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_file',file_data:file,filename:fileName}]}],text:{format:{type:'json_schema',name,strict:true,schema}}})});
-  const raw=await response.text();let data={};try{data=raw?JSON.parse(raw):{}}catch{return res.status(502).json({ok:false,error:'OPENAI_INVALID_RESPONSE',details:'A OpenAI retornou uma resposta inválida.'})}
-  if(!response.ok)return res.status(response.status).json({ok:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI',model});
-  const text=data.output_text||(data.output||[]).flatMap(i=>i.content||[]).filter(i=>i.type==='output_text').map(i=>i.text).join('');let parsed={};try{parsed=JSON.parse(text||'{}')}catch{return res.status(502).json({ok:false,error:'OPENAI_OUTPUT_INVALID',details:'Não foi possível interpretar o arquivo retornado pela IA.'})}
+  const {data,parsed}=await callResponses({model,input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_file',file_data:file,filename:fileName}]}],text:{format:{type:'json_schema',name,strict:true,schema}}},{label:'ai-receivables'});
   if(mode!=='clients'){
    const pick=(r,k,i)=>r&&typeof r==='object'&&!Array.isArray(r)?r[k]:(Array.isArray(r)?r[i]:undefined);
    const entries=(parsed.rows||[]).map(r=>({
@@ -50,5 +48,6 @@ module.exports=async function handler(req,res){
    return res.status(200).json({ok:true,model:data.model||model,entries});
   }
   return res.status(200).json({ok:true,model:data.model||model,...parsed});
- }catch(e){console.error('ai-receivables error',e);return res.status(e.statusCode||500).json({ok:false,error:'INTERNAL_ERROR',details:String(e?.message||e)})}
+ }catch(e){return sendError(res,e,'ai-receivables')}
 }
+module.exports.config={maxDuration:150};

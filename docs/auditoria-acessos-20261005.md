@@ -28,11 +28,13 @@ O código novo funciona com o banco antigo; o banco novo exige o código novo pa
 
 ## Reverter as políticas (se necessário)
 
-```sql
-alter policy financeiro_estado_modulos_select on financeiro_estado_modulos using (true);
-alter policy financeiro_estado_modulos_authenticated on financeiro_estado_modulos using (true) with check (true);
-alter policy financeiro_estado_modulos_write on financeiro_estado_modulos using (true) with check (true);
-drop policy financeiro_modulos_excluir_somente_adm on financeiro_estado_modulos;
-```
+> Revisado em 21/10/2026 (FIN-13): a versão anterior desta seção recomendava `using (true)`, o que
+> reabriria RH, DRE, planejamento e contas para qualquer usuário autenticado. Rollback não pode
+> reabrir a vulnerabilidade.
+
+Não reverta para `using (true)`. Se uma regra de acesso por módulo bloquear um uso legítimo, ajuste
+`public.financeiro_modulo_permitido(p_chave)` para o módulo e perfil específicos, numa migration
+versionada, e mantenha as políticas apontando para essa função. Procedimento completo de
+recuperação e rollback: `docs/DEPLOYMENT.md`.
 
 Os anexos convertidos continuam legíveis pelo código novo; para voltar o base64 ao módulo use as versões em `financeiro_estado_modulos_history`.

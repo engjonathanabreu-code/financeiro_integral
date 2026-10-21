@@ -54,7 +54,7 @@ async function storedContent(arquivoId){
   if(!arquivoId)throw new Error('Arquivo não informado.');
   if(storedCache.has(arquivoId))return storedCache.get(arquivoId);
   const sb=window.IntegralERP?.sb;if(!sb)throw new Error('Conexão indisponível. Entre novamente no sistema.');
-  const promise=(async()=>{const {data,error}=await sb.from('financeiro_arquivos').select('conteudo').eq('id',arquivoId).maybeSingle();if(error)throw error;if(!data?.conteudo)throw new Error('O arquivo original não foi encontrado.');return data.conteudo})();
+  const promise=(async()=>{const {data,error}=await sb.from('financeiro_arquivos').select('conteudo').eq('id',arquivoId).maybeSingle();if(error)throw error;if(!data?.conteudo)throw new Error('O arquivo não foi encontrado ou você não tem acesso a ele.');return data.conteudo})();
   storedCache.set(arquivoId,promise);promise.catch(()=>storedCache.delete(arquivoId));
   return promise;
 }

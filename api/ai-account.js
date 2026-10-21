@@ -1,5 +1,6 @@
 const {requireProfile}=require('../lib/auth');
 const {resolveFile}=require('../lib/ai-file');
+const {callResponses,sendError}=require('../lib/openai-responses');
 module.exports=async function handler(req,res){
   if(req.method!=='POST')return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
   if(!await requireProfile(req,res,'financeiro'))return;
@@ -30,22 +31,13 @@ module.exports=async function handler(req,res){
     const configured=String(process.env.OPENAI_FINANCE_MODEL||'').trim();
     const model=configured||'gpt-5.6-luna';
     const started=Date.now();
-    const response=await fetch('https://api.openai.com/v1/responses',{
-      method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-      body:JSON.stringify({model,input:[{role:'user',content:[{type:'input_text',text:prompt},attachment]}],text:{format:{type:'json_schema',name:'integral_account_analysis_batch',strict:true,schema}}})
-    });
-    const data=await response.json();
-    if(!response.ok){
-      console.error('ai-account OpenAI error',{status:response.status,fileName,mime,model,details:data?.error?.message});
-      return res.status(response.status).json({ok:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI',model});
-    }
-    const outputText=data.output_text||(data.output||[]).flatMap(i=>i.content||[]).filter(i=>i.type==='output_text').map(i=>i.text).join('');
-    const parsed=JSON.parse(outputText||'{}');
+    const {data,parsed}=await callResponses({model,input:[{role:'user',content:[{type:'input_text',text:prompt},attachment]}],text:{format:{type:'json_schema',name:'integral_account_analysis_batch',strict:true,schema}}},{label:'ai-account'});
     const payments=Array.isArray(parsed.payments)?parsed.payments:[];
     console.info('ai-account success',{fileName,input:isPdf?'pdf':'image',model:data.model||model,matched:!!parsed.account?.matchedAccountId,payments:payments.length,confidence:parsed.account?.confidence,durationMs:Date.now()-started});
     return res.status(200).json({ok:true,model:data.model||model,inputType:isPdf?'pdf':'image',account:parsed.account||{},payments});
   }catch(error){
-    console.error('ai-account error',error);
-    return res.status(error.statusCode||500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});
+    return sendError(res,error,'ai-account');
   }
 };
+
+module.exports.config={maxDuration:150};
