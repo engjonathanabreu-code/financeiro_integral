@@ -76,11 +76,13 @@ function archivedModal(body){
 async function openArchived(){
  ensureStyles();
  const [m,c,p]=await Promise.all([
-  sb.from('fin_receb_municipios').select('*').eq('ativo',false).order('nome'),
-  sb.from('fin_receb_clientes').select('*, fin_receb_municipios(nome)').eq('ativo',false).order('nome'),
-  sb.from('fin_receb_parcelas').select('*, fin_receb_clientes(nome)').eq('ativo',false).order('vencimento')
+  window.IntegralPaging.all(()=>sb.from('fin_receb_municipios').select('*').eq('ativo',false)),
+  window.IntegralPaging.all(()=>sb.from('fin_receb_clientes').select('*, fin_receb_municipios(nome)').eq('ativo',false)),
+  window.IntegralPaging.all(()=>sb.from('fin_receb_parcelas').select('*, fin_receb_clientes(nome)').eq('ativo',false))
  ]);
- const municipios=m.data||[],clientes=c.data||[],parcelas=p.data||[];
+ // Lidos por id (ordem estável entre páginas) e ordenados aqui como antes: nome e vencimento.
+ const byText=k=>(a,b)=>String(a[k]||'').localeCompare(String(b[k]||''),'pt-BR');
+ const municipios=m.sort(byText('nome')),clientes=c.sort(byText('nome')),parcelas=p.sort(byText('vencimento'));
  const section=(title,rows)=>`<h4 style="margin:16px 0 6px">${esc(title)}</h4><div class="receb-archived-list">${rows||'<div class="muted">Nenhum registro arquivado.</div>'}</div>`;
  const muniRows=municipios.map(x=>`<div class="receb-archived-row" data-row><span><b>${esc(x.nome)}</b><small>${esc(x.uf||'')}</small></span><button class="btn small" data-unarchive-muni="${x.id}">Reativar</button></div>`).join('');
  const clienteRows=clientes.map(x=>`<div class="receb-archived-row" data-row><span><b>${esc(x.nome)}</b><small>${esc(x.codigo||x.cpf_cnpj||'')} · ${esc(x.fin_receb_municipios?.nome||'')}</small></span><button class="btn small" data-unarchive-cliente="${x.id}">Reativar</button></div>`).join('');
@@ -95,7 +97,7 @@ function ensureArchivedButton(){
  const toolbar=document.querySelector('.receb-toolbar .right');
  if(!toolbar||toolbar.querySelector('#recebArchivedBtn'))return;
  const btn=document.createElement('button');btn.className='btn secondary';btn.id='recebArchivedBtn';btn.textContent='Arquivados';
- btn.onclick=openArchived;
+ btn.onclick=()=>openArchived().catch(e=>alert('Não foi possível carregar os arquivados: '+(e?.message||e)));
  toolbar.appendChild(btn);
 }
 

@@ -1,4 +1,5 @@
 const {requireProfile}=require('../lib/auth');
+const { callResponses, sendError } = require('../lib/openai-responses');
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   if(!await requireProfile(req,res,'financeiro'))return;
@@ -63,39 +64,15 @@ module.exports = async function handler(req, res) {
       JSON.stringify(cleanRows)
     ].join('\n');
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_FINANCE_MODEL || 'gpt-5.6-luna',
-        input: prompt,
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'integral_bank_classification',
-            strict: true,
-            schema
-          }
-        }
-      })
-    });
-
-    const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ ok: false, error: 'OPENAI_ERROR', details: data?.error?.message || 'Falha na OpenAI' });
-
-    const outputText = data.output_text || (data.output || [])
-      .flatMap(item => item.content || [])
-      .filter(item => item.type === 'output_text')
-      .map(item => item.text)
-      .join('');
-
-    const parsed = JSON.parse(outputText || '{}');
+    const { data, parsed } = await callResponses({
+      model: process.env.OPENAI_FINANCE_MODEL || 'gpt-5.6-luna',
+      input: prompt,
+      text: { format: { type: 'json_schema', name: 'integral_bank_classification', strict: true, schema } }
+    }, { label: 'ai-classify' });
     return res.status(200).json({ ok: true, model: data.model, ...parsed });
   } catch (error) {
-    console.error('ai-classify error', error);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', details: String(error?.message || error) });
+    return sendError(res, error, 'ai-classify');
   }
 };
+
+module.exports.config = { maxDuration: 150 };

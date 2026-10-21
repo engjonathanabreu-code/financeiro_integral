@@ -1,5 +1,7 @@
 -- Integral Financeiro - persistência de Contas/Pagamentos e controle de lembretes WhatsApp
 -- Executar uma vez no SQL Editor do mesmo Supabase usado pelo ERP.
+-- 21/10/2026 (FIN-13): políticas alinhadas às vigentes em produção (can_access_fin_recebimentos);
+-- a versão anterior recriava using(true) e reabriria contas e pagamentos a qualquer usuário.
 
 create extension if not exists pgcrypto;
 
@@ -51,16 +53,16 @@ alter table public.financeiro_whatsapp_envios enable row level security;
 
 drop policy if exists "financeiro_contas_authenticated" on public.financeiro_contas;
 create policy "financeiro_contas_authenticated" on public.financeiro_contas
-  for all to authenticated using (true) with check (true);
+  for all to authenticated using ((select public.can_access_fin_recebimentos())) with check ((select public.can_access_fin_recebimentos()));
 
 drop policy if exists "financeiro_pagamentos_authenticated" on public.financeiro_pagamentos;
 create policy "financeiro_pagamentos_authenticated" on public.financeiro_pagamentos
-  for all to authenticated using (true) with check (true);
+  for all to authenticated using ((select public.can_access_fin_recebimentos())) with check ((select public.can_access_fin_recebimentos()));
 
 -- O histórico de envio é somente leitura para usuários logados; escrita fica para service_role do backend.
 drop policy if exists "financeiro_whatsapp_envios_read" on public.financeiro_whatsapp_envios;
 create policy "financeiro_whatsapp_envios_read" on public.financeiro_whatsapp_envios
-  for select to authenticated using (true);
+  for select to authenticated using ((select public.can_access_fin_recebimentos()));
 
 create index if not exists idx_financeiro_pagamentos_vencimento on public.financeiro_pagamentos(vencimento);
 create index if not exists idx_financeiro_pagamentos_status on public.financeiro_pagamentos(status);

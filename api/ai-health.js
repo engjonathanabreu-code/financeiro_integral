@@ -10,13 +10,15 @@ module.exports=async function handler(req,res){
     const response=await fetch('https://api.openai.com/v1/responses',{
       method:'POST',
       headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},
-      body:JSON.stringify({model,input:'Responda somente com OK.',max_output_tokens:16})
+      body:JSON.stringify({model,input:'Responda somente com OK.',max_output_tokens:16}),
+      signal:AbortSignal.timeout(15000)
     });
     const data=await response.json();
     if(!response.ok)return res.status(response.status).json({connected:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI',model});
     return res.status(200).json({connected:true,model:data.model||model,latencyMs:Date.now()-started});
   }catch(error){
     console.error('ai-health error',error);
-    return res.status(500).json({connected:false,error:'INTERNAL_ERROR',details:String(error?.message||error),model});
+    const timeout=error?.name==='TimeoutError'||error?.name==='AbortError';
+    return res.status(timeout?504:500).json({connected:false,error:timeout?'OPENAI_TIMEOUT':'INTERNAL_ERROR',model});
   }
 };

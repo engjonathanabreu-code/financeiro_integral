@@ -40,8 +40,8 @@ async function openFuture(){ensureCss();try{
  const start=document.querySelector('#recebMonth')?.value||new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,7);
  const [parcelas,cr,mr]=await Promise.all([
    fetchAllFutureRows(start),
-   sb.from('fin_receb_clientes').select('id,municipio_id,ativo'),
-   sb.from('fin_receb_municipios').select('id,nome,ativo')
+   window.IntegralPaging.all(()=>sb.from('fin_receb_clientes').select('id,municipio_id,ativo')).then(data=>({data})),
+   window.IntegralPaging.all(()=>sb.from('fin_receb_municipios').select('id,nome,ativo')).then(data=>({data}))
  ]);
  const err=[cr,mr].find(x=>x.error);if(err?.error)throw err.error;
  const clients=new Map((cr.data||[]).filter(c=>c.ativo!==false).map(c=>[c.id,c]));const munis=new Map((mr.data||[]).filter(m=>m.ativo!==false).map(m=>[m.id,m]));

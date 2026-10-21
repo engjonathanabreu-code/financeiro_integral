@@ -1,5 +1,6 @@
 const {requireProfile}=require('../lib/auth');
 const {resolveFile}=require('../lib/ai-file');
+const {callResponses,sendError}=require('../lib/openai-responses');
 module.exports = async function handler(req,res){
   if(req.method!=='POST') return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
   if(!await requireProfile(req,res,'ativo'))return;
@@ -18,12 +19,11 @@ module.exports = async function handler(req,res){
     const filePart=isPdf?{type:'input_file',file_data:image,filename:fileName||'documento.pdf'}:{type:'input_image',image_url:image};
     const configured=String(process.env.OPENAI_FINANCE_MODEL||'').trim();
     const model=!configured||configured==='gpt-5.6-luna'?'gpt-5-mini':configured;
-    const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,input:[{role:'user',content:[{type:'input_text',text:prompt},filePart]}],text:{format:{type:'json_schema',name:'integral_receipt_analysis',strict:true,schema}}})});
-    const data=await response.json();if(!response.ok)return res.status(response.status).json({ok:false,error:'OPENAI_ERROR',details:data?.error?.message||'Falha na OpenAI',model});
-    const outputText=data.output_text||(data.output||[]).flatMap(i=>i.content||[]).filter(i=>i.type==='output_text').map(i=>i.text).join('');
-    const parsed=JSON.parse(outputText||'{}');
+    const {data,parsed}=await callResponses({model,input:[{role:'user',content:[{type:'input_text',text:prompt},filePart]}],text:{format:{type:'json_schema',name:'integral_receipt_analysis',strict:true,schema}}},{label:'ai-receipt'});
     if(!Number.isFinite(Number(parsed.value))||Number(parsed.value)<0) parsed.value=0;
     if(typeof parsed.date!=='string'||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(parsed.date)) parsed.date='';
     return res.status(200).json({ok:true,model:data.model||model,...parsed});
-  }catch(error){console.error('ai-receipt error',error);return res.status(error.statusCode||500).json({ok:false,error:'INTERNAL_ERROR',details:String(error?.message||error)});}
+  }catch(error){return sendError(res,error,'ai-receipt')}
 };
+
+module.exports.config={maxDuration:150};
