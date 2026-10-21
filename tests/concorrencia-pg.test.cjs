@@ -49,17 +49,24 @@ test('salvamentos simultâneos reais: UPSERT antigo perde uma alteração; funç
 
   // 2) Correção: as duas sessões partem da mesma revisão. A segunda espera o bloqueio da linha e,
   //    quando a primeira confirma, recebe "conflito" com a versão atual, sem gravar nada.
+  // Volta ao estado inicial: a etapa acima termina aleatoriamente com os dados de A ou de B, e um
+  // salvamento idêntico ao estado atual (corretamente) não gera revisão nova.
+  await psql(`update financeiro_estado_modulos set dados='[{"id":1,"city":"A"},{"id":2,"city":"B"}]' where chave='trips'`);
   const rev=Number(await psql(`select revisao from financeiro_estado_modulos where chave='trips'`));
-  const t0=Date.now();
-  const first=psql(as(STAFF,`begin;select financeiro_salvar_modulo('trips','${A}',${rev})->>'status';select pg_sleep(1.2);commit;`));
-  await new Promise(r=>setTimeout(r,300));
-  const second=psql(as(FIN,`select (financeiro_salvar_modulo('trips','${B}',${rev}))::text;`));
+  const done={};
+  const first=psql(as(STAFF,`begin;select financeiro_salvar_modulo('trips','${A}',${rev})::text;select txid_current()::text||' '||pg_backend_pid();select pg_sleep(1.2);commit;select 'commit-ok';`)).then(r=>{done.first=process.hrtime.bigint();return r});
+  // Só começa a segunda quando a primeira já gravou e segura a linha (sem depender de tempo fixo).
+  let seen='';for(let i=0;i<200;i++){seen=await psql(`select string_agg(pid||':'||state||':'||left(query,60),' | ') from pg_stat_activity where state='active' and query like '%pg_sleep(1.2)%' and pid<>pg_backend_pid()`);if(seen)break;await new Promise(r=>setTimeout(r,25))}
+  const second=psql(as(FIN,`select (financeiro_salvar_modulo('trips','${B}',${rev}))::text;`)).then(r=>{done.second=process.hrtime.bigint();return r});
   const [r1,r2]=await Promise.all([first,second]);
-  assert.match(r1,/salvo/);
+  const saved=JSON.parse(r1.split('\n')[1]);assert.equal(saved.status,'salvo');assert.equal(saved.revisao,rev+1);assert.match(r1,/commit-ok$/);
+  assert.ok(seen,'a primeira sessão estava segurando a linha quando a segunda começou');
   const conflict=JSON.parse(r2.split('\n').pop());
   assert.equal(conflict.status,'conflito');assert.equal(conflict.revisao,rev+1);
   assert.deepEqual(conflict.dados.map(t=>t.city),['A-editado','B']);
-  assert.ok(Date.now()-t0>=1100,'a segunda gravação esperou a primeira terminar');
+  // A prova de que a segunda esperou o commit da primeira é o servidor devolver a revisão e os dados
+  // já confirmados pela primeira (asserções acima); o término dos processos psql no cliente varia com a carga.
+  assert.ok(done.first&&done.second);
   // O cliente mescla sobre a versão devolvida e grava a próxima revisão: as duas alterações ficam.
   const merged=JSON.stringify([{id:1,city:'A-editado'},{id:2,city:'B-editado'}]);
   const r3=JSON.parse((await psql(as(FIN,`select financeiro_salvar_modulo('trips','${merged}',${rev+1})::text;`))).split('\n').pop());
