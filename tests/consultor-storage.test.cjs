@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const source = fs.readFileSync(path.join(__dirname, '../public/financeiro-cloud-storage.js'), 'utf8');
-const copy = value => JSON.parse(JSON.stringify(value));
+const { fakeModules, copy } = require('./fake-modulos-supabase.cjs');
 const turn = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
   let resolve;
@@ -22,10 +22,16 @@ async function fixture() {
   const cache = new Map();
   const writes = [], rpcs = [], events = [];
   const hooks = {};
+  const table = fakeModules(server, { beforeWrite: async row => {
+    const captured = [row]; writes.push(captured); events.push('push-start');
+    const error = await hooks.upsert?.(captured);
+    if (error) { events.push('push-failed'); return error; }
+    events.push('push-done'); return null;
+  } });
   const context = {
     console: { log() {}, warn() {}, error() {} }, structuredClone,
     db: copy(server), user: { role: 'Administrador', erpId: 'admin', name: 'Admin' },
-    localStorage: { getItem: key => cache.get(key) || null, setItem: (key, value) => cache.set(key, value) },
+    localStorage: { getItem: key => cache.get(key) || null, setItem: (key, value) => cache.set(key, value), removeItem: key => cache.delete(key) },
     // Follow-up writes are triggered explicitly in these tests, with no wall-clock races.
     setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
     document: { dispatchEvent() {} }, CustomEvent: function () {}, render() {}, addEventListener() {},
@@ -35,20 +41,11 @@ async function fixture() {
   context.IntegralERP = { sb: {
     auth: { getSession: async () => ({ data: { session: { user: { id: 'admin' }, access_token: 'fixture' } } }), onAuthStateChange() {} },
     from() { return {
-      select: () => {
-        const rows = keys => ({ data: Object.entries(server).filter(([chave]) => !keys || keys.includes(chave)).map(([chave, dados]) => ({ chave, dados: copy(dados) })) });
-        return { then: (ok, fail) => Promise.resolve(rows()).then(ok, fail), in: async (_column, keys) => rows(keys) };
-      },
-      upsert: async rows => {
-        const captured = copy(rows); writes.push(captured); events.push('push-start');
-        const error = await hooks.upsert?.(captured);
-        if (error) { events.push('push-failed'); return { error }; }
-        for (const row of captured) server[row.chave] = copy(row.dados);
-        events.push('push-done'); return { error: null };
-      }
+      select: () => ({ then: (ok, fail) => Promise.resolve(table.rows()).then(ok, fail), in: async (_column, keys) => table.rows(keys) })
     }; },
     rpc: async (name, args) => {
       if (name === 'is_admin') return { data: context.user?.role === 'Administrador', error: null };
+      if (name === 'financeiro_salvar_modulo') return table.save(args);
       rpcs.push({ name, args: copy(args) }); events.push('rpc-start');
       const error = await hooks.rpc?.(name, args);
       if (error) return { error };
