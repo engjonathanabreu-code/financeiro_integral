@@ -1,0 +1,11 @@
+{
+  "checks": 48,
+  "viewports": [
+    1440,
+    834,
+    390
+  ],
+  "network": "interceptada integralmente; sem chamadas externas",
+  "database": "PGlite com migração real",
+  "result": "passed"
+}

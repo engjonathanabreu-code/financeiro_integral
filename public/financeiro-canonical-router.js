@@ -2,7 +2,7 @@
    Todas as telas especiais passam por um único controlador de navegação. */
 (function(){
 'use strict';
-const canonicalViews=new Set(['dashboard','planning','hr','receivables','boletos','dre']);
+const canonicalViews=new Set(['dashboard','planning','hr','receivables','boletos','dre','vehicles']);
 const q=(s,r=document)=>r.querySelector(s);
 const qa=(s,r=document)=>Array.from(r.querySelectorAll(s));
 function currentView(){try{return typeof view!=='undefined'?view:window.view}catch{return window.view}}
@@ -36,7 +36,9 @@ async function renderCanonical(id){
   setView(id);ensureNav();setActive(id);
   const c=q('#content');if(c)c.removeAttribute('data-canonical-view');
   try{
-    if(id==='dashboard'){
+    if(id==='vehicles'){
+      await window.IntegralVehicles.render();
+    }else if(id==='dashboard'){
       const fn=window.IntegralFinanceDashboard?.render||window.renderFinanceDashboardFinal;if(typeof fn!=='function')return false;await fn();
     }else if(id==='planning'){
       const fn=window.planningCanonical;if(typeof fn!=='function')return false;await fn();

@@ -1,0 +1,1 @@
+48 verificações de navegador passaram; screenshots em docs/qa-veiculos.
