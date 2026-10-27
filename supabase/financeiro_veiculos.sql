@@ -1,4 +1,4 @@
--- PROPOSTA LOCAL. Não aplicada em ambiente externo.
+-- Migração aditiva do módulo de veículos. Aplicar somente no projeto Financeiro verificado.
 -- Reutiliza a aprovação de Solicitações (category=trip), protegida pelo guard existente.
 begin;
 do $$begin

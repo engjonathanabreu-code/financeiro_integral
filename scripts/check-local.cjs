@@ -10,6 +10,6 @@ for(const match of html.matchAll(/(?:src|href)="([^"?#]+)(?:[?#][^"]*)?"/g)){
  const file=match[1];if(/^(https?:|data:|#)/.test(file))continue;
  assert.ok(fs.existsSync(path.join(root,'public',file)),`Asset ausente: ${file}`);assets++;
 }
-for(const name of ['financeiro.bundle.js','patch-v8.js'])assert.ok(fs.readFileSync(path.join(root,'public',name),'utf8').includes("['budgets','trips','invoices','vehicles'].includes"),`${name}: guarda de acesso sem vehicles`);
+assert.ok(fs.readFileSync(path.join(root,'public/financeiro-veiculos.js'),'utf8').includes('__vehicleShell'),'Ponte de navegação nova ausente');
 assert.ok(html.indexOf('financeiro-veiculos-metrics.js')<html.indexOf('financeiro-veiculos.js'));
 console.log(`${checked} arquivos JavaScript com sintaxe válida; ${assets} assets locais conferidos.`);

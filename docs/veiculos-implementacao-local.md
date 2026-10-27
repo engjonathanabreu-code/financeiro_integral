@@ -40,7 +40,7 @@ O SQL verifica a presença do guard de aprovação existente antes de criar recu
 - Painel administrativo, histórico geral e análise IA só para ADM. O perfil Financeiro continua sem poderes de ADM.
 - Cores/tipografia/tokens do `financeiro-design-system.css`, componentes existentes, foco e diálogo nativo, alvos de toque de 44 px e layout sem overflow em 390/834/1440 px.
 
-A revisão da base remota encontrou a correção existente da fronteira do bundle legado (PR #10). Essa correção deve ser preservada ao integrar o módulo. Fontes e bundle recebem somente a inclusão de Veículos nas guardas de navegação; não se reativa o RH legado.
+A revisão da base remota encontrou a correção existente da fronteira do bundle legado (PR #10). Essa correção deve ser preservada ao integrar o módulo. O bundle e seu arquivo-fonte de guarda permanecem byte a byte como na base remota. A navegação de Veículos usa uma ponte no próprio módulo e não reativa o RH legado.
 
 ## Validação e evidências
 

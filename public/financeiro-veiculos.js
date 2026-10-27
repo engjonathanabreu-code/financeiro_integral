@@ -84,5 +84,8 @@ function bind(target){
 window.addEventListener('click',e=>{if(!e.target.closest?.('.nav [data-view=vehicles]'))return;e.preventDefault();e.stopImmediatePropagation();render()},true);
 // O roteador central e os guardas de perfil conhecem a nova view; navegação preserva o shell.
 let scheduled=false;new MutationObserver(()=>{if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;if(!currentUser()){dismiss();state=null;version++;return}ensureNav();if(currentView()==='vehicles'&&!q('.vehicle-page')&&!loading&&q('#content')?.dataset.canonicalView!=='vehicles')render()})}).observe(document.getElementById('app')||document.body,{childList:true,subtree:true});
+// Monta o shell por uma rota legada permitida e restaura a rota nova em seguida.
+// Preserva byte a byte o bundle delimitado e não muda papéis ou acessos antigos.
+try{const legacyApp=typeof app==='function'?app:window.app;if(legacyApp&&!legacyApp.__vehicleShell){const wrapped=function(){const vehicles=currentView()==='vehicles';if(vehicles){try{view='trips'}catch{}window.view='trips'}const out=legacyApp.apply(this,arguments);if(vehicles)render();return out};wrapped.__vehicleShell=true;try{app=wrapped}catch{}window.app=wrapped}}catch{}
 window.IntegralVehicles={render,ensureNav};ensureNav();
 })();

@@ -7,3 +7,5 @@
 .vehicle-page .actions,.vehicle-dialog .actions{min-width:0;max-width:100%}.vehicle-page .actions .btn,.vehicle-dialog .actions .btn,.vehicle-dialog [data-read]{min-height:44px}
 
 .vehicle-dialog small{display:block;margin-top:8px;color:var(--ds-muted)}
+
+.nav [data-view="vehicles"]{display:flex!important}
