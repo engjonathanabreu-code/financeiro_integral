@@ -1,0 +1,137 @@
+✔ carnê: vencimentos iguais e mensais, fim de mês, ano bissexto e valores (3.655667ms)
+✔ carnê transacional, busca completa, homologação isolada e retorno no mesmo cliente (2295.7085ms)
+✔ transação, autorização, reserva repetida, isolamento da homologação e baixa compartilhada (2295.822708ms)
+✔ endereço automático do cliente, ajustes preservados, autorização e pagador congelado (2309.140208ms)
+✔ PDF: usa o arquivo original da nova marca Ailos, sem alterar seus bytes (0.957875ms)
+✔ PDF: marca atual nos dois cabeçalhos, proporcional e sem alterar a remessa (16.776459ms)
+✔ PDF: carnê usa a nova marca nas duas fichas e preserva o agrupamento (2.139666ms)
+✔ PDF: mantém bloqueio de cobrança em produção antes de registro bancário (1.331083ms)
+✔ PDF: falha explicitamente se a marca não puder ser carregada (0.676042ms)
+✔ segmento P usa código 0 para isenção de desconto em todos os títulos e ambientes (5.358208ms)
+✔ fator muda em 22/02/2025; módulo 10 e identificação (0.272209ms)
+✔ CNAB 240 exato, CRLF, convenio à esquerda e nosso número com três espaços (0.38025ms)
+✔ valida campos, valor, caracteres, identidade e produção sem homologação (0.838791ms)
+✔ retorno T/U distingue valor pago de crédito líquido e recusa truncamento/conta errada (1.140166ms)
+✔ código 2 de 5 intercalado tem alternância, início e fim (0.275541ms)
+✔ endereço permite 15 caracteres, normaliza espaços e identifica campo longo (0.223ms)
+✔ anexos saem do JSON sem perder bytes, ordem ou campos; acesso por módulo respeita o perfil (2331.904792ms)
+ai-account OpenAI error {
+  status: 500,
+  fileName: '',
+  mime: 'image/png',
+  model: 'gpt-5.6-luna',
+  details: 'stub'
+}
+✔ rotas de IA recusam chamadas sem sessão e nunca chegam à OpenAI (4.54425ms)
+✔ perfil precisa estar ativo e, nas rotas do Financeiro, ser ADM ou Financeiro (2.888458ms)
+✔ usuário limitado: módulos sem acesso somem da memória e do cache e nunca são enviados (3.918791ms)
+✔ salvar viagem não desfaz o que outro usuário gravou depois do carregamento (1.629625ms)
+✔ mesmo campo alterado nos dois lados: prevalece o valor local, como antes (0.855125ms)
+✔ erro permanente em um módulo não trava os outros nem repete sem parar (1.023ms)
+✔ comprovante novo vai para financeiro_arquivos e o módulo leva só o arquivoId (1.020083ms)
+✔ ADM continua criando módulos novos (3.252458ms)
+✔ séries mensais, composição, DRE e indicadores usam as mesmas regras da aba DRE (5.77925ms)
+✔ marcador de gráficos é removido do texto e só aceita ids conhecidos (0.191542ms)
+✔ modo indicadores responde sem IA; relatório devolve JSON estruturado; leitura fica em cache na conversa (13.806583ms)
+✔ chat em streaming repassa o texto em NDJSON e encerra com os gráficos (2.85ms)
+✔ integer-cent calculations, partial receipts, late balance, separated bases and periods (6.930625ms)
+✔ API authenticates actual profile before reading metrics or calling IA; forged client admin has no effect (12.920459ms)
+✔ IA receives only authorized metrics; returns sourced analysis and detects incomplete provider output (1.924209ms)
+✔ consultant cash totals match displayed paid accounts, budgets and overrides without legacy duplication (3.275708ms)
+✔ ADM closes atomically; RLS/RPC and direct writes reject staff, inactive ADM, anonymous and stale saves (2290.691583ms)
+✔ closing flushes unrelated unsynced edits and new budgets without discarding them (6.260166ms)
+✔ closing waits for an actual in-flight push instead of treating its early return as success (4.161334ms)
+✔ a failed pre-close flush aborts before RPC and preserves dirty local data for retry (0.7675ms)
+✔ unrelated edits and additions during close stay dirty and survive the next push (4.608167ms)
+✔ an unrelated local deletion during close is not resurrected by the RPC snapshot (1.315791ms)
+✔ fresh unrelated server records and closures are retained when local copies were unchanged (1.156583ms)
+✔ target edits during close retain local fields and both histories with confirmed closure metadata (1.595208ms)
+✔ disjoint unrelated local and remote fields merge without losing either edit (1.260834ms)
+✔ same-field conflicts preserve both versions and block budget autosave without blocking other modules (2.532ms)
+✔ 20 MB travels through private storage; the API request stays small and bytes are preserved (1109.179334ms)
+✔ one byte above 20 MB is rejected before storage or API requests (849.338083ms)
+✔ small files keep inline compatibility without requiring storage (1.516583ms)
+✔ receivables uses the same large-file transport (51.767667ms)
+✔ storage failures stop analysis instead of losing the original (142.244958ms)
+✔ repeated identical uploads reuse the content-addressed original (89.892209ms)
+✔ server rejects arbitrary external URLs and unsigned storage (0.351541ms)
+✔ server enforces exact decoded byte limit for inline originals (32.120583ms)
+✔ server downloads the signed original, checks size and refuses redirects (15.045084ms)
+✔ IA valida sessão e perfil antes de chamar o provedor (34.175458ms)
+✖ fronteira preserva byte a byte o codigo anteriormente ativo e arquiva todo o restante original (8.341917ms)
+✔ modulos canonicos e incrementos permanecem carregados depois do bundle, sem carregar o arquivo arquivado (0.365458ms)
+✔ plano compartilhado: valores explícitos e preservação de baixas e boletos (11.712667ms)
+✔ vencidas por data, excluindo hoje, futuro, pagas, canceladas e inativas (1.806083ms)
+✔ saldo parcial considera juros e multa cadastrados sem duplicar o pago (0.202084ms)
+✔ filtro de núcleo/remessa e municipio, sem juntar nomes iguais (9.196459ms)
+✔ fallback pelo código é restrito ao município e mantém sufixos do cliente (0.950875ms)
+✔ todas em aberto inclui futuro e sem data, ordena parcelas e preserva duplicatas de número (0.19975ms)
+✔ não limita ao mês da aba nem a 1000 registros (50.337292ms)
+✔ município arquivado é recusado e seleção vazia não exporta dados (8.907792ms)
+✔ planilha mantém código e nome como texto e totais/detalhes como números (3.531375ms)
+✔ preserves original PDF bytes and filename (23.575625ms)
+✔ preserves original image bytes (0.84ms)
+✔ rejects files larger than 20 MB (0.577208ms)
+✔ rejects executable and SVG attachments (1.011833ms)
+✔ legacy metadata is never treated as the original (0.411208ms)
+✔ finds original through an explicitly linked document (1.125834ms)
+✔ retains legacy dataURL and fileData formats (2.037625ms)
+✔ downloads protected storage through the existing authenticated client (0.693042ms)
+✔ does not hide storage permission failures (0.460708ms)
+✔ analysis sends original bytes and travel context without mutating the record (0.814083ms)
+✔ analysis accepts files above the old 3 MB limit (130.615667ms)
+✔ analysis reports service errors (1.370834ms)
+✔ download uses original filename and revokes its temporary URL (1.238834ms)
+✔ initial route is the list (8.719584ms)
+✔ normal rerender preserves open trip and refreshes its data (1.687541ms)
+✔ explicit Back returns to list and subsequent refresh stays on list (0.641667ms)
+✔ identity uses ID, not city name or object reference (0.601625ms)
+✔ removed trip resets route without a render loop (0.540875ms)
+✔ permission checks still apply after data refresh (0.517166ms)
+✔ directly assigned employee retains access to open detail (0.550458ms)
+✔ route changes do not mutate or persist business records (1.352916ms)
+✔ cloud initialization finishing after Open refreshes the same detail, not the list (2.649125ms)
+✔ IA veículo: autenticação e separação ADM/colaborador antes de acessar fornecedor (1.667792ms)
+✔ IA veículo: foto ilegível continua nula e exige revisão humana (0.663458ms)
+✔ IA veículo: valida tamanho, MIME e assinatura antes do fornecedor (0.459584ms)
+✔ IA veículo: falha do fornecedor não produz dado nem altera registros (1.391542ms)
+✔ IA veículo: análise consulta evidência no banco com JWT existente e só para ADM (1.148334ms)
+✔ veículos: aprovação ADM, isolamento de perfis, retirada/devolução e dados preservados (2097.4185ms)
+✔ veículos: disputa de carro, cronologia, km regressiva, revogação e cancelamento auditado (311.687042ms)
+✔ veículos: relatos privados, anexos transacionais e vínculo temporal sem acusação (319.803375ms)
+✔ veículos: combustível reutiliza despesa, valida origem/tempo, deduplica e detecta alteração (291.972833ms)
+✔ veículos: aprovação canônica exige categoria, orçamento, data, conversão e guard ativo (292.36075ms)
+✔ veículos: km NaN, foto superdimensionada e nomes perigosos são tratados no banco (327.195791ms)
+✔ km e custo/km são determinísticos; consumo só em ciclo completo e revisado (1.005208ms)
+✔ distância zero, cancelamentos, uso aberto e km regressiva não produzem estatísticas falsas (0.090583ms)
+ℹ tests 99
+ℹ suites 0
+ℹ pass 98
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4075.744333
+
+✖ failing tests:
+
+test at tests/legacy-boundary.test.cjs:3:1
+✖ fronteira preserva byte a byte o codigo anteriormente ativo e arquiva todo o restante original (8.341917ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'b880f123cfc53b03e5a96413fe8e5a0f6c8adf36e6cce8e90e419c98177fe0b2'
+  - '2c8a56ccbb0565ff09b060d43155b2a382ac2ed7e7022a876b1dc398d0b36807'
+  
+      at TestContext.<anonymous> (/Users/jonathandaviddeabreu/Documents/Codex/2026-10-27/task/financeiro-integral-veiculos/tests/legacy-boundary.test.cjs:5:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.start (node:internal/test_runner/test:1262:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'b880f123cfc53b03e5a96413fe8e5a0f6c8adf36e6cce8e90e419c98177fe0b2',
+    expected: '2c8a56ccbb0565ff09b060d43155b2a382ac2ed7e7022a876b1dc398d0b36807',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

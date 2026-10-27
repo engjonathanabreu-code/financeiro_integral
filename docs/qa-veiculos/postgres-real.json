@@ -1,0 +1,137 @@
+{
+  "result": "passed",
+  "server": {
+    "version": "PostgreSQL 17.6 on x86_64-apple-darwin23.6.0, compiled by Apple clang version 16.0.0 (clang-1600.0.26.6), 64-bit",
+    "listen_addresses": "",
+    "port": "55439"
+  },
+  "independentBackends": [
+    7636,
+    7637
+  ],
+  "checks": [
+    "Migração real PG17: dados, funções, grants e políticas antigos preservados",
+    "Fluxo existente: colaborador envia Pendente, não aprova; ADM aprova com expected snapshot e conversão consistente",
+    "Concorrência real: segunda sessão espera primeira e rejeita outra retirada do mesmo carro",
+    "Reenvio concorrente: mesmo UUID retorna o registro único e conserva uma foto",
+    "RLS/servidor reais: outro usuário, anônimo, inativo e Financeiro sem poderes de ADM; escrita direta e leitura privada negadas",
+    "Relatos privados: autor/ADM leem; outro colaborador não lê nem via SELECT direto",
+    "Devolução concorrente: serializada, idempotente, duas fotos totais e km final único",
+    "Aprovação concorrente: retirada espera decisão ADM em outra sessão e respeita rejeição confirmada",
+    "Operações do módulo preservaram todos os módulos legados; única mudança de fixture foi a decisão ADM intencional"
+  ],
+  "lockEvidence": [
+    {
+      "label": "duas retiradas distintas do Gol",
+      "pid": 7637,
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        7636
+      ]
+    },
+    {
+      "label": "mesmo UUID em duas sessões",
+      "pid": 7637,
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        7636
+      ]
+    },
+    {
+      "label": "devoluções concorrentes do mesmo uso",
+      "pid": 7637,
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        7636
+      ]
+    },
+    {
+      "label": "retirada disputa com decisão ADM de Solicitações",
+      "pid": 7637,
+      "wait_event_type": "Lock",
+      "wait_event": "transactionid",
+      "blockers": [
+        7638
+      ]
+    }
+  ],
+  "security": [
+    {
+      "relname": "financeiro_veiculos",
+      "relrowsecurity": true,
+      "relacl": "{jonathandaviddeabreu=arwdDxtm/jonathandaviddeabreu,authenticated=r/jonathandaviddeabreu}"
+    },
+    {
+      "relname": "financeiro_veiculos_arquivos",
+      "relrowsecurity": true,
+      "relacl": "{jonathandaviddeabreu=arwdDxtm/jonathandaviddeabreu}"
+    },
+    {
+      "relname": "financeiro_veiculos_despesas",
+      "relrowsecurity": true,
+      "relacl": "{jonathandaviddeabreu=arwdDxtm/jonathandaviddeabreu,authenticated=r/jonathandaviddeabreu}"
+    },
+    {
+      "relname": "financeiro_veiculos_relatos",
+      "relrowsecurity": true,
+      "relacl": "{jonathandaviddeabreu=arwdDxtm/jonathandaviddeabreu,authenticated=r/jonathandaviddeabreu}"
+    },
+    {
+      "relname": "financeiro_veiculos_usos",
+      "relrowsecurity": true,
+      "relacl": "{jonathandaviddeabreu=arwdDxtm/jonathandaviddeabreu,authenticated=r/jonathandaviddeabreu}"
+    }
+  ],
+  "procedures": [
+    {
+      "nspname": "financeiro_veiculos_privado",
+      "proname": "acesso",
+      "prosecdef": false,
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "proacl": "{jonathandaviddeabreu=X/jonathandaviddeabreu}"
+    },
+    {
+      "nspname": "financeiro_veiculos_privado",
+      "proname": "api",
+      "prosecdef": true,
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "proacl": "{jonathandaviddeabreu=X/jonathandaviddeabreu,authenticated=X/jonathandaviddeabreu}"
+    },
+    {
+      "nspname": "financeiro_veiculos_privado",
+      "proname": "foto",
+      "prosecdef": false,
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "proacl": "{jonathandaviddeabreu=X/jonathandaviddeabreu}"
+    },
+    {
+      "nspname": "financeiro_veiculos_privado",
+      "proname": "registro",
+      "prosecdef": false,
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "proacl": "{jonathandaviddeabreu=X/jonathandaviddeabreu}"
+    },
+    {
+      "nspname": "public",
+      "proname": "financeiro_veiculos_api",
+      "prosecdef": false,
+      "proconfig": [
+        "search_path=\"\""
+      ],
+      "proacl": "{jonathandaviddeabreu=X/jonathandaviddeabreu,authenticated=X/jonathandaviddeabreu}"
+    }
+  ],
+  "storageLimit": "Sem serviço Supabase Storage local; storage.objects do fixture não é prova de upload/download HTTP real.",
+  "network": "Unix socket privado; sem TCP ou credenciais"
+}

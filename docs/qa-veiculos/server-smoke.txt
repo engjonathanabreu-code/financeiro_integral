@@ -1,0 +1,2 @@
+Servidor real: HTML e 3 assets OK; API recusa sessão ausente (401) e método incorreto (405).
+Somente localhost; sem chave de IA e sem chamada externa.

@@ -2,6 +2,7 @@ const http=require('http'),fs=require('fs'),path=require('path');
 const aiAccountHandler=require('./api/ai-account');
 const aiHealthHandler=require('./api/ai-health');
 const aiReceiptHandler=require('./api/ai-receipt');
+const aiVehicleHandler=require('./api/ai-vehicle');
 const aiReceivablesHandler=require('./api/ai-receivables');
 const integracaoFinanceiroIA=require('./api/integracao-financeiro-ia');
 const agenteFinanceiro=require('./api/agente-financeiro');
@@ -50,6 +51,7 @@ http.createServer((req,res)=>{
  if(pathname==='/api/ai-classify')return aiClassify(req,res);
  if(pathname==='/api/agente-financeiro')return withJsonBody(req,res,agenteFinanceiro);
  if(pathname==='/api/ai-account')return aiAccount(req,res);
+ if(pathname==='/api/ai-vehicle')return withJsonBody(req,res,aiVehicleHandler);
  if(pathname==='/api/ai-receipt')return aiReceipt(req,res);
  if(pathname==='/api/integracao-financeiro-ia')return withJsonBody(req,res,integracaoFinanceiroIA);
  if(pathname==='/api/ai-receivables')return aiReceivables(req,res);
