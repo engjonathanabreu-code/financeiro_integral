@@ -8,7 +8,8 @@
     "test:ailos": "node --test tests/ailos.test.cjs tests/ailos-db.test.cjs tests/ailos-carne.test.cjs tests/ailos-endereco.test.cjs tests/ailos-pdf.test.cjs",
     "check": "node scripts/check-local.cjs",
     "test:vehicles": "node --test tests/veiculos-*.test.cjs",
-    "test:vehicles:browser": "node tests/browser/veiculos.cjs"
+    "test:vehicles:browser": "node tests/browser/veiculos.cjs",
+    "test:vehicles:schedule": "node tests/browser/veiculos-agendamento.cjs"
   },
   "engines": {
     "node": ">=18"

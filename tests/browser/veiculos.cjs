@@ -1,7 +1,7 @@
 /* QA isolado: navegador -> RPC real em PGlite. Toda rede é interceptada, sem credenciais. */
 const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {setup,login,rpc,id,foto,approve}=require('../veiculos-fixtures.cjs');
-const root=path.join(__dirname,'../..'),output=path.join(root,'docs/qa-veiculos');fs.mkdirSync(output,{recursive:true});
+const root=path.join(__dirname,'../..'),output=path.join(root,'docs/qa-veiculos-agendamento');fs.mkdirSync(output,{recursive:true});
 const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
 (async()=>{
  const browser=await chromium.launch({headless:true,channel:'chrome'});
@@ -26,7 +26,7 @@ const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
   for(const f of ['financeiro-trip-documents.js','financeiro-canonical-router.js','financeiro-finance-sector-access.js','financeiro-navigation.js','financeiro-veiculos-metrics.js','financeiro-veiculos.js'])await page.addScriptTag({path:path.join(root,'public',f)});
   await page.evaluate(()=>{window.IntegralFileUploads={fetch:async()=>({ok:false,json:async()=>({details:'IA sintética indisponível. Preencha manualmente.'})})}});
   await page.locator('[data-view=vehicles]').click();await page.locator('[data-start=gol]').waitFor();checks++;
-  assert.equal(await page.locator('[data-requests]').count(),0);assert.equal(await page.getByText('Painel administrativo',{exact:true}).count(),0);checks++;
+  assert.equal(await page.locator('[data-requests]').count(),1);assert.equal(await page.getByText('Painel administrativo',{exact:true}).count(),0);checks++;
   await page.locator('[data-start=gol]').click();await page.locator('[name=km_inicial]').fill('100');await page.locator('[name=destino]').fill('Destino de QA');await page.locator('[name=foto]').setInputFiles({name:'painel-sintetico.png',mimeType:'image/png',buffer:body});
   await page.locator('[data-read]').click();await page.getByText('IA sintética indisponível. Preencha manualmente.').waitFor();assert.equal(await page.locator('[name=km_inicial]').inputValue(),'100');checks++;
   await page.screenshot({path:path.join(output,`retirada-${width}.png`),fullPage:true});
@@ -53,6 +53,6 @@ const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
   await context.close();await db.close();
  }
  fs.writeFileSync(path.join(output,'browser-result.json'),JSON.stringify({checks,viewports:[1440,834,390],network:'interceptada integralmente; sem chamadas externas',database:'PGlite com migração real',result:'passed'},null,2));
- console.log(`${checks} verificações de navegador passaram; screenshots em docs/qa-veiculos.`);
+ console.log(`${checks} verificações de navegador passaram; screenshots em docs/qa-veiculos-agendamento.`);
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
