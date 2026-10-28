@@ -21,7 +21,7 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'public/financeiro-invoices.js'),'utf8')});
  // Exercise the actual legacy navigation wrapper that used to redirect every staff route.
  const bundle=fs.readFileSync(path.join(root,'public/financeiro.bundle.js'),'utf8');
- const legacy=bundle.slice(bundle.indexOf('  function enforceLimitedNav(){'),bundle.indexOf('  const baseBudgets=budgets;',bundle.indexOf('  function enforceLimitedNav(){')));
+ const legacy=bundle.slice(bundle.indexOf('  const isFinanceSector='),bundle.indexOf('  const baseBudgets=budgets;',bundle.indexOf('  function enforceLimitedNav(){')));
  await page.addScriptTag({content:`(function(){const isAdm=()=>user?.role==='Administrador';const normalizeAssignments=()=>{};const syncSectorsFromERP=()=>{};${legacy}})();`});
  // Freeze observers for the sector guard; exercise its actual click listener and reconcile explicitly.
  await page.evaluate(()=>{window.MutationObserver=class{observe(){}};window.setTimeout=fn=>queueMicrotask(fn)});
@@ -29,6 +29,7 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
  await page.evaluate(()=>app());
  await page.locator('[data-view="invoices"]').click();
  await page.locator('#invoiceNew').click();
+ await page.locator('[name=vehicleId]').selectOption('gol');await page.locator('[name=neededAt]').fill('2026-10-29');
  await page.locator('[name="title"]').fill('Pedido de teste');
  await page.locator('#invoiceDescriptionEditor').fill('Descrição de teste');
  await page.locator('[type="submit"]').click();
@@ -46,6 +47,7 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
   await page.waitForFunction(()=>server[0].status==='Aprovada');
   assert.equal(await page.evaluate(()=>db.trips.length),1);
   await page.locator('#invoiceNew').click();
+ await page.locator('[name=vehicleId]').selectOption('gol');await page.locator('[name=neededAt]').fill('2026-10-29');
   await page.locator('[name="title"]').fill('Pedido para rejeitar');
   await page.locator('#invoiceDescriptionEditor').fill('Teste rejeição');
   await page.locator('[type="submit"]').click();
@@ -56,6 +58,7 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
   await page.waitForFunction(()=>server[1].status==='Rejeitada');
   assert.equal(await page.evaluate(()=>db.trips.length),1);
   await page.locator('#invoiceNew').click();
+ await page.locator('[name=vehicleId]').selectOption('gol');await page.locator('[name=neededAt]').fill('2026-10-29');
   await page.locator('[name="title"]').fill('Falha controlada');
   await page.locator('#invoiceDescriptionEditor').fill('Não deve fechar ao falhar');
   await page.evaluate(()=>fail=true);

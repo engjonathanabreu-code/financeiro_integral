@@ -23,7 +23,7 @@ async function snapshot(c){return (await c.query(`select jsonb_build_object(
  'old_functions',(select jsonb_agg(jsonb_build_object('name',p.proname,'source',pg_get_functiondef(p.oid),'acl',p.proacl) order by p.proname) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('is_admin','is_active_user','financeiro_guard_invoice_requests','financeiro_save_invoice_request')),
  'storage_policies',(select coalesce(jsonb_agg(to_jsonb(p) order by policyname),'[]') from pg_policies p where schemaname='storage')) data`)).rows[0].data}
 async function approveExisting(admin,driver,n){
- const approved=approval(n),pending={...approved,status:'Pendente',response:'',createdAt:new Date().toISOString()};
+ const approved={...approval(n),vehicleId:n===12?'hb20':'gol'},pending={...approved,status:'Pendente',response:'',createdAt:new Date().toISOString()};
  delete pending.reviewedAt;delete pending.reviewedBy;delete pending.convertedId;
  await identity(driver,2);
  await driver.query('select financeiro_save_invoice_request($1,$2)',[JSON.stringify(pending),null]);
@@ -40,8 +40,12 @@ async function approveExisting(admin,driver,n){
  const server=(await owner.query("select version(),current_setting('listen_addresses') listen_addresses,current_setting('port') port")).rows[0];
  assert.equal(server.listen_addresses,'','somente socket Unix; sem TCP');
  let before;
- await setup(owner,async c=>{before=await snapshot(c)});
+ await setup(owner,async c=>{before=await snapshot(c)},false);
  assert.deepEqual(await snapshot(owner),before);checks.push('Migração real PG17: dados, funções, grants e políticas antigos preservados');
+ await owner.query(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql'),'utf8'));
+ const afterSchedule=await snapshot(owner);assert.deepEqual(afterSchedule.modules,before.modules);assert.deepEqual(afterSchedule.old_tables,before.old_tables);assert.deepEqual(afterSchedule.storage_policies,before.storage_policies);
+ for(const fn of before.old_functions){const current=afterSchedule.old_functions.find(f=>f.name===fn.name);assert.deepEqual(current.acl,fn.acl);if(!['financeiro_guard_invoice_requests','financeiro_save_invoice_request'].includes(fn.name))assert.deepEqual(current,fn)}
+ checks.push('Correção de agendamento preserva dados, tabelas, RLS, grants e funções de identidade');
  // RLS de suporte é um fixture local. As políticas novas são exatamente as da migração.
  await owner.query('alter table financeiro_estado_modulos enable row level security;create policy fixture_existing_active on financeiro_estado_modulos to authenticated using(is_active_user()) with check(is_active_user())');
  for(const n of [10,11,12,13])await approveExisting(admin,a,n);

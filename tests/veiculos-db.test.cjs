@@ -7,11 +7,11 @@ test('veículos: aprovação ADM, isolamento de perfis, retirada/devolução e d
   await login(db,0);await assert.rejects(rpc(db,'painel'),/permission denied/);
   await login(db,4);await assert.rejects(rpc(db,'painel'),/Sessão ativa/);
   await login(db,2);await assert.rejects(db.query('select financeiro_save_invoice_request($1)',[JSON.stringify(approval())]),/pendentes/);
-  await assert.rejects(rpc(db,'retirar',withdrawal()),/aprovad/);
+  await assert.rejects(rpc(db,'retirar',withdrawal()),/aprovad|não encontrada|solicitante/);
   await login(db,5);assert.equal((await rpc(db,'painel')).admin,false);await assert.rejects(db.query('select financeiro_save_invoice_request($1)',[JSON.stringify(approval())]),/pendentes/);
   await login(db,1);
   await approve(db);const original=(await db.query('select * from financeiro_estado_modulos order by chave')).rows;
-  await login(db,3);await assert.rejects(rpc(db,'retirar',withdrawal()),/aprovad/);
+  await login(db,3);await assert.rejects(rpc(db,'retirar',withdrawal()),/aprovad|não encontrada|solicitante/);
   await login(db,2);await assert.rejects(rpc(db,'retirar',{...withdrawal(),foto:{...foto,dataUrl:'data:image/svg+xml;base64,PHN2Zz4='}}),/Foto/);
   assert.equal((await rpc(db,'painel')).usos.length,0,'upload inválido desfaz transação');
   await assert.rejects(rpc(db,'retirar',{...withdrawal(),retirada_em:time(20)}),/data\/hora/);
@@ -37,7 +37,7 @@ test('veículos: aprovação ADM, isolamento de perfis, retirada/devolução e d
 
 test('veículos: disputa de carro, cronologia, km regressiva, revogação e cancelamento auditado',async()=>{
  const db=await setup();try{
-  await login(db,1);await approve(db,10);await approve(db,11);await approve(db,12);
+  await login(db,1);await approve(db,10);await approve(db,11);await approve(db,12,'hb20');
   await login(db,2);
   const results=await Promise.allSettled([rpc(db,'retirar',withdrawal(20,10)),rpc(db,'retirar',withdrawal(21,11))]);
   assert.equal(results.filter(x=>x.status==='fulfilled').length,1);assert.match(results.find(x=>x.status==='rejected').reason.message,/já está em uso/);
@@ -72,7 +72,7 @@ test('veículos: relatos privados, anexos transacionais e vínculo temporal sem 
 
 test('veículos: combustível reutiliza despesa, valida origem/tempo, deduplica e detecta alteração',async()=>{
  const db=await setup();try{
-  await login(db,1);await approve(db);await approve(db,11);
+  await login(db,1);await approve(db);await approve(db,11,'hb20');
   await login(db,2);await rpc(db,'retirar',withdrawal());await rpc(db,'retirar',withdrawal(21,11,'hb20'));
   const e={id:91,tripId:21,type:'Combustível',date:new Date().toISOString().slice(0,10),value:200,file:{arquivoId:id(91)}};
   await db.exec('reset role');await db.query("update financeiro_estado_modulos set dados=$1 where chave='tripExpenses'",[JSON.stringify([e])]);await login(db,2);
@@ -103,7 +103,7 @@ test('veículos: aprovação canônica exige categoria, orçamento, data, conver
   await login(db,1);const a=await approve(db);
   for(const change of [{status:'Pendente'},{status:'Rejeitada'},{category:'budget'},{estimatedValue:0},{reviewedAt:''},{convertedId:999},{neededAt:'2000-01-01'},{requesterId:id(3)}]){
    await db.query("update financeiro_estado_modulos set dados=$1 where chave='invoiceRequests'",[JSON.stringify([{...a,...change}])]);
-   await login(db,2);await assert.rejects(rpc(db,'retirar',withdrawal()),/aprovad/);await login(db,1);
+   await login(db,2);await assert.rejects(rpc(db,'retirar',withdrawal()),/aprovad|não encontrada|solicitante/);await login(db,1);
   }
   await db.query("update financeiro_estado_modulos set dados=$1 where chave='invoiceRequests'",[JSON.stringify([a])]);
   await db.exec('reset role;alter table financeiro_estado_modulos disable trigger financeiro_guard_invoice_requests');

@@ -1,0 +1,10 @@
+{
+  "result": "passed",
+  "checks": 24,
+  "viewports": [
+    1440,
+    390
+  ],
+  "network": "totalmente interceptada; dados sintéticos",
+  "flow": "solicitar → aprovar/converter → bloqueio futuro → completar legado → retirar carro correto"
+}
