@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {setup,login,rpc,id,approve,withdrawal}=require('./veiculos-fixtures.cjs');
-const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261113170752_financeiro_veiculos_solicitante_canonico.sql'),'utf8');
+const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261113173933_financeiro_veiculos_solicitante_canonico.sql'),'utf8');
 const rollback=fs.readFileSync(path.join(__dirname,'../supabase/rollback/financeiro_veiculos_solicitante_canonico.sql'),'utf8');
 const save=(db,a,expected)=>db.query('select financeiro_save_invoice_request($1,$2)',[JSON.stringify(a),JSON.stringify(expected)]);
 async function scenario(db){

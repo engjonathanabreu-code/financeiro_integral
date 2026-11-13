@@ -42,4 +42,14 @@ A autorização canônica nova é específica da retirada. Ela não corrige cada
 
 A validação de aprovação no frontend melhora o fluxo normal; não substitui uma autorização backend. O guard de Solicitações continua restrito ao ADM e a retirada continua validando o orçamento no banco. A ordem de persistência da aprovação e da viagem no legado continua a mesma; não foi reestruturada nesta correção.
 
-Antes de qualquer publicação, revalidar a versão da função em uso, testar em Supabase isolado com JWT/RLS reais e completar QA de navegador. Migração: `supabase/migrations/20261113170752_financeiro_veiculos_solicitante_canonico.sql`; reversão: `supabase/rollback/financeiro_veiculos_solicitante_canonico.sql`. Aplicação e publicação dependem de autorização específica fora desta etapa. O rollback restaura a regra anterior e preserva todos os dados.
+Antes de qualquer publicação, revalidar a versão da função em uso, testar em Supabase isolado com JWT/RLS reais e completar QA de navegador. Migração: `supabase/migrations/20261113173933_financeiro_veiculos_solicitante_canonico.sql`; reversão: `supabase/rollback/financeiro_veiculos_solicitante_canonico.sql`. Aplicação e publicação dependem de autorização específica fora desta etapa. O rollback restaura a regra anterior e preserva todos os dados.
+
+## Publicação autorizada em 13/11/2026
+
+A correção foi aplicada no banco e publicada pelo PR #15, merge `d64911ee40c57636af3369ee0b786a57951ab6a2`. O registro efetivo do Supabase é `20261113173933_financeiro_veiculos_solicitante_canonico`; o nome do arquivo e as referências foram alinhados a esse registro, preservando integralmente seu SQL.
+
+Validação remota por consultas SQL sem escrita de dados: solicitação de valor positivo sem impedimento, orçamento zero bloqueado, outro usuário sem visualização e com recusa por não ser solicitante. Não foi iniciado uso real. Os hashes dos módulos e veículos, a contagem de três usos e a ACL da função permaneceram iguais antes/depois. A validação usou contexto de identidade no banco, sem login real do usuário nem teste de retirada.
+
+O deploy do merge #15 ficou READY em produção (`dpl_5zPiA3bpfLJEG4CXVM7skAkxcR56`); o domínio principal respondeu 200 e serviu o JavaScript idêntico ao revisado. Check Vercel aprovado, sem workflows GitHub Actions. Não foram encontrados logs error/fatal desse deploy na janela consultada. Health advisor sem alertas. A consulta de drains retornou 404, portanto sua configuração não foi confirmada.
+
+As limitações de teste de navegador e a falha preexistente do checksum continuam registradas acima. O rollback SQL permanece protegido pelo hash e preserva dados; para o frontend, a base anterior à correção é `0c2a7ee66824d24e34806990781ff81c07f43d1e`. Nenhuma reversão foi necessária.
