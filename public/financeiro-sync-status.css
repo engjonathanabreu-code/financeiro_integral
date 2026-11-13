@@ -1,0 +1,18 @@
+/* Estado do salvamento compartilhado e revisão de conflitos (financeiro-cloud-storage.js).
+   Usa os tokens do design system; o tema escuro redefine os mesmos tokens. */
+.fin-save-status{position:fixed;left:16px;bottom:16px;z-index:9998;display:flex;align-items:center;gap:8px;max-width:min(560px,calc(100vw - 32px));padding:8px 12px;border-radius:var(--ds-r-card,12px);border:1px solid var(--ds-border,#D6E2DF);background:var(--ds-surface,#fff);color:var(--ds-text,#183552);box-shadow:var(--ds-shadow-modal,0 8px 24px rgba(24,53,82,.14));font:500 13px/1.4 var(--ds-font,system-ui,sans-serif)}
+.fin-save-status[hidden]{display:none}
+.fin-save-status.is-salvo{border-color:var(--ds-success-border,#BFE2CC);background:var(--ds-success-bg,#E4F3EA);color:var(--ds-success,#1E7B45)}
+.fin-save-status.is-pendente,.fin-save-status.is-conflito{border-color:var(--ds-warning-border,#F4D3A8);background:var(--ds-warning-bg,#FDF0DF);color:var(--ds-warning,#B25E09)}
+.fin-save-status.is-falha{border-color:var(--ds-danger-border,#F0C3BF);background:var(--ds-danger-bg,#FBE7E6);color:var(--ds-danger,#B42318)}
+.fin-save-status .btn{flex:none}
+.fin-save-blocked{position:fixed;left:16px;right:16px;bottom:64px;z-index:9999;padding:12px 14px;border-radius:var(--ds-r-card,12px);border:1px solid var(--ds-warning-border,#F4D3A8);background:var(--ds-warning-bg,#FDF0DF);color:var(--ds-warning,#7a3e00);box-shadow:var(--ds-shadow-modal,0 6px 24px rgba(0,0,0,.15));font:14px/1.4 var(--ds-font,system-ui,sans-serif)}
+.fin-save-blocked p{margin:0 0 8px}
+.fin-save-blocked .btn{margin-right:8px}
+.fin-conflict-modal{max-width:640px}
+.fin-conflict-item{padding:12px 0;border-bottom:1px solid var(--ds-border,#D6E2DF)}
+.fin-conflict-item:last-child{border-bottom:0}
+.fin-conflict-item p{margin:6px 0;word-break:break-word;color:var(--ds-muted,#5B6B7B)}
+.fin-conflict-actions{display:flex;flex-wrap:wrap;gap:8px}
+.fin-save-status .btn:focus-visible,.fin-save-blocked .btn:focus-visible,.fin-conflict-modal .btn:focus-visible{outline:none;box-shadow:var(--ds-focus,0 0 0 3px rgba(17,94,89,.18))}
+@media (max-width:740px){.fin-save-status{left:8px;right:8px;bottom:8px;max-width:none}.fin-save-blocked{left:8px;right:8px;bottom:56px}}

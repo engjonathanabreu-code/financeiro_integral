@@ -2,11 +2,11 @@ const {requireProfile}=require('../lib/auth');
 const {resolveFile}=require('../lib/ai-file');
 module.exports = async function handler(req,res){
   if(req.method!=='POST') return res.status(405).json({ok:false,error:'METHOD_NOT_ALLOWED'});
-  if(!await requireProfile(req,res,'ativo'))return;
+  const auth=await requireProfile(req,res,'ativo');if(!auth)return;
   if(!process.env.OPENAI_API_KEY) return res.status(500).json({ok:false,error:'OPENAI_API_KEY_NOT_CONFIGURED'});
   try{
     const {fileName='',sector='',context='',candidates=[]}=req.body||{};
-    const image=await resolveFile(req.body||{},'image');
+    const image=await resolveFile(req.body||{},'image',auth.user.id);
     const clean=(Array.isArray(candidates)?candidates:[]).slice(0,200).map(c=>({id:String(c.id||''),date:String(c.date||''),description:String(c.description||'').slice(0,180),value:Number(c.value||0),source:String(c.source||'')}));
     const schema={type:'object',additionalProperties:false,properties:{value:{type:'number'},expense_type:{type:'string'},origin:{type:'string'},description:{type:'string'},date:{type:'string'},confidence:{type:'integer',minimum:0,maximum:100},duplicate:{anyOf:[{type:'null'},{type:'object',additionalProperties:false,properties:{id:{type:'string'},label:{type:'string'},reason:{type:'string'}},required:['id','label','reason']}]},notes:{type:'string'}},required:['value','expense_type','origin','description','date','confidence','duplicate','notes']};
     const travel=context==='viagem';

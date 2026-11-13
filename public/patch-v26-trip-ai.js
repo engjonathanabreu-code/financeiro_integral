@@ -16,7 +16,7 @@ const documents=id=>(db.tripDocuments||[]).filter(d=>same(d.tripId,id));
 let selectedTripId=null;
 function persist(){if(typeof save==='function')save();}
 function statusBadge(e){const s=e.status||'';if(/revisar|duplic/i.test(s))return `<span class="badge warn">${E(s)}</span>`;if(/confirm|ok/i.test(s))return `<span class="badge ok">${E(s)}</span>`;return `<span class="badge">${E(s||'Registrado')}</span>`}
-function tripVisible(t){try{if(isAdm())return true;const fa=window.IntegralFinanceSectorAccess;if(fa?.isFinance?.())return !!fa.directlyAssigned(t);const lu=(db.usersMvp||[]).find(u=>u.erpId===user?.erpId||String(u.email||'').toLowerCase()===String(user?.email||'').toLowerCase()||u.name===user?.name);return (Array.isArray(t.assigned)?t.assigned:[]).map(String).includes(String(lu?.id))||(!!t.sector&&String(t.sector).toLowerCase()===String(user?.sector||'').toLowerCase())}catch{return false}}
+function tripVisible(t){try{if(isAdm()||window.IntegralFinanceRequests?.ownsApprovedTrip(t))return true;const fa=window.IntegralFinanceSectorAccess;if(fa?.isFinance?.())return !!fa.directlyAssigned(t);const lu=(db.usersMvp||[]).find(u=>u.erpId===user?.erpId||String(u.email||'').toLowerCase()===String(user?.email||'').toLowerCase()||u.name===user?.name);return (Array.isArray(t.assigned)?t.assigned:[]).map(String).includes(String(lu?.id))||(!!t.sector&&String(t.sector).toLowerCase()===String(user?.sector||'').toLowerCase())}catch{return false}}
 window.IntegralTripVisible=tripVisible;
 
 function tripForm(id){
@@ -96,6 +96,14 @@ function renderTrips(){
   if(q('#trip26New'))q('#trip26New').onclick=()=>tripForm();qa('[data-trip26-open]').forEach(b=>b.onclick=()=>tripDetail(b.dataset.trip26Open));
 }
 
-function renderCurrentView(){return selectedTripId===null?renderTrips():tripDetail(selectedTripId)}
+function renderCurrentView(){
+  const selected=selectedTripId;
+  const result=selected===null?renderTrips():tripDetail(selected);
+  window.IntegralFinanceRequests?.refresh().then(changed=>{
+    if(!changed||view!=='trips'||selectedTripId!==selected)return;
+    if(selected===null)renderTrips();else tripDetail(selected);
+  });
+  return result;
+}
 try{trips=renderCurrentView}catch{}window.trips=renderCurrentView;window.IntegralFinanceTripsAI={render:renderCurrentView,list:renderTrips,detail:tripDetail,upload:uploadWithAI};
 })();

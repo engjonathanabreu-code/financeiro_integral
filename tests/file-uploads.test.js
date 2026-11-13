@@ -12,7 +12,8 @@ function setup(uploadError){
   const window={fetch:fetcher,IntegralERP:{sb:{auth:{getUser:async()=>({data:{user:{id:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}}})},storage:{from:()=>bucket}}}};
   vm.runInNewContext(source,{window,crypto:webcrypto,Uint8Array});return {api:window.IntegralFileUploads,calls};
 }
-function options(size,key='image'){return {method:'POST',body:JSON.stringify({[key]:'data:application/pdf;base64,'+Buffer.alloc(size,65).toString('base64'),fileName:'receipt.pdf',context:'viagem'})}}
+const pdfBytes=size=>{const bytes=Buffer.alloc(size,65);bytes.write('%PDF-');return bytes};
+function options(size,key='image'){return {method:'POST',body:JSON.stringify({[key]:'data:application/pdf;base64,'+pdfBytes(size).toString('base64'),fileName:'receipt.pdf',context:'viagem'})}}
 test('20 MB travels through private storage; the API request stays small and bytes are preserved',async()=>{
   const {api,calls}=setup();await api.fetch('/api/ai-receipt',options(MAX_FILE));
   assert.equal(calls.uploads[0].file.size,MAX_FILE);assert.equal(new Uint8Array(await calls.uploads[0].file.arrayBuffer())[MAX_FILE-1],65);
@@ -24,10 +25,25 @@ test('receivables uses the same large-file transport',async()=>{const {api,calls
 test('storage failures stop analysis instead of losing the original',async()=>{const {api,calls}=setup(new Error('permission denied'));await assert.rejects(api.fetch('/api/ai-receipt',options(3*1024*1024+1)),/permission denied/);assert.equal(calls.requests.length,0)});
 test('repeated identical uploads reuse the content-addressed original',async()=>{const {api,calls}=setup({statusCode:'409'});await api.fetch('/api/ai-receipt',options(3*1024*1024+1));assert.equal(calls.requests[0].fileUrl,signedUrl)});
 test('server rejects arbitrary external URLs and unsigned storage',async()=>{for(const fileUrl of ['https://example.com/file','http://127.0.0.1/file',signedUrl.replace('?token=test',''),signedUrl.replace('ycdsyilyvaxslkwbkxyo','attacker')])await assert.rejects(resolveFile({fileUrl},'image'),/INVALID_FILE_URL/)});
-test('server enforces exact decoded byte limit for inline originals',async()=>{await assert.rejects(resolveFile(JSON.parse(options(MAX_FILE+1).body),'image'),/20 MB/);assert.equal((await resolveFile(JSON.parse(options(5).body),'image')).split(',')[1],Buffer.alloc(5,65).toString('base64'))});
+test('server enforces exact decoded byte limit for inline originals',async()=>{await assert.rejects(resolveFile(JSON.parse(options(MAX_FILE+1).body),'image'),/20 MB/);assert.equal((await resolveFile(JSON.parse(options(5).body),'image')).split(',')[1],pdfBytes(5).toString('base64'))});
 test('server downloads the signed original, checks size and refuses redirects',async(t)=>{
-  let params;t.mock.method(global,'fetch',async(url,opts)=>{params=opts;return new Response(Buffer.alloc(MAX_FILE,65),{headers:{'Content-Type':'application/pdf'}})});
-  const result=await resolveFile({fileUrl:signedUrl},'image');assert.equal(Buffer.from(result.split(',')[1],'base64').length,MAX_FILE);assert.equal(params.redirect,'error');
-  global.fetch=async()=>new Response('x',{headers:{'Content-Length':String(MAX_FILE+1)}});await assert.rejects(resolveFile({fileUrl:signedUrl},'image'),/20 MB/);
-  global.fetch=async()=>new Response(Buffer.alloc(MAX_FILE+1));await assert.rejects(resolveFile({fileUrl:signedUrl},'image'),/20 MB/);
+  let params;t.mock.method(global,'fetch',async(url,opts)=>{params=opts;return new Response(pdfBytes(MAX_FILE),{headers:{'Content-Type':'application/pdf'}})});
+  const result=await resolveFile({fileUrl:signedUrl},'image','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');assert.equal(Buffer.from(result.split(',')[1],'base64').length,MAX_FILE);assert.equal(params.redirect,'error');
+  global.fetch=async()=>new Response('x',{headers:{'Content-Length':String(MAX_FILE+1)}});await assert.rejects(resolveFile({fileUrl:signedUrl},'image','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),/20 MB/);
+  global.fetch=async()=>new Response(Buffer.alloc(MAX_FILE+1));await assert.rejects(resolveFile({fileUrl:signedUrl},'image','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),/20 MB/);
+});
+
+test('signed file for another user is rejected before contacting Storage', async () => {
+  await assert.rejects(resolveFile({fileUrl:signedUrl},'image','bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),error=>error.statusCode===403);
+});
+
+test('mismatched declared MIME and content are rejected', async()=>{
+ await assert.rejects(resolveFile({image:'data:image/png;base64,JVBERi0x'},'image'),error=>error.statusCode===415);
+});
+
+test('expired signed file is rejected without a fallback download',async(t)=>{
+  let attempts=0;
+  t.mock.method(global,'fetch',async()=>{attempts++;return new Response('',{status:403})});
+  await assert.rejects(resolveFile({fileUrl:signedUrl},'image','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),/renovar o acesso/);
+  assert.equal(attempts,1);
 });
