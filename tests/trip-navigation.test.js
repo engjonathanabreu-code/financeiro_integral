@@ -23,7 +23,7 @@ test('cloud initialization finishing after Open refreshes the same detail, not t
  Object.assign(s.context,{structuredClone,localStorage:{getItem:()=>null,setItem(){}},setInterval:()=>1,clearInterval(){},setTimeout,clearTimeout,console,CustomEvent:class{}});
  s.context.document.dispatchEvent=()=>{};s.context.addEventListener=()=>{};
  s.context.render=()=>{refreshes++;s.context.trips()};
- s.context.IntegralERP={sb:{auth:{getSession:async()=>({data:{session:{user:{id:'test'}}}})},from:()=>({select:()=>response,upsert:()=>assert.fail('Existing records must not be rewritten')})}};
+ s.context.IntegralERP={sb:{rpc:async()=>({error:{code:'PGRST202'}}),auth:{getSession:async()=>({data:{session:{user:{id:'test'}}}})},from:()=>({select:()=>response,upsert:()=>assert.fail('Existing records must not be rewritten')})}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../public/financeiro-cloud-storage.js'),'utf8'),s.context);
  const loading=s.context.IntegralFinanceCloudStorage.initialize();
  s.api.detail(1);

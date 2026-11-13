@@ -24,6 +24,7 @@
   }
 
   async function removeAccount(accountId, modal, button){
+    if(typeof user==='undefined'||user?.role!=='Administrador')return;
     const d=getDb();
     const account=(d?.accountMasters||[]).find(a=>sameId(a.id,accountId));
     if(!d||!account) return;
@@ -51,6 +52,7 @@
   }
 
   function decorateModal(accountId){
+    if(typeof user==='undefined'||user?.role!=='Administrador')return;
     if(accountId===undefined||accountId===null) return;
     setTimeout(()=>{
       const modals=[...document.querySelectorAll('.modal-backdrop')];

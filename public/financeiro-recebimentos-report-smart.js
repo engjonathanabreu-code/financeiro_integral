@@ -6,6 +6,36 @@ const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUp
 const digits=s=>String(s||'').replace(/\D/g,'');
 const fileData=file=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file)});
 const isSpreadsheet=file=>/\.(csv|xlsx|xls|xlsb)$/i.test(file?.name||'');
+const MAX_REPORT_BYTES=20*1024*1024;
+async function validateReportFile(file){
+ if(!file.size)throw new Error('O arquivo está vazio.');
+ if(file.size>MAX_REPORT_BYTES)throw new Error('Use um relatório de até 20 MB.');
+ const extension=(file.name.match(/\.([a-z0-9]+)$/i)?.[1]||'').toLowerCase();
+ const pdf=extension==='pdf'||(!isSpreadsheet(file)&&file.type==='application/pdf');
+ if(!pdf&&!isSpreadsheet(file))throw new Error('Selecione um PDF, CSV ou Excel.');
+ const header=new Uint8Array(await file.slice(0,1024).arrayBuffer());
+ const starts=(...bytes)=>bytes.every((byte,index)=>header[index]===byte);
+ const prefix=new TextDecoder().decode(header);
+ if(pdf){
+  if(!prefix.startsWith('%PDF-'))throw new Error('O arquivo selecionado não é um PDF válido.');
+  return;
+ }
+ const zip=starts(0x50,0x4b,0x03,0x04);
+ if(extension==='csv'){
+  const unicodeText=starts(0xff,0xfe)||starts(0xfe,0xff);
+  if(zip||prefix.startsWith('%PDF-')||(!unicodeText&&header.includes(0))){
+   throw new Error('O arquivo selecionado não é um CSV válido.');
+  }
+  return;
+ }
+ const compound=starts(0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1);
+ const biff=header.length>=4&&header[0]===0x09&&[0,2,4,8].includes(header[1]);
+ const legacyMarkup=/^\s*(?:<\?xml\b[\s\S]*?)?(?:<Workbook\b|<!doctype\s+html\b|<html\b|<table\b)/i.test(prefix);
+ if(extension==='xls' ? !(compound||biff||legacyMarkup) : !zip){
+  throw new Error('O conteúdo da planilha não corresponde ao formato selecionado.');
+ }
+}
+
 function close(){document.querySelector('#recebSmartReport')?.remove()}
 function modal(){close();const d=document.createElement('div');d.id='recebSmartReport';d.className='modal-backdrop';d.innerHTML=`<section class="modal"><header class="modal-head"><h3>Importar relatório de pagamentos</h3><button class="btn icon ghost" data-close>×</button></header><div class="modal-body"><div class="form-grid"><div class="field full"><label>Relatório (PDF, CSV ou Excel)</label><input id="smartPayFile" type="file" accept="application/pdf,.csv,.xlsx,.xls,.xlsb"></div><div class="field full"><div class="notice">Cada título liquidado é conciliado com a <b>parcela do vencimento informado no relatório</b>, inclusive parcelas de meses futuros. Se o mesmo cliente pagar várias parcelas, cada vencimento é marcado separadamente. O valor recebido é registrado sem substituir o valor original da parcela.<br><br>O PDF do relatório bancário (seção Liquidação) é lido direto no navegador, sem IA. Planilha CSV/Excel: use as colunas <code>documento</code>, <code>codigo_processo</code>, <code>nome</code>, <code>parcela_vencimento</code>, <code>valor_pago</code> e <code>data_pagamento</code>.</div></div><div id="smartPayStatus" class="field full"></div></div></div><footer class="modal-foot"><button class="btn ghost" data-close>Fechar</button><button class="btn" id="smartPayImport">Importar</button></footer></section>`;document.body.appendChild(d);d.querySelectorAll('[data-close]').forEach(x=>x.onclick=close);d.querySelector('#smartPayImport').onclick=run}
 async function responseJsonSafe(rr){const raw=await rr.text();let j=null;try{j=raw?JSON.parse(raw):null}catch{}if(j)return j;if(rr.status===504)throw new Error('O relatório demorou além do limite do servidor. A leitura foi otimizada; tente novamente após atualizar a página.');throw new Error(raw&&raw.length<240?raw:`Falha do servidor ao processar o relatório (HTTP ${rr.status}).`)}
@@ -79,10 +109,12 @@ async function extractReportRows(pdf){
  return rows;
 }
 async function parsePdfLocally(file){
- if(!window.pdfjsLib)throw new Error('Leitor de PDF não carregou. Atualize a página e tente novamente.');
- window.pdfjsLib.GlobalWorkerOptions.workerSrc||(window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js');
- const buf=await file.arrayBuffer(),pdf=await window.pdfjsLib.getDocument({data:buf}).promise;
- const rawRows=await extractReportRows(pdf);
+ if(!window.IntegralFinancePdf)throw new Error('Leitor de PDF não carregou. Atualize a página e tente novamente.');
+ const pdfjs=await window.IntegralFinancePdf.load();
+ const task=pdfjs.getDocument({...window.IntegralFinancePdf.options,data:await file.arrayBuffer()});
+ let rawRows;
+ try{rawRows=await extractReportRows(await task.promise);}
+ finally{await task.destroy();}
  const out=[];
  for(const raw of rawRows){
   const l=cleanReportRow(raw);
@@ -103,6 +135,7 @@ async function parsePdfLocally(file){
  return out;
 }
 async function run(){const file=document.querySelector('#smartPayFile')?.files?.[0],status=document.querySelector('#smartPayStatus'),btn=document.querySelector('#smartPayImport');if(!file)return alert('Selecione o arquivo.');btn.disabled=true;status.textContent='Lendo relatório e conciliando parcelas...';try{
+ await validateReportFile(file);
  let entries;
  if(isSpreadsheet(file)){
   entries=await parseSpreadsheetFile(file);
@@ -111,8 +144,9 @@ async function run(){const file=document.querySelector('#smartPayFile')?.files?.
    entries=await parsePdfLocally(file);
    if(!entries.length)throw new Error('EMPTY');
   }catch(localErr){
+   if(localErr.name==='InvalidPDFException'||localErr.name==='PasswordException')throw localErr;
    status.textContent='Leitura direta não reconheceu o layout; tentando com IA...';
-   const data=await fileData(file),rr=await window.IntegralFileUploads.fetch('/api/ai-receivables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:data,fileName:file.name,mode:'payments'})}),j=await responseJsonSafe(rr);if(!rr.ok||!j?.ok)throw new Error(j?.details||j?.error||'Falha na leitura do relatório');
+   const data=await fileData(file.slice(0,file.size,'application/pdf')),rr=await window.IntegralFileUploads.fetch('/api/ai-receivables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:data,fileName:file.name,mode:'payments'})}),j=await responseJsonSafe(rr);if(!rr.ok||!j?.ok)throw new Error(j?.details||j?.error||'Falha na leitura do relatório');
    entries=j.entries||[];
   }
  }

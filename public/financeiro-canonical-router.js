@@ -9,7 +9,7 @@ function currentView(){try{return typeof view!=='undefined'?view:window.view}cat
 function setView(id){try{view=id}catch{}window.view=id}
 function currentUser(){try{return typeof user!=='undefined'?user:window.user}catch{return window.user}}
 function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()}
-function canSeeReceivables(){const u=currentUser();return norm(u?.role)==='administrador'||norm(u?.tipo)==='administrador'||norm(u?.role)==='financeiro'||norm(u?.tipo)==='financeiro'||norm(u?.setor)==='financeiro'||norm(u?.sector)==='financeiro'}
+function canSeeReceivables(){return window.IntegralRecebimentosAccess?.allowed()===true}
 function isAdmin(){return norm(currentUser()?.role||currentUser()?.tipo)==='administrador'}
 function setActive(id){qa('.nav [data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===id))}
 function ensureNav(){
@@ -68,6 +68,7 @@ function requestCanonical(id){
 document.addEventListener('click',ev=>{
   const btn=ev.target.closest?.('.nav [data-view]');if(!btn)return;
   const id=btn.dataset.view;if(!canonicalViews.has(id))return;
+  if(['receivables','boletos'].includes(id)&&!canSeeReceivables()){ev.preventDefault();ev.stopImmediatePropagation();return}
   ev.preventDefault();ev.stopImmediatePropagation();
   setView(id);ensureNav();setActive(id);requestCanonical(id);
 },true);

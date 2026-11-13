@@ -3,7 +3,7 @@ const {chromium}=require('playwright');
 const fs=require('node:fs'),assert=require('node:assert/strict'),path=require('node:path');
 const root=path.join(__dirname,'../..');
 (async()=>{
-const browser=await chromium.launch({headless:true,channel:process.env.BROWSER_CHANNEL||'chrome'});
+const browser=await chromium.launch({headless:true,...(process.env.BROWSER_EXECUTABLE_PATH?{executablePath:process.env.BROWSER_EXECUTABLE_PATH}:{channel:process.env.BROWSER_CHANNEL||'chrome'})});
 try{
 for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing','Topografia','Pós-protocolo','']){
  const page=await browser.newPage();
@@ -11,12 +11,24 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
  await page.goto('https://fixture.test/');
  await page.evaluate(sector=>{
   window.user={role:'Funcionário',sector,setor:sector,erpId:'staff',name:'Funcionário'};
-  window.view='invoices';window.db={invoiceRequests:[],usersMvp:[],trips:[],budgetRecords:[],accountMasters:[],accountPayments:[]};
+  window.view='invoices';window.db={invoiceRequests:[],usersMvp:[{id:1,erpId:'staff',active:true}],trips:[],budgetRecords:[],accountMasters:[],accountPayments:[]};
   window.adminNav=[['trips','Viagens']];window.staffNav=[['trips','Viagens']];
   window.save=()=>{};window.title=()=>{};window.render=()=>{};
+  window.accountRoles=[];window.accounts=()=>accountRoles.push(user.role);
   window.app=()=>{document.querySelector('.nav').innerHTML=staffNav.map(([id,label])=>`<button data-view="${id}">${label}</button>`).join('');document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});render()};
   window.alerts=[];window.alert=m=>alerts.push(m);window.confirm=()=>true;
-  window.server=[];window.fail=false;window.IntegralERP={sb:{auth:{getUser:async()=>({data:{user:{id:user.erpId}}})},rpc:async(name,args)=>{if(fail)return {error:{message:'Servidor recusou'}};if(args.p_expected){const i=server.findIndex(x=>x.id===args.p_request.id);server[i]=structuredClone(args.p_request)}else server.push(structuredClone(args.p_request));return {data:structuredClone(server)}}}};
+  window.server=[];window.serverTrips=[];window.fail=false;
+  window.IntegralFinanceCloudStorage={refresh:async()=>{db.trips=structuredClone(serverTrips)}};
+  window.IntegralERP={sb:{auth:{getUser:async()=>({data:{user:{id:user.erpId}}})},rpc:async(name,args)=>{if(name==='financeiro_listar_solicitacoes')return {data:structuredClone(server)};if(fail)return {error:{message:'Servidor recusou'}};
+   if(name==='financeiro_revisar_solicitacao'){
+    const i=server.findIndex(x=>x.id===args.p_id);
+    if(i<0||server[i].status!=='Pendente')return {error:{message:'Solicitação atualizada'}};
+    const convertedId=args.p_aprovar?88:undefined;
+    server[i]={...server[i],status:args.p_aprovar?'Aprovada':'Rejeitada',response:args.p_resposta,convertedId};
+    if(args.p_aprovar)serverTrips.push({id:convertedId,invoiceRequestId:args.p_id});
+    return {data:structuredClone(server)};
+   }
+   if(args.p_expected){const i=server.findIndex(x=>x.id===args.p_request.id);server[i]=structuredClone(args.p_request)}else server.push(structuredClone(args.p_request));return {data:structuredClone(server)}}}};
  },sector);
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'public/financeiro-invoices.js'),'utf8')});
  // Exercise the actual legacy navigation wrapper that used to redirect every staff route.
@@ -27,9 +39,14 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
  await page.evaluate(()=>{window.MutationObserver=class{observe(){}};window.setTimeout=fn=>queueMicrotask(fn)});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'public/financeiro-finance-sector-access.js'),'utf8')});
  await page.evaluate(()=>app());
+ if(sector==='Financeiro'){
+  await page.locator('[data-view="accounts"]').click();
+  assert.deepEqual(await page.evaluate(()=>accountRoles),['Funcionário']);
+ }
  await page.locator('[data-view="invoices"]').click();
  await page.locator('#invoiceNew').click();
  await page.locator('[name=vehicleId]').selectOption('gol');await page.locator('[name=neededAt]').fill('2026-10-29');
+ await page.locator('[name="estimatedValue"]').fill('10');
  await page.locator('[name="title"]').fill('Pedido de teste');
  await page.locator('#invoiceDescriptionEditor').fill('Descrição de teste');
  await page.locator('[type="submit"]').click();
@@ -48,7 +65,8 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
   assert.equal(await page.evaluate(()=>db.trips.length),1);
   await page.locator('#invoiceNew').click();
  await page.locator('[name=vehicleId]').selectOption('gol');await page.locator('[name=neededAt]').fill('2026-10-29');
-  await page.locator('[name="title"]').fill('Pedido para rejeitar');
+  await page.locator('[name="estimatedValue"]').fill('10');
+ await page.locator('[name="title"]').fill('Pedido para rejeitar');
   await page.locator('#invoiceDescriptionEditor').fill('Teste rejeição');
   await page.locator('[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelectorAll('[data-invoice-id]').length===2);
@@ -59,7 +77,8 @@ for(const sector of ['Financeiro','Projetos','Comercial','Jurídico','Marketing'
   assert.equal(await page.evaluate(()=>db.trips.length),1);
   await page.locator('#invoiceNew').click();
  await page.locator('[name=vehicleId]').selectOption('gol');await page.locator('[name=neededAt]').fill('2026-10-29');
-  await page.locator('[name="title"]').fill('Falha controlada');
+  await page.locator('[name="estimatedValue"]').fill('10');
+ await page.locator('[name="title"]').fill('Falha controlada');
   await page.locator('#invoiceDescriptionEditor').fill('Não deve fechar ao falhar');
   await page.evaluate(()=>fail=true);
   await page.locator('[type="submit"]').click();

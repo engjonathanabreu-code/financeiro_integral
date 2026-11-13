@@ -5,7 +5,11 @@
 const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
 function currentUser(){try{return typeof user!=='undefined'?user:window.user}catch{return window.user}}
 function financeAccessApi(){return window.IntegralFinanceSectorAccess}
-function allowed(){const u=currentUser(),role=norm(u?.role||u?.tipo||u?.type),sector=norm(u?.setor||u?.sector);if(role==='administrador'||role==='financeiro'||sector==='financeiro')return true;try{if(financeAccessApi()?.isFinance?.())return true}catch{}return false}
+function allowed(){
+  const u=currentUser(),role=norm(u?.tipo||u?.type||u?.role),sector=norm(u?.setor||u?.sector);
+  if(!u||u.ativo===false||role.startsWith('diretor'))return false;
+  return role==='administrador'||role==='financeiro'||sector==='financeiro'||financeAccessApi()?.isFinance?.()===true;
+}
 function profilePending(){const u=currentUser();if(!u)return false;const role=norm(u?.role||u?.tipo||u?.type),sector=norm(u?.setor||u?.sector);return role!=='administrador'&&!sector&&!u?.erpId&&!!window.IntegralERP?.sb}
 function profileReady(){
   const u=currentUser();if(!u)return false;

@@ -26,6 +26,7 @@
   }
 
   function addDeleteAction(row){
+    if(typeof user==='undefined'||user?.role!=='Administrador')return;
     if(!row || row.dataset.lineDeleteReady==='1') return;
     const id=paymentIdFromRow(row);
     if(!id) return;
@@ -48,6 +49,7 @@
     }
 
     const remove=async e=>{
+      if(typeof user==='undefined'||user?.role!=='Administrador')return;
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation?.();
