@@ -27,12 +27,12 @@ test('marcador de gráficos é removido do texto e só aceita ids conhecidos',()
  assert.deepEqual(chartsFrom('Sem gráfico'),{texto:'Sem gráfico',graficos:[]});
 });
 
-const auth=async(url)=>{if(url.includes('/auth/'))return {ok:true,json:async()=>({id:'adm'})};if(url.includes('/profiles?'))return {ok:true,json:async()=>[{tipo:'Administrador',ativo:true}]};if(url.includes('/rpc/'))return {ok:true,json:async()=>base};if(url.includes('/fin_receb_'))return {ok:true,json:async()=>[]};return null};
+const auth=async(url)=>{if(url.includes('/auth/'))return {ok:true,json:async()=>({id:'adm'})};if(url.includes('/profiles?'))return {ok:true,json:async()=>[{tipo:'Administrador',ativo:true}]};if(url.includes('/financeiro_reservar_cota_ia'))return Response.json(true);if(url.includes('/rpc/'))return {ok:true,json:async()=>base};if(url.includes('/fin_receb_'))return {ok:true,json:async()=>[]};return null};
 
 test('modo indicadores responde sem IA; relatório devolve JSON estruturado; leitura fica em cache na conversa',async()=>{
  const previous=global.fetch,key=process.env.OPENAI_API_KEY;let rpc=0,payload;
  process.env.OPENAI_API_KEY='k';handler._test.cache.clear();
- global.fetch=async(url,opts)=>{if(url.includes('/rpc/'))rpc++;const a=await auth(url);if(a)return a;payload=JSON.parse(opts.body);return {ok:true,json:async()=>({status:'completed',model:'fixture',output_text:JSON.stringify({titulo:'T',mensagem_chave:'M',resumo_executivo:'R',diagnostico:[],riscos:[],recomendacoes:[],proximos_passos:[],graficos:['fluxo_mensal','xyz']})})}};
+ global.fetch=async(url,opts)=>{if(url.includes('/financeiro_consultor_base'))rpc++;const a=await auth(url);if(a)return a;payload=JSON.parse(opts.body);return {ok:true,json:async()=>({status:'completed',model:'fixture',output_text:JSON.stringify({titulo:'T',mensagem_chave:'M',resumo_executivo:'R',diagnostico:[],riscos:[],recomendacoes:[],proximos_passos:[],graficos:['fluxo_mensal','xyz']})})}};
  const run=async body=>{let status=200,out;await handler({method:'POST',headers:{authorization:'Bearer t'},body:{start:'2026-09-01',end:'2026-09-30',...body}},{setHeader(){},status(v){status=v;return this},json(v){out=v}});return {status,out}};
  try{
   const a=await run({mode:'indicadores'});assert.equal(a.status,200);assert.equal(a.out.modo,'indicadores');assert.equal(payload,undefined);

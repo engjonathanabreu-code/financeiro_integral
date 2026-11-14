@@ -1,8 +1,10 @@
+const { reserveAIQuota } = require('../lib/ai-quota');
+const { providerData, parseOutput, invalidResponse, sendError, noKey } = require('../lib/ai-provider');
 const {requireProfile}=require('../lib/auth');
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'METHOD_NOT_ALLOWED' });
   if(!await requireProfile(req,res,'financeiro'))return;
-  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ ok: false, error: 'OPENAI_API_KEY_NOT_CONFIGURED' });
+  if(!process.env.OPENAI_API_KEY)return sendError(res,noKey());
 
   try {
     const { rows = [], natures = [] } = req.body || {};
@@ -13,13 +15,13 @@ module.exports = async function handler(req, res) {
       ? natures.map(String).filter(Boolean).slice(0, 80)
       : ['Despesa fixa','Despesa variável','Folha e encargos','Retirada e distribuição aos sócios','Tributos','Tarifas bancárias','Receita parcelada de clientes','Receita de contratos públicos','Receita avulsa de contratos privados','Outras receitas'];
 
-    const cleanRows = rows.map((r, i) => ({
+    const cleanRows = rows.map((r = {}, i) => ({
       index: i,
-      date: String(r.date || ''),
-      description: String(r.description || '').slice(0, 300),
-      reference: String(r.reference || '').slice(0, 120),
-      value: Number(r.value || 0),
-      direction: r.direction === 'Entrada' ? 'Entrada' : 'Saída'
+      date: String(r?.date || ''),
+      description: String(r?.description || '').slice(0, 300),
+      reference: String(r?.reference || '').slice(0, 120),
+      value: Number(r?.value || 0),
+      direction: r?.direction === 'Entrada' ? 'Entrada' : 'Saída'
     }));
 
     const schema = {
@@ -63,39 +65,16 @@ module.exports = async function handler(req, res) {
       JSON.stringify(cleanRows)
     ].join('\n');
 
-    const response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_FINANCE_MODEL || 'gpt-5.6-luna',
-        input: prompt,
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'integral_bank_classification',
-            strict: true,
-            schema
-          }
-        }
-      })
+    if(!await reserveAIQuota(req,res,'extratos'))return;
+    const data=await providerData({
+      model: process.env.OPENAI_FINANCE_MODEL || 'gpt-5.6-luna',
+      input: prompt,
+      text: { format: { type:'json_schema', name:'integral_bank_classification', strict:true, schema } }
     });
-
-    const data = await response.json();
-    if (!response.ok) return res.status(response.status).json({ ok: false, error: 'OPENAI_ERROR', details: data?.error?.message || 'Falha na OpenAI' });
-
-    const outputText = data.output_text || (data.output || [])
-      .flatMap(item => item.content || [])
-      .filter(item => item.type === 'output_text')
-      .map(item => item.text)
-      .join('');
-
-    const parsed = JSON.parse(outputText || '{}');
+    const parsed=parseOutput(data);
+    if(!Array.isArray(parsed.classifications))throw invalidResponse();
     return res.status(200).json({ ok: true, model: data.model, ...parsed });
   } catch (error) {
-    console.error('ai-classify error', error);
-    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR', details: String(error?.message || error) });
+    return sendError(res,error);
   }
 };

@@ -124,7 +124,7 @@ function acompanhamentoHtml(){
   const d=data()||{};
   const accName=p=>(d.accountMasters||[]).find(a=>String(a.id)===String(p.accountId))?.name||'Conta';
   const accountsDue=(d.accountPayments||[]).filter(p=>!['Paga','Cancelada'].includes(p.status)&&p.due).map(p=>({...p,days:daysFromToday(p.due)})).filter(p=>p.days!==null&&p.days>=0).sort((a,b)=>a.due.localeCompare(b.due)).slice(0,8);
-  const erp=(d.erpPlannedRevenues||[]).filter(r=>Number(r.remaining||0)>0&&r.dueDate).map(r=>({...r,days:daysFromToday(r.dueDate)})).filter(r=>r.days===null||r.days>=0).sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate))).slice(0,8);
+  const erp=(d.erpPlannedRevenues||[]).filter(r=>window.IntegralDREShared.openERP(r)&&r.dueDate).map(r=>({...r,days:daysFromToday(r.dueDate)})).filter(r=>r.days===null||r.days>=0).sort((a,b)=>String(a.dueDate).localeCompare(String(b.dueDate))).slice(0,8);
   const contracts=(d.hrPeople||[]).filter(p=>p.end).map(p=>({...p,days:daysFromToday(p.end)})).filter(p=>p.days!==null&&p.days>=0&&p.days<=60).sort((a,b)=>String(a.end).localeCompare(String(b.end)));
   const budgets=(d.budgetRecords||[]).filter(b=>b.active!==false).map(b=>{const spent=(d.budgetExpenses||[]).filter(e=>String(e.budgetId)===String(b.id)).reduce((s,e)=>s+(+e.value||0),0);return {...b,spent,open:Math.max(0,(+b.limit||0)-spent)}}).filter(b=>b.open>0).sort((a,b)=>b.open-a.open);
   const closed=['concluida','finalizada','cancelada','encerrada'];
@@ -159,12 +159,12 @@ function decorateDashboard(){
 let erpGrouped=false;try{erpGrouped=sessionStorage.getItem('finIncErpGrouped')==='1'}catch{}
 function erpGroups(){
   const map=new Map();
-  (data()?.erpPlannedRevenues||[]).filter(r=>Number(r.remaining||0)>0).forEach(r=>{const key=String(r.projectId||r.project||'erp');if(!map.has(key))map.set(key,{source:r.project||'Projeto ERP',rows:[],total:0});const g=map.get(key);g.rows.push(r);g.total+=Number(r.remaining||0)});
+  (data()?.erpPlannedRevenues||[]).filter(window.IntegralDREShared.openERP).forEach(r=>{const key=String(r.projectId||r.project||'erp');if(!map.has(key))map.set(key,{source:r.project||'Projeto ERP',rows:[],total:0});const g=map.get(key);g.rows.push(r);g.total+=window.IntegralDREShared.cents(r.remaining)});
   return [...map.values()].sort((a,b)=>a.source.localeCompare(b.source,'pt-BR'));
 }
 function erpGroupDetail(g){
   const rows=[...g.rows].sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
-  modal(`Entradas previstas • ${g.source}`,`<div class="card metric mini erp-source-total"><h3>Total em aberto</h3><b>${M(g.total)}</b><small>${rows.length} parcela(s)/etapa(s)</small></div><div class="table-wrap"><table class="table"><thead><tr><th>Parcela / etapa</th><th>Vencimento</th><th>Previsto</th><th>Recebido</th><th>Saldo a entrar</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${E(r.origin||'Recebimento')}</b></td><td>${D(r.dueDate)}</td><td>${M(r.total)}</td><td>${M(r.received)}</td><td><b>${M(r.remaining)}</b></td></tr>`).join('')}</tbody></table></div>`);
+  modal(`Entradas previstas • ${g.source}`,`<div class="card metric mini erp-source-total"><h3>Total em aberto</h3><b>${M(g.total/100)}</b><small>${rows.length} parcela(s)/etapa(s)</small></div><div class="table-wrap"><table class="table"><thead><tr><th>Parcela / etapa</th><th>Vencimento</th><th>Previsto</th><th>Recebido</th><th>Saldo a entrar</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${E(r.origin||'Recebimento')}</b></td><td>${D(r.dueDate)}</td><td>${M(r.total)}</td><td>${M(r.received)}</td><td><b>${M(r.remaining)}</b></td></tr>`).join('')}</tbody></table></div>`);
 }
 function decoratePlanning(){
   if(currentView()!=='planning')return;
@@ -180,7 +180,7 @@ function decoratePlanning(){
   if(erpGrouped){
     const groups=erpGroups(),sig=JSON.stringify(groups.map(g=>[g.source,g.total,g.rows.length]));
     if(!grouped){grouped=document.createElement('div');grouped.className='erp-source-list fin-inc-erp-groups';card.appendChild(grouped)}
-    if(grouped.dataset.sig!==sig){grouped.dataset.sig=sig;grouped.innerHTML=groups.map((g,i)=>`<button type="button" class="erp-source-row" data-group="${i}"><span><b>${E(g.source)}</b><small>${g.rows.length} parcela(s) em aberto</small></span><strong>${M(g.total)}</strong><span class="erp-source-chevron">›</span></button>`).join('')||'<div class="empty">Nenhuma entrada futura sincronizada do ERP.</div>';qa('[data-group]',grouped).forEach(b=>b.onclick=()=>erpGroupDetail(groups[+b.dataset.group]))}
+    if(grouped.dataset.sig!==sig){grouped.dataset.sig=sig;grouped.innerHTML=groups.map((g,i)=>`<button type="button" class="erp-source-row" data-group="${i}"><span><b>${E(g.source)}</b><small>${g.rows.length} parcela(s) em aberto</small></span><strong>${M(g.total/100)}</strong><span class="erp-source-chevron">›</span></button>`).join('')||'<div class="empty">Nenhuma entrada futura sincronizada do ERP.</div>';qa('[data-group]',grouped).forEach(b=>b.onclick=()=>erpGroupDetail(groups[+b.dataset.group]))}
     list.hidden=true;grouped.hidden=false;
   }else{list.hidden=false;if(grouped)grouped.hidden=true}
 }

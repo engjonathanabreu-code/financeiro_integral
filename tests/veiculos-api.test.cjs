@@ -5,6 +5,7 @@ const res=()=>({statusCode:200,status(n){this.statusCode=n;return this},json(v){
 test.beforeEach(()=>{profile={id:'test',tipo:'Projetos',ativo:true};provider=0;process.env.OPENAI_API_KEY='fixture-only';global.fetch=async(url,opts)=>{
  if(String(url).includes('/auth/v1/user'))return {ok:true,json:async()=>({id:'test'})};
  if(String(url).includes('/rest/v1/profiles'))return {ok:true,json:async()=>[profile]};
+ if(String(url).includes('/financeiro_reservar_cota_ia'))return Response.json(true);
  if(String(url).includes('/rpc/'))return {ok:true,json:async()=>({admin:true,veiculos:[],usos:[],despesas:[],relatos:[]})};
  if(String(url).startsWith('https://api.openai.com/')){provider++;return {ok:true,json:async()=>({output_text:JSON.stringify({odometer:null,notes:'Foto ilegível'})})}}
  throw Error('unexpected external request');
