@@ -1,25 +1,43 @@
 /* Navegador → RPCs SQL reais (PGlite), fixture isolado, nenhuma rede externa. */
 const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const {setup,login,rpc,id,foto,approve}=require('../veiculos-fixtures.cjs');
+const {rpc,foto,approve}=require('../veiculos-fixtures.cjs');
+const {setup,login,id}=require('../financeiro-db-fixture.cjs');
 const root=path.join(__dirname,'../..'),out=path.join(root,'docs/qa-veiculos-agendamento');fs.mkdirSync(out,{recursive:true});let checks=0;
-(async()=>{const browser=await chromium.launch({headless:true,channel:'chrome'});try{
+(async()=>{const browser=await chromium.launch({headless:true,...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{channel:'chrome'})});try{
  for(const width of [1440,390]){
-  const db=await setup(null,null,false);await login(db,1);let old=await approve(db,70);delete old.vehicleId;old.createdAt=new Date().toISOString();old.description='Pedido antigo preservado';old.title='Viagem antiga';old.history=[{action:'Aprovada'}];
-  await db.query("update financeiro_estado_modulos set dados=$1 where chave='invoiceRequests'",[JSON.stringify([old])]);await db.exec('reset role');await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql'),'utf8'));await login(db,2);
+  const db=await setup();
+  await db.exec('alter table financeiro_estado_modulos alter column updated_at set default now()');
+  await db.exec("alter table profiles add column nome text, add column email text; update profiles set nome='Perfil sintético';");
+  for(const f of ['auditoria_acessos_20261005.sql','financeiro_veiculos.sql'])await db.exec(fs.readFileSync(path.join(root,'supabase',f),'utf8'));
+  await db.query("insert into financeiro_estado_modulos(chave,dados) values ('trips','[]'),('usersMvp',$1),('tripExpenses','[]')",[JSON.stringify([{id:2,erpId:id(2)}])]);
+  await login(db,1);let old=await approve(db,70);delete old.vehicleId;old.createdAt=new Date().toISOString();old.description='Pedido antigo preservado';old.title='Viagem antiga';old.history=[{action:'Aprovada'}];
+  await db.query("update financeiro_estado_modulos set dados=$1 where chave='invoiceRequests'",[JSON.stringify([old])]);await db.exec('reset role');await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql'),'utf8'));for(const m of ['20261113173933_financeiro_veiculos_solicitante_canonico','20261113190000_financeiro_modulos_revisao','20261113190500_financeiro_solicitacoes_acesso','20261113191500_financeiro_anexos_acesso','20261113192000_financeiro_guarda_registros','20261114104155_financeiro_recibos_sincronizacao','20261114135633_financeiro_integridade_solicitacoes','20261114135757_financeiro_veiculos_comprovantes_autorizados'])await db.exec(fs.readFileSync(path.join(root,'supabase/migrations',m+'.sql'),'utf8'));
+  await login(db,2);
   const today=(await rpc(db,'painel')).hoje;const date=new Date(today+'T12:00:00Z');date.setUTCDate(date.getUTCDate()+1);const tomorrow=date.toISOString().slice(0,10);
   const context=await browser.newContext({viewport:{width,height:1000},timezoneId:'America/Sao_Paulo'}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/*',r=>new URL(r.request().url()).hostname==='fixture.test'?r.fulfill({contentType:'text/html',body:'<!doctype html><html lang="pt-BR"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="app"><nav class="nav"></nav><h1 id="heading"></h1><div id="content"></div></div></html>'}):r.abort());
-  await page.exposeFunction('testRpc',async(name,args)=>{try{return {data:name==='financeiro_veiculos_api'?await rpc(db,args.p_acao,args.p):(await db.query('select financeiro_save_invoice_request($1,$2) data',[JSON.stringify(args.p_request),args.p_expected&&JSON.stringify(args.p_expected)])).rows[0].data}}catch(e){return {error:{message:e.message}}}});
-  await page.exposeFunction('testSaveTrips',async trips=>db.query("update financeiro_estado_modulos set dados=$1 where chave='trips'",[JSON.stringify(trips)]));
+  await page.exposeFunction('testRpc',async(name,args)=>{
+   try{
+    if(name==='financeiro_veiculos_api')return {data:await rpc(db,args.p_acao,args.p)};
+    const statements={
+     financeiro_save_invoice_request:['select financeiro_save_invoice_request($1,$2) data',[JSON.stringify(args?.p_request),args?.p_expected&&JSON.stringify(args.p_expected)]],
+     financeiro_listar_solicitacoes:['select financeiro_listar_solicitacoes() data',[]],
+     financeiro_revisar_solicitacao:['select financeiro_revisar_solicitacao($1,$2,$3,$4) data',[args?.p_id,JSON.stringify(args?.p_esperado),args?.p_aprovar,args?.p_resposta]]};
+    const [sql,params]=statements[name];
+    return {data:(await db.query(sql,params)).rows[0].data};
+   }catch(e){return {error:{message:e.message}}}
+  });
+  await page.exposeFunction('testTrips',async()=> (await db.query("select dados from financeiro_estado_modulos where chave='trips'")).rows[0].dados);
   await page.goto('https://fixture.test');
-  const modules=(await db.query("select chave,dados from financeiro_estado_modulos where chave in ('invoiceRequests','trips','usersMvp')")).rows;
+  const modules=[{chave:'invoiceRequests',dados:[old]}];
   await page.evaluate(({driver,modules})=>{
    window.user={name:'Motorista A',role:'Funcionário',sector:'Projetos',erpId:driver,email:'a@fixture.test'};window.view='invoices';window.db={budgetRecords:[],accountMasters:[],accountPayments:[],...Object.fromEntries(modules.map(m=>[m.chave,m.dados]))};
    window.adminNav=[['trips','Viagens']];window.staffNav=[['trips','Viagens']];window.title=t=>document.querySelector('#heading').textContent=t;
    window.render=()=>{document.querySelector('#content').innerHTML=''};
    window.app=()=>{document.querySelector('.nav').innerHTML=staffNav.map(([id,label])=>`<button data-view="${id}">${label}</button>`).join('');document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});render()};
-   window.save=()=>{if(user.role==='Administrador')window.tripSave=window.testSaveTrips(db.trips)};
+   window.save=()=>{};
+   window.IntegralFinanceCloudStorage={refresh:async()=>{db.trips=await window.testTrips()}};
    window.IntegralERP={sb:{auth:{getUser:async()=>({data:{user:{id:user.erpId}}})},rpc:window.testRpc}};
    window.alerts=[];window.alert=m=>alerts.push(m);window.confirm=()=>true;
   },{driver:id(2),modules});
@@ -38,7 +56,7 @@ const root=path.join(__dirname,'../..'),out=path.join(root,'docs/qa-veiculos-age
   await page.locator('[data-view=vehicles]').click();await page.locator('[data-start=hb20]').click();await page.locator('#vehicleDialog').getByText(/precisa estar aprovada/).waitFor();assert.equal(await page.locator('[name=km_inicial]').count(),0);checks++;
   await page.locator('#vehicleDialog [data-cancel]').click();await page.locator('[data-requests]').click();
   await login(db,1);await page.evaluate(admin=>{user={role:'Administrador',erpId:admin,name:'ADM'};view='invoices';render()},id(1));
-  await page.getByRole('button',{name:/Viagem amanhã/}).click();await page.locator('#invoiceResponse').fill('Aprovado no teste isolado');await page.locator('#invoiceApprove').click();await page.waitForFunction(()=>db.invoiceRequests.some(a=>a.title==='Viagem amanhã'&&a.status==='Aprovada'));await page.evaluate(()=>tripSave);
+  await page.getByRole('button',{name:/Viagem amanhã/}).click();await page.locator('#invoiceResponse').fill('Aprovado no teste isolado');await page.locator('#invoiceApprove').click();await page.waitForFunction(()=>db.invoiceRequests.some(a=>a.title==='Viagem amanhã'&&a.status==='Aprovada'));await page.waitForFunction(()=>db.trips.some(t=>t.city==='Cidade de teste'));
   assert.equal(await page.evaluate(()=>db.trips.find(t=>t.city==='Cidade de teste').vehicleId),'hb20');checks++;
   await login(db,2);await page.evaluate(driver=>{user={name:'Motorista A',role:'Funcionário',sector:'Projetos',erpId:driver,email:'a@fixture.test'};view='vehicles';app()},id(2));
   await page.locator('[data-start=hb20]').click();await page.locator('#vehicleDialog').getByText(/Retirada liberada somente em/).waitFor();assert.equal(await page.locator('[name=km_inicial]').count(),0);checks++;
