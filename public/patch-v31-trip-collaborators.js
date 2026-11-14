@@ -31,7 +31,7 @@ function enhance(){
       const b=document.createElement('button');b.className='btn';b.id='trip31New';b.textContent='+ Nova viagem';b.onclick=()=>modalTrip();toolbar.appendChild(b);
     }
   }
-  if(/^Viagem\s*•/.test(titleText)){
+  if(/^Viagem\s*•/.test(titleText)&&!q('[data-trip26-readonly]',content)){
     const right=q('.toolbar .right',content);if(right&&!q('#trip31Edit',right)&&!q('#trip26Edit',right)){const b=document.createElement('button');b.className='btn ghost';b.id='trip31Edit';b.textContent='Editar viagem';const current=(db.trips||[]).find(t=>String(t.id)===String(window.IntegralSelectedTripId))||(db.trips||[]).find(t=>String(t.city||'')===titleText.replace(/^Viagem\s*•\s*/,''));b.onclick=()=>current&&modalTrip(current.id);right.insertBefore(b,right.firstChild);}
   }
 }

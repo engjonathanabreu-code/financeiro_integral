@@ -5,6 +5,9 @@ test('ADM closes atomically; RLS/RPC and direct writes reject staff, inactive AD
  try{
  await db.exec(`create role anon;create role authenticated;create schema auth;create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth to authenticated;create table profiles(id uuid primary key,tipo text,ativo boolean);insert into profiles values('${id(1)}','Administrador',true),('${id(2)}','Funcionário',true),('${id(3)}','Administrador',false);grant select on profiles to authenticated;create function public.is_admin() returns boolean language sql stable security invoker as $$select exists(select 1 from public.profiles where id=auth.uid() and tipo='Administrador' and ativo)$$;create table financeiro_estado_modulos(chave text primary key,dados jsonb,updated_by uuid,updated_at timestamptz);alter table financeiro_estado_modulos enable row level security;create policy existing_access on financeiro_estado_modulos to authenticated using(true) with check(true);grant select,insert,update,delete on financeiro_estado_modulos to authenticated;insert into financeiro_estado_modulos values('budgetRecords','[{"id":1,"name":"Campo","active":true,"history":[]},{"id":2,"name":"Projeto","active":true,"history":[]}]',null,now());insert into financeiro_estado_modulos values('cashflow','[]',null,now());`);
  await db.exec(fs.readFileSync(require('node:path').join(__dirname,'../supabase/financeiro_consultor.sql'),'utf8'));
+ const dreOverrides={'cash:1|2026-11-13|100':'rec_publicos'};
+ await db.query("insert into financeiro_estado_modulos (chave,dados) values ('dreOverrides',$1)",[JSON.stringify(dreOverrides)]);
+ await db.exec(fs.readFileSync(require('node:path').join(__dirname,'../supabase/migrations/20261114104740_financeiro_consultor_dre_overrides.sql'),'utf8'));
  const login=async n=>db.exec(`reset role;select set_config('request.jwt.claim.sub','${id(n)}',false);set role authenticated`);
  const first={id:1,name:'Campo',active:true,history:[]};
  const close=()=>db.query('select financeiro_close_budget($1,$2) as result',['1',JSON.stringify(first)]);
@@ -22,7 +25,7 @@ test('ADM closes atomically; RLS/RPC and direct writes reject staff, inactive AD
  const result=(await close()).rows[0].result;assert.equal(result[0].status,'Fechado');assert.equal(result[0].closedBy,id(1));assert.equal(result[0].history.length,1);assert.deepEqual(result[1],second);
  await assert.rejects(direct([first,second]),/foi fechado/);await assert.rejects(close(),/já encerrado/);
  await login(2);await assert.rejects(direct([{...result[0],name:'Changed'},second]),/Somente ADM/);
- await login(1);const snapshot=(await db.query('select financeiro_consultor_base() as result')).rows[0].result;assert.equal(snapshot.budgetRecords[0].status,'Fechado');assert.equal(snapshot.cashflow.length,0);
+ await login(1);const snapshot=(await db.query('select financeiro_consultor_base() as result')).rows[0].result;assert.equal(snapshot.budgetRecords[0].status,'Fechado');assert.equal(snapshot.cashflow.length,0);assert.deepEqual(snapshot.dreOverrides,dreOverrides);
  }finally{await db.close()}
 });
 

@@ -29,7 +29,7 @@ async function fixture() {
     events.push('push-done'); return null;
   } });
   const context = {
-    console: { log() {}, warn() {}, error() {} }, structuredClone,
+    console: { log() {}, warn() {}, error() {} }, structuredClone, crypto: require('node:crypto').webcrypto,
     db: copy(server), user: { role: 'Administrador', erpId: 'admin', name: 'Admin' },
     localStorage: { getItem: key => cache.get(key) || null, setItem: (key, value) => cache.set(key, value), removeItem: key => cache.delete(key) },
     // Follow-up writes are triggered explicitly in these tests, with no wall-clock races.
@@ -46,7 +46,7 @@ async function fixture() {
     rpc: async (name, args) => {
       if (name === 'is_admin') return { data: context.user?.role === 'Administrador', error: null };
       if (name === 'financeiro_listar_modulos_visiveis') return { error: { code: 'PGRST202' } };
-      if (name === 'financeiro_salvar_modulo') return table.save(args);
+      if (name === 'financeiro_salvar_modulo_com_recibo') return table.save(args);
       rpcs.push({ name, args: copy(args) }); events.push('rpc-start');
       const error = await hooks.rpc?.(name, args);
       if (error) return { error };
@@ -198,7 +198,7 @@ test('same-field conflicts preserve both versions and block budget autosave with
   assert.equal(f.context.db.budgetRecords[0].status, 'Fechado');
   assert.equal(f.context.db.budgetRecords[1].name, 'Local version');
   assert.equal(f.server.budgetRecords[1].name, 'Remote version');
-  const backup = JSON.parse(f.cache.get('integral_fin_budget_conflicts'));
+  const backup = JSON.parse([...f.cache.entries()].find(([key]) => key.startsWith('integral_fin_budget_conflicts_v2:admin:'))[1]);
   assert.equal(backup.local.find(row => row.id === 2).name, 'Local version');
   assert.equal(backup.server.find(row => row.id === 2).name, 'Remote version');
   assert.equal(backup.conflicts[0].field, 'name');

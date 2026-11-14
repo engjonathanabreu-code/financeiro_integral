@@ -2,13 +2,16 @@
 (function(){
 'use strict';
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
-function rowByKey(key){try{return window.IntegralFinanceCashflowEditor?.allRows?.().find(r=>r._sourceKey===key)||null}catch{return null}}
+function rowByKey(key){try{return window.IntegralFinanceCashflowEditor?.displayRows?.().find(r=>r._sourceKey===key)||null}catch{return null}}
 function removeManual(key,row){
   const id=String(key||'').slice(5);
-  const msg=`Excluir “${row?.description||'este lançamento'}” do Fluxo de Caixa?`;
+  const msg=`Arquivar “${row?.description||'este lançamento'}” e removê-lo dos totais do Fluxo de Caixa?`;
   if(!confirm(msg))return;
-  db.cashflow=(db.cashflow||[]).filter(r=>String(r.id)!==id);
-  if(db.cashflowOverrides)delete db.cashflowOverrides[key];
+  const candidates=(db.cashflow||[]).filter(r=>String(r.id)===id);
+  if(candidates.length!==1){alert('Há mais de um lançamento com este identificador. Confira o registro antes de arquivar.');return;}
+  const [source]=candidates;
+  source.active=false;
+  source.archivedAt=new Date().toISOString();
   save();
   window.IntegralFinanceCashflowEditor?.render?.();
 }
@@ -28,7 +31,7 @@ function install(){
     const cell=edit?.closest('td')||tr.lastElementChild;if(!cell)return;
     cell.style.whiteSpace='nowrap';
     const b=document.createElement('button');
-    b.className='icon-btn';b.dataset.cashDelete=key;b.title='Excluir';b.setAttribute('aria-label','Excluir lançamento');b.textContent='🗑';b.style.marginLeft='6px';
+    b.className='icon-btn';b.dataset.cashDelete=key;b.title='Arquivar';b.setAttribute('aria-label','Arquivar lançamento');b.textContent='🗑';b.style.marginLeft='6px';
     b.onclick=e=>{e.preventDefault();e.stopPropagation();del(key)};
     cell.appendChild(b);
   });

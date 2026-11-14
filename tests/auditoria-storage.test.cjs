@@ -7,9 +7,10 @@ async function fixture({admin=false,server,local={},cache=null,upsertError}={}){
  const table=fakeModules(server,{beforeWrite:row=>{writes.push([row]);return upsertError?.(row)||null}});
  if(cache)store.set('integral_fin_v1',JSON.stringify(cache));
  const files=new Map();
- const context={console:{log(){},warn(){},error(){}},structuredClone,
+ const context={console:{log(){},warn(){},error(){}},structuredClone,crypto:require('node:crypto').webcrypto,
   db:copy(local),user:{role:admin?'Administrador':'Funcionário',erpId:'u1',name:'U'},
-  localStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
+  localStorage:{get length(){return store.size},key:i=>[...store.keys()][i]??null,
+   getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
   setTimeout(){return 1},clearTimeout(){},setInterval(){return 1},clearInterval(){},
   document:{dispatchEvent(){}},CustomEvent:function(){},render(){},addEventListener(){},
   save(){store.set('integral_fin_v1',JSON.stringify(context.db))}};
@@ -19,7 +20,7 @@ async function fixture({admin=false,server,local={},cache=null,upsertError}={}){
   from(){return{
    select:()=>({then:(ok,fail)=>Promise.resolve(table.rows()).then(ok,fail),in:async(_c,keys)=>table.rows(keys)})
   }},
-  rpc:async(name,args)=>{rpcs.push(name);if(name==='is_admin')return{data:admin,error:null};if(name==='financeiro_listar_modulos_visiveis')return{error:{code:'PGRST202'}};if(name==='financeiro_salvar_modulo')return table.save(args);if(name==='financeiro_guardar_arquivo'){const id='arq-'+(files.size+1);files.set(id,args.p_conteudo);return{data:id,error:null}}return{error:{message:'rpc inesperada'}}}
+  rpc:async(name,args)=>{rpcs.push(name);if(name==='is_admin')return{data:admin,error:null};if(name==='financeiro_listar_modulos_visiveis')return{error:{code:'PGRST202'}};if(name==='financeiro_salvar_modulo_com_recibo')return table.save(args);if(name==='financeiro_guardar_arquivo'){const id='arq-'+(files.size+1);files.set(id,args.p_conteudo);return{data:id,error:null}}return{error:{message:'rpc inesperada'}}}
  }};
  vm.createContext(context);vm.runInContext(source,context);
  const api=context.IntegralFinanceCloudStorage;assert.equal(await api.initialize(),true);
