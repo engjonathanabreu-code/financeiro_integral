@@ -7,7 +7,7 @@ const test = require('node:test');
 globalThis.crypto ??= webcrypto;
 const logic = import('../supabase/functions/finance-whatsapp-reminders/lembretes.mjs');
 const migration = fs.readFileSync(path.join(__dirname,
-  '../supabase/migrations/20261113181004_financeiro_whatsapp_reserva.sql'), 'utf8');
+  '../supabase/migrations/20261113212847_financeiro_whatsapp_reserva.sql'), 'utf8');
 const cronSql = fs.readFileSync(path.join(__dirname, '../supabase/financeiro_whatsapp_agendador.sql'), 'utf8');
 
 const TODAY = '2026-11-15';

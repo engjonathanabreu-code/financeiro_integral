@@ -1,6 +1,6 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {setup,login,rpc,id,approve,approval,withdrawal,time}=require('./veiculos-fixtures.cjs');
-const migration=()=>fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql'),'utf8');
+const migration=()=>fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028123451_financeiro_veiculos_agendamento_20261028.sql'),'utf8');
 const pending=(n=50)=>{const a={...approval(n),status:'Pendente',response:'',history:[{action:'Solicitação enviada'}]};delete a.reviewedAt;delete a.reviewedBy;delete a.convertedId;return a};
 const save=(db,a,expected=null)=>db.query('select financeiro_save_invoice_request($1,$2)',[JSON.stringify(a),expected&&JSON.stringify(expected)]);
 const dayOffset=(day,n)=>{const d=new Date(day+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};

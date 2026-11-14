@@ -3,6 +3,7 @@
 'use strict';
 const cfg=window.ERP_SUPABASE||{};
 const sb=window.supabase?.createClient?.(cfg.url,cfg.publishableKey,{auth:{persistSession:true,autoRefreshToken:true}});
+const shared=window.IntegralDREShared;
 if(!sb)return;
 const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
@@ -66,21 +67,49 @@ function decorateHistoryRows(){
 }
 
 // ---- Modal "Arquivados" (município/cliente/parcela) com opção de reativar ----
+let owner;
+let request=0;
 function closeArchivedModal(){document.querySelector('#recebArchivedModal')?.remove()}
+sb.auth.onAuthStateChange?.((_event,session)=>{
+ if(owner&&session?.user?.id!==owner){owner=undefined;request++;closeArchivedModal()}
+});
 function archivedModal(body){
  closeArchivedModal();
  const d=document.createElement('div');d.id='recebArchivedModal';d.className='modal-backdrop';d.style.zIndex='10030';
  d.innerHTML=`<section class="modal"><header class="modal-head"><h3>Arquivados</h3><button class="btn icon ghost" data-close>×</button></header><div class="modal-body">${body}</div><footer class="modal-foot"><button class="btn ghost" data-close>Fechar</button></footer></section>`;
  document.body.appendChild(d);d.querySelectorAll('[data-close]').forEach(x=>x.onclick=closeArchivedModal);return d;
 }
-async function openArchived(){
- ensureStyles();
- const [m,c,p]=await Promise.all([
-  sb.from('fin_receb_municipios').select('*').eq('ativo',false).order('nome'),
-  sb.from('fin_receb_clientes').select('*, fin_receb_municipios(nome)').eq('ativo',false).order('nome'),
-  sb.from('fin_receb_parcelas').select('*, fin_receb_clientes(nome)').eq('ativo',false).order('vencimento')
- ]);
- const municipios=m.data||[],clientes=c.data||[],parcelas=p.data||[];
+async function sessionUser(){
+ const {data,error}=await sb.auth.getSession();
+ if(error)throw error;
+ return data?.session?.user?.id;
+}
+async function openArchived(button){
+ const current=++request;
+ const stillOpen=()=>current===request&&button.isConnected;
+ button.disabled=true;
+ try{
+  const userId=await sessionUser();
+  if(!userId)throw Error('Entre novamente para consultar os recebimentos.');
+  if(!stillOpen())return;
+  owner=userId;
+  const archived=query=>query.eq('ativo',false);
+  const [municipios,clientes,parcelas]=await Promise.all([
+   shared.allPages(sb,'fin_receb_municipios','id,nome,uf',archived),
+   shared.allPages(sb,'fin_receb_clientes','id,nome,codigo,cpf_cnpj,fin_receb_municipios(nome)',archived),
+   shared.allPages(sb,'fin_receb_parcelas','id,numero,vencimento,valor_previsto,fin_receb_clientes(nome)',archived)
+  ]);
+  if(await sessionUser()!==userId||!stillOpen())return;
+  const compareBy=key=>(a,b)=>a[key]==null?Number(b[key]!=null):
+   b[key]==null?-1:String(a[key]).localeCompare(String(b[key]),'pt-BR');
+  renderArchived(municipios.sort(compareBy('nome')),clientes.sort(compareBy('nome')),parcelas.sort(compareBy('vencimento')));
+ }catch(error){
+  if(stillOpen())alert('Não foi possível carregar os arquivados: '+(error.message||error));
+ }finally{
+  button.disabled=false;
+ }
+}
+function renderArchived(municipios,clientes,parcelas){
  const section=(title,rows)=>`<h4 style="margin:16px 0 6px">${esc(title)}</h4><div class="receb-archived-list">${rows||'<div class="muted">Nenhum registro arquivado.</div>'}</div>`;
  const muniRows=municipios.map(x=>`<div class="receb-archived-row" data-row><span><b>${esc(x.nome)}</b><small>${esc(x.uf||'')}</small></span><button class="btn small" data-unarchive-muni="${x.id}">Reativar</button></div>`).join('');
  const clienteRows=clientes.map(x=>`<div class="receb-archived-row" data-row><span><b>${esc(x.nome)}</b><small>${esc(x.codigo||x.cpf_cnpj||'')} · ${esc(x.fin_receb_municipios?.nome||'')}</small></span><button class="btn small" data-unarchive-cliente="${x.id}">Reativar</button></div>`).join('');
@@ -95,7 +124,7 @@ function ensureArchivedButton(){
  const toolbar=document.querySelector('.receb-toolbar .right');
  if(!toolbar||toolbar.querySelector('#recebArchivedBtn'))return;
  const btn=document.createElement('button');btn.className='btn secondary';btn.id='recebArchivedBtn';btn.textContent='Arquivados';
- btn.onclick=openArchived;
+ btn.onclick=()=>openArchived(btn);
  toolbar.appendChild(btn);
 }
 

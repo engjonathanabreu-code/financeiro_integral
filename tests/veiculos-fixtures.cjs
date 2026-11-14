@@ -19,7 +19,7 @@ async function setup(externalDb,beforeMigration,withSchedule=true){
  grant select,insert,update,delete on financeiro_estado_modulos to authenticated;`);
  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/financeiro_solicitacoes_permissoes.sql'),'utf8'));
  if(beforeMigration)await beforeMigration(db);
- await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/financeiro_veiculos.sql'),'utf8'));if(withSchedule)await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql'),'utf8'));return db;
+ await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/financeiro_veiculos.sql'),'utf8'));if(withSchedule)await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028123451_financeiro_veiculos_agendamento_20261028.sql'),'utf8'));return db;
 }
 async function login(db,n){await db.exec(`reset role;select set_config('request.jwt.claim.sub','${n?id(n):''}',false);set role ${n?'authenticated':'anon'}`)}
 async function rpc(db,acao,p={}){return (await db.query('select public.financeiro_veiculos_api($1,$2) data',[acao,JSON.stringify(p)])).rows[0].data}
