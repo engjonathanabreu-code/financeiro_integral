@@ -42,7 +42,7 @@ async function approveExisting(admin,driver,n){
  let before;
  await setup(owner,async c=>{before=await snapshot(c)},false);
  assert.deepEqual(await snapshot(owner),before);checks.push('Migração real PG17: dados, funções, grants e políticas antigos preservados');
- await owner.query(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql'),'utf8'));
+ await owner.query(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261028123451_financeiro_veiculos_agendamento_20261028.sql'),'utf8'));
  const afterSchedule=await snapshot(owner);assert.deepEqual(afterSchedule.modules,before.modules);assert.deepEqual(afterSchedule.old_tables,before.old_tables);assert.deepEqual(afterSchedule.storage_policies,before.storage_policies);
  for(const fn of before.old_functions){const current=afterSchedule.old_functions.find(f=>f.name===fn.name);assert.deepEqual(current.acl,fn.acl);if(!['financeiro_guard_invoice_requests','financeiro_save_invoice_request'].includes(fn.name))assert.deepEqual(current,fn)}
  checks.push('Correção de agendamento preserva dados, tabelas, RLS, grants e funções de identidade');

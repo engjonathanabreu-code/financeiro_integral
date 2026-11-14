@@ -17,7 +17,7 @@ A solicitação não oferecia campo de veículo. O filtro de retirada escondia o
 
 ## Banco e preservação
 
-Migração criada com a CLI instalada (2.119.0): `supabase/migrations/20261028121955_financeiro_veiculos_agendamento.sql`.
+A CLI 2.119.0 gerou o identificador local inicial `20261028121955`. O arquivo versionado passou a usar o identificador aplicado no Supabase, `supabase/migrations/20261028123451_financeiro_veiculos_agendamento_20261028.sql`, com o mesmo SQL.
 
 Não há escrita em dados existentes, nova tabela, remoção de registro ou alteração de RLS. Substitui as três funções específicas e acrescenta dois auxiliares no schema privado. Mantém ACL das funções existentes. A exceção para completar carro é limitada a usuário ativo, seu próprio pedido sem carro e sem qualquer outra mudança.
 

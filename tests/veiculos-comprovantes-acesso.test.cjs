@@ -28,7 +28,7 @@ test('Veículos: solicitante de viagem antiga vincula somente originais autoriza
     await db.exec("alter table profiles add column nome text, add column email text; update profiles set nome='Perfil sintético';");
     await db.exec(sql('auditoria_acessos_20261005.sql'));
     await db.exec(sql('financeiro_veiculos.sql'));
-    await db.exec(migration('20261028121955_financeiro_veiculos_agendamento'));
+    await db.exec(migration('20261028123451_financeiro_veiculos_agendamento_20261028'));
     await db.exec(migration('20261113173933_financeiro_veiculos_solicitante_canonico'));
 
     await login(db, ADM);

@@ -2,6 +2,8 @@
 const {chromium}=require('playwright');
 const fs=require('node:fs'),assert=require('node:assert/strict'),path=require('node:path');
 const root=path.join(__dirname,'../..');
+const staffId='00000000-0000-4000-8000-000000000001';
+const adminId='00000000-0000-4000-8000-000000000002';
 (async()=>{
 const browser=await chromium.launch({headless:true,...(process.env.BROWSER_EXECUTABLE_PATH?{executablePath:process.env.BROWSER_EXECUTABLE_PATH}:{channel:process.env.BROWSER_CHANNEL||'chrome'})});
 try{
@@ -16,33 +18,38 @@ for(const [sector,width] of cases){
  await page.route('**/*',r=>r.abort());
  await page.route('https://fixture.test/**',r=>r.fulfill({contentType:'text/html',body:'<div id="app"><nav class="nav"></nav><div id="content"></div></div>'}));
  await page.goto('https://fixture.test/');
- await page.evaluate(sector=>{
-  window.user={role:'Funcionário',sector,setor:sector,erpId:'staff',name:'Funcionário'};
-  window.view='invoices';window.db={invoiceRequests:[],usersMvp:[{id:1,erpId:'staff',active:true}],trips:[],budgetRecords:[],accountMasters:[],accountPayments:[]};
+ await page.evaluate(({sector,staffId})=>{
+  window.user={role:'Funcionário',sector,setor:sector,erpId:staffId,name:'Funcionário'};
+  window.view='invoices';window.db={invoiceRequests:[],usersMvp:[{id:1,erpId:staffId,active:true}],trips:[],budgetRecords:[],accountMasters:[],accountPayments:[]};
   window.adminNav=[['trips','Viagens']];window.staffNav=[['trips','Viagens']];
   window.save=()=>{};window.title=()=>{};window.render=()=>{};
   window.accountRoles=[];window.accounts=()=>accountRoles.push(user.role);
   window.app=()=>{document.querySelector('.nav').innerHTML=staffNav.map(([id,label])=>`<button data-view="${id}">${label}</button>`).join('');document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;render()});render()};
   window.alerts=[];window.alert=m=>alerts.push(m);window.confirm=()=>true;
-  window.server=[];window.serverTrips=[];window.fail=false;window.loseReviewResponse=false;
+  window.server=[];window.serverTrips=[];window.fail=false;window.loseReviewResponse=false;window.sessionExpired=false;
   window.reviewAttempts=[];
   window.IntegralFinanceCloudStorage={refresh:async()=>{db.trips=structuredClone(serverTrips)}};
-  window.IntegralERP={sb:{auth:{getUser:async()=>({data:{user:{id:user.erpId}}})},rpc:async(name,args)=>{if(name==='financeiro_listar_solicitacoes')return {data:structuredClone(server)};if(fail)return {error:{message:'Servidor recusou'}};
+  window.IntegralERP={sb:{auth:{getUser:async()=>({data:{user:sessionExpired?null:{id:user.erpId}}})},rpc:async(name,args)=>{if(name==='financeiro_listar_solicitacoes')return {data:structuredClone(server)};if(fail)return {error:{message:'Servidor recusou'}};
    if(name==='financeiro_revisar_solicitacao'){
     reviewAttempts.push(structuredClone(args));
     const i=server.findIndex(x=>x.id===args.p_id);
     if(i>=0&&server[i].status==='Aprovada'&&args.p_aprovar
      &&JSON.stringify(args)===JSON.stringify(reviewAttempts.at(-2)))return {data:structuredClone(server)};
-    if(i<0||server[i].status!=='Pendente')return {error:{message:'Solicitação atualizada'}};
+    if(i<0||server[i].status!=='Pendente'||JSON.stringify(server[i])!==JSON.stringify(args.p_esperado))return {error:{code:'40001',message:'Solicitação atualizada'}};
+    const request=server[i];
+    const matches=db.usersMvp.filter(profile=>profile.erpId===request.requesterId&&profile.active);
+    if(args.p_aprovar&&(!(request.estimatedValue>0)||!request.vehicleId||!request.neededAt||matches.length!==1)){
+     return {error:{code:'P0001',message:'Confira veículo, data, orçamento e vínculo do solicitante'}};
+    }
     const convertedId=args.p_aprovar?88:undefined;
     server[i]={...server[i],status:args.p_aprovar?'Aprovada':'Rejeitada',response:args.p_resposta,convertedId,
      reviewedAt:'2026-10-29T12:00:00Z',reviewedById:user.erpId};
-    if(args.p_aprovar)serverTrips.push({id:convertedId,invoiceRequestId:args.p_id});
+    if(args.p_aprovar)serverTrips.push({id:convertedId,invoiceRequestId:args.p_id,assigned:[matches[0].id],plannedAmount:request.estimatedValue});
     if(loseReviewResponse){loseReviewResponse=false;throw Error('Conexão interrompida após gravar')}
     return {data:structuredClone(server)};
    }
    if(args.p_expected){const i=server.findIndex(x=>x.id===args.p_request.id);server[i]=structuredClone(args.p_request)}else server.push(structuredClone(args.p_request));return {data:structuredClone(server)}}}};
- },sector);
+ },{sector,staffId});
  await page.addScriptTag({content:fs.readFileSync(path.join(root,'public/financeiro-invoices.js'),'utf8')});
  // Exercise the actual legacy navigation wrapper that used to redirect every staff route.
  const bundle=fs.readFileSync(path.join(root,'public/financeiro.bundle.js'),'utf8');
@@ -64,12 +71,12 @@ for(const [sector,width] of cases){
  await page.locator('#invoiceDescriptionEditor').fill('Descrição de teste');
  await page.locator('[type="submit"]').click();
  await page.locator('[data-invoice-id]').waitFor();
- assert.equal(await page.evaluate(()=>server[0].requesterId),'staff');
+ assert.equal(await page.evaluate(()=>server[0].requesterId),staffId);
  await page.locator('[data-invoice-id]').click();
  assert.equal(await page.locator('#invoiceApprove,#invoiceReject').count(),0);
  await page.locator('[data-invoice-close]').click();
  if(sector==='Financeiro'){
-  await page.evaluate(()=>{user={role:'Administrador',erpId:'admin',name:'ADM'};render()});
+  await page.evaluate(adminId=>{user={role:'Administrador',erpId:adminId,name:'ADM'};render()},adminId);
   await page.locator('[data-invoice-id]').click();
   assert.equal(await page.locator('#invoiceApprove,#invoiceReject').count(),2);
   await page.locator('#invoiceResponse').fill('Aprovado para teste');
@@ -86,6 +93,10 @@ for(const [sector,width] of cases){
   await page.waitForFunction(()=>db.invoiceRequests[0].status==='Aprovada'&&db.trips.length===1);
   assert.equal(await page.evaluate(()=>JSON.stringify(reviewAttempts[0])===JSON.stringify(reviewAttempts[1])),true);
   assert.equal(await page.evaluate(()=>serverTrips.length),1);
+  assert.deepEqual(await page.evaluate(()=>db.trips[0]),{
+   id:88,invoiceRequestId:await page.evaluate(()=>db.invoiceRequests[0].id),assigned:[1],plannedAmount:10
+  });
+  assert.equal(await page.evaluate(()=>db.invoiceRequests[0].convertedId),88);
   await page.evaluate(()=>alerts.length=0);
   assert.equal(await page.evaluate(()=>db.trips.length),1);
   await page.locator('#invoiceNew').click();
@@ -109,6 +120,12 @@ for(const [sector,width] of cases){
   await page.locator('[type="submit"]').click();
   await page.waitForFunction(()=>alerts.length===1);
   assert.equal(await page.locator('#invoiceCreate').count(),1);
+  assert.equal(await page.evaluate(()=>server.length),2);
+  await page.evaluate(()=>{alerts.length=0;fail=false;sessionExpired=true});
+  await page.locator('[type="submit"]').click();
+  await page.waitForFunction(()=>alerts.length===1);
+  assert.match(await page.evaluate(()=>alerts[0]),/entre novamente/i);
+  assert.equal(await page.locator('[name="title"]').inputValue(),'Falha controlada');
   assert.equal(await page.evaluate(()=>server.length),2);
  }
  assert.deepEqual(pageErrors,[]);
