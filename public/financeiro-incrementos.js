@@ -1,17 +1,5 @@
-/* Integral Financeiro — incrementos trazidos das versões V10 a V19 do bundle (que nunca chegaram a rodar).
-   Tudo aqui ACRESCENTA ao sistema atual: nenhuma função existente é substituída, nenhuma tela é redesenhada
-   e nenhum dado existente é reescrito. Cada bloco se liga à tela já montada pelos módulos atuais.
-
-   1. Contas      — leitura real de boletos/contas pela IA no botão "Enviar boletos para IA" (V10).
-   2. Contas      — matrícula e recorrência nos cards de "Todas as contas cadastradas" (V10).
-   3. Visão Geral — painel "Acompanhamento" com contas a vencer, entradas do ERP, contratos a vencer,
-                    orçamentos abertos, viagens ativas e últimos documentos (V11).
-   4. Planejamento— entradas do ERP também agrupadas por projeto, com detalhe das parcelas (V12/V16).
-   5. Fluxo       — exportar o mês em CSV e PDF, exatamente com as linhas mostradas na tela (V14).
-   6. Viagens     — relatório de viagens por mês, respeitando o que cada usuário pode ver (V17/V18).
-   7. Contas      — espelho das contas e pagamentos nas tabelas financeiro_contas / financeiro_pagamentos,
-                    usadas pelos lembretes automáticos (V19). Só envia; nunca lê de volta nem apaga.
-*/
+/* Complementos de Contas, Visão Geral, Planejamento, Fluxo de Caixa e Viagens.
+   Contas usa o estado confirmado para manter o espelho relacional. */
 (function(){
 'use strict';
 
@@ -49,7 +37,7 @@ function modal(titleStr,body,foot=''){
    ====================================================================== */
 async function analyzeAccount(file){
   const d=data(),image=await readDataUrl(file);
-  const accounts=(d?.accountMasters||[]).map(a=>({id:a.id,name:a.name,supplier:a.supplier,registration:a.registration||'',category:a.category,sector:a.sector}));
+  const accounts=(d?.accountMasters||[]).filter(a=>a.active!==false&&!a.archivedAt).map(a=>({id:a.id,name:a.name,supplier:a.supplier,registration:a.registration||'',category:a.category,sector:a.sector}));
   const r=await window.IntegralFileUploads.fetch('/api/ai-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image,fileName:file.name,accounts})});
   const out=await r.json().catch(()=>({}));
   if(!r.ok||!out?.ok)throw new Error(out?.details||out?.error||`Falha na leitura da conta (HTTP ${r.status})`);
@@ -58,7 +46,12 @@ async function analyzeAccount(file){
 function applyAnalyzedAccount(ai,file){
   const d=data();d.accountMasters=Array.isArray(d.accountMasters)?d.accountMasters:[];d.accountPayments=Array.isArray(d.accountPayments)?d.accountPayments:[];
   let master=d.accountMasters.find(a=>String(a.id)===String(ai.matchedAccountId));
-  if(!master&&ai.registration)master=d.accountMasters.find(a=>norm(a.registration)===norm(ai.registration)&&norm(a.supplier)===norm(ai.supplier));
+  if(!master&&ai.registration){
+    const matches=d.accountMasters.filter(a=>norm(a.registration)===norm(ai.registration)&&norm(a.supplier)===norm(ai.supplier));
+    if(matches.length>1)throw new Error('Confira o cadastro da conta com matrícula repetida.');
+    master=matches[0];
+  }
+  if(master&&(master.active===false||master.archivedAt))throw new Error('A conta correspondente está inativa. Confira o boleto antes de cadastrar um novo pagamento.');
   let created=false;
   if(!master){
     master={id:newId(),name:ai.name||ai.supplier||'Conta',supplier:ai.supplier||'',registration:ai.registration||'',recurrence:ai.recurrence||'Não identificada',category:ai.category||'Outros',sector:ai.sector||'Administrativo',method:ai.paymentMethod||'Outro',active:true,createdByAI:true};
@@ -90,11 +83,18 @@ function decorateBillsModal(backdrop){
     for(let i=0;i<files.length;i++){
       const file=files[i];status.textContent=`Analisando ${i+1} de ${files.length}: ${file.name}`;
       try{const ai=await analyzeAccount(file),r=applyAnalyzedAccount(ai,file);done++;if(r.created)newAccounts++;if(!r.duplicate)newPayments++}
-      catch(e){console.error('Leitura de conta pela IA:',file.name,e);failed.push(`${file.name}: ${e.message||e}`)}
+      catch(e){failed.push(`${file.name}: ${e.message||e}`)}
     }
-    if(done)persist();
-    try{await window.IntegralFinanceCloudStorage?.syncNow?.()}catch{}
-    status.innerHTML=`<b>${done}</b> arquivo(s) analisado(s): <b>${newAccounts}</b> conta(s) nova(s) e <b>${newPayments}</b> pagamento(s) incluído(s).${failed.length?`<br>Não foi possível ler: ${failed.map(E).join('; ')}`:''}`;
+    let confirmed=false;
+    if(done){
+      persist();
+      try{
+        const cloud=window.IntegralFinanceCloudStorage;
+        confirmed=await cloud?.syncNow?.()===true&&cloud?.status?.()!=='conflito';
+      }catch{}
+    }
+    const saved=confirmed?'Salvamento confirmado.':'Confira o estado de sincronização antes de sair.';
+    status.innerHTML=`<b>${done}</b> arquivo(s) analisado(s): <b>${newAccounts}</b> conta(s) nova(s) e <b>${newPayments}</b> pagamento(s) preparado(s). ${done?saved:''}${failed.length?`<br>Não foi possível importar: ${failed.map(E).join('; ')}`:''}`;
     send.disabled=false;
     if(done){try{if(currentView()==='accounts'&&typeof accounts==='function')accounts()}catch{}}
   });
@@ -251,51 +251,45 @@ function decorateTrips(){
   const newBtn=q('#trip26New, #trip31New',toolbar);if(newBtn)newBtn.parentElement.insertBefore(b,newBtn);else toolbar.appendChild(b);
 }
 
-/* ======================================================================
-   7. Contas — espelho nas tabelas financeiro_contas / financeiro_pagamentos (V19)
-   Somente envio (upsert) do que está no sistema para as tabelas dos lembretes automáticos.
-   Nunca lê dessas tabelas para dentro do sistema e nunca apaga linhas (as exclusões já são tratadas
-   pelos módulos de Contas). Roda apenas para administradores, depois que os dados da nuvem carregaram.
-   ====================================================================== */
-const mirror={ready:false,timer:null,running:false,again:false,last:{},disabled:false};
-const txt=v=>String(v??'');
-const clean=o=>{const x={};for(const[k,v]of Object.entries(o||{})){if(k==='file'&&v&&typeof v==='object'){x.file={name:v.name,type:v.type,size:v.size,addedAt:v.addedAt};continue}if(k==='dataUrl'||k==='fileData')continue;x[k]=v}return x};
-function mapAccount(a){return {id:txt(a.id),nome:a.name||a.supplier||'Conta',fornecedor:a.supplier||'',categoria:a.category||'',setor:a.sector||'',matricula_cadastro:a.registration||'',recorrencia:a.recurrence||'',ativo:a.active!==false,dados:clean(a),updated_at:new Date().toISOString()}}
-function mapPayment(p){return {id:txt(p.id),conta_id:txt(p.accountId),vencimento:/^\d{4}-\d{2}-\d{2}$/.test(txt(p.due))?p.due:localToday(),valor:Number(p.value||0),status:p.status||'A vencer',forma_pagamento:p.method||p.paymentMethod||'',codigo_pagamento:p.barcode||p.paymentCode||'',pago_em:p.paidAt||null,dados:clean(p),updated_at:new Date().toISOString()}}
-async function upsertEach(sb,table,rows){
-  let failed=0;
-  for(let i=0;i<rows.length;i+=50){
-    const chunk=rows.slice(i,i+50),r=await sb.from(table).upsert(chunk,{onConflict:'id'});
-    if(!r.error)continue;
-    if(/does not exist|schema cache|relation/i.test(r.error.message||'')){mirror.disabled=true;console.warn(`Incrementos: tabela ${table} indisponível; espelho de Contas desativado.`);return -1}
-    for(const row of chunk){const one=await sb.from(table).upsert(row,{onConflict:'id'});if(one.error){failed++;console.warn(`Incrementos: não foi possível espelhar ${table} ${row.id}:`,one.error.message)}}
-  }
-  return failed;
-}
+/* O servidor projeta somente os módulos confirmados. Registros legados
+   sem equivalente e chaves ambíguas ficam disponíveis para conciliação. */
+const mirror={ready:false,timer:null,running:false,again:false,retryPending:false,retries:0};
+function canProjectAccounts(){return isAdmin()||window.IntegralFinanceSectorAccess?.isFinance?.()}
 async function runMirror(){
-  if(mirror.disabled||!mirror.ready||!isAdmin())return;
+  if(!mirror.ready||!canProjectAccounts())return;
   if(mirror.running){mirror.again=true;return}
-  const sb=window.IntegralERP?.sb,d=data();if(!sb||!d)return;
-  try{const {data:s}=await sb.auth.getSession();if(!s?.session)return}catch{return}
+  const sb=window.IntegralERP?.sb;if(!sb)return;
   mirror.running=true;
   try{
-    const accounts=(d.accountMasters||[]).map(mapAccount),ids=new Set(accounts.map(a=>a.id));
-    const payments=(d.accountPayments||[]).filter(p=>ids.has(txt(p.accountId))).map(mapPayment);
-    const changedAcc=accounts.filter(a=>mirror.last['a:'+a.id]!==JSON.stringify({...a,updated_at:0}));
-    const changedPay=payments.filter(p=>mirror.last['p:'+p.id]!==JSON.stringify({...p,updated_at:0}));
-    if(changedAcc.length){const f=await upsertEach(sb,'financeiro_contas',changedAcc);if(f<0)return;changedAcc.forEach(a=>mirror.last['a:'+a.id]=JSON.stringify({...a,updated_at:0}))}
-    if(changedPay.length){const f=await upsertEach(sb,'financeiro_pagamentos',changedPay);if(f<0)return;changedPay.forEach(p=>mirror.last['p:'+p.id]=JSON.stringify({...p,updated_at:0}))}
-  }catch(e){console.warn('Incrementos: espelho de Contas pendente',e)}
-  finally{mirror.running=false;if(mirror.again){mirror.again=false;scheduleMirror()}}
+    const {data:summary,error}=await sb.rpc('financeiro_projetar_contas_confirmadas');
+    if(error)throw error;
+    if(summary?.revisao)console.warn('Financeiro: contas com vínculo ou vencimento pendente de revisão.',summary.revisao);
+    if(summary?.falhas)console.warn('Financeiro: registros inválidos ficaram pendentes no espelho.',summary.falhas);
+    mirror.retries=0;mirror.retryPending=false;
+  }catch(error){
+    mirror.retryPending=!['PGRST202','42501'].includes(error?.code);
+    if(mirror.retryPending&&mirror.retries<3){
+      mirror.retries++;
+      scheduleMirror(5000*mirror.retries);
+    }
+    console.warn('Financeiro: projeção de contas pendente.');
+  }finally{
+    mirror.running=false;
+    if(mirror.again){mirror.again=false;scheduleMirror()}
+  }
 }
-function scheduleMirror(){clearTimeout(mirror.timer);mirror.timer=setTimeout(runMirror,1500)}
-function installMirror(){
-  const original=typeof save==='function'?save:window.save;
-  if(typeof original!=='function'||original.__finIncMirror)return false;
-  const wrapped=function(){const r=original.apply(this,arguments);if(mirror.ready)scheduleMirror();return r};
-  wrapped.__finIncMirror=true;try{save=wrapped}catch{}window.save=wrapped;return true;
+function scheduleMirror(delay=1500){clearTimeout(mirror.timer);mirror.timer=setTimeout(runMirror,delay)}
+function enableMirror(){mirror.ready=true}
+document.addEventListener('integral-finance-cloud-ready',enableMirror);
+function accountsChanged(event){
+  if(event.detail?.keys?.some(key=>key==='accountMasters'||key==='accountPayments')){
+    mirror.retries=0;
+    scheduleMirror();
+  }
 }
-document.addEventListener('integral-finance-cloud-ready',()=>{mirror.ready=true;scheduleMirror()});
+document.addEventListener('integral-finance-remote-update',accountsChanged);
+document.addEventListener('integral-finance-modules-saved',accountsChanged);
+window.addEventListener('online',()=>{if(mirror.retryPending){mirror.retries=0;scheduleMirror()}});
 
 /* ---------- ligação com as telas ---------- */
 function decorateAll(){
@@ -309,10 +303,9 @@ function decorateAll(){
 let queued=false;
 const schedule=()=>{if(queued)return;queued=true;queueMicrotask(()=>{queued=false;decorateAll()})};
 function boot(){
-  installMirror();
   new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
   decorateAll();
-  if(window.IntegralFinanceCloudStorage&&typeof window.IntegralFinanceCloudStorage.initialize==='function'){window.IntegralFinanceCloudStorage.initialize().then(ok=>{if(ok){mirror.ready=true;scheduleMirror()}}).catch(()=>{})}
+  if(window.IntegralFinanceCloudStorage&&typeof window.IntegralFinanceCloudStorage.initialize==='function'){window.IntegralFinanceCloudStorage.initialize().then(ok=>{if(ok)enableMirror()}).catch(()=>{})}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 window.IntegralFinanceIncrementos={exportCashCsv,exportCashPdf,tripReport,runMirror};
