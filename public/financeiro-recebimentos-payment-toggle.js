@@ -21,38 +21,46 @@ function enhance(){
  const table=modal.querySelector('.receb-history-table');if(!table||table.dataset.payReady==='1')return;
  table.dataset.payReady='1';
  const hr=table.querySelector('thead tr');if(hr){const th=document.createElement('th');th.className='receb-pay-action';th.textContent='Ação';hr.appendChild(th)}
- table.querySelectorAll('tbody tr').forEach(row=>{
-   const cells=row.querySelectorAll('td');if(cells.length<7)return;
-   const status=(cells[3]?.textContent||'').trim();
-   const numero=(cells[1]?.textContent||'').replace('#','').trim();
-   const vencText=(cells[2]?.textContent||'').trim();
+ table.querySelectorAll('tbody tr[data-parcela-id]').forEach(row=>{
+   const {parcelaStatus:status,parcelaVersao:versao,parcelaOrigem:origem}=row.dataset;
    const td=document.createElement('td');td.className='receb-pay-action';td.dataset.label='Ação';
-   td.innerHTML=`<button class="receb-pay-toggle ${status==='Pago'?'is-paid':''}" data-numero="${numero}" data-venc="${vencText}" data-paid="${status==='Pago'?'1':'0'}">${status==='Pago'?'Desmarcar':'✓ Pago'}</button>`;
+   if ((['Pendente','Inadimplente'].includes(status)||(status==='Pago'&&origem==='manual'))&&/^\d+$/.test(versao||'')) {
+     const btn=document.createElement('button');
+     btn.type='button';
+     btn.className='receb-pay-toggle'+(status==='Pago'?' is-paid':'');
+     btn.textContent=status==='Pago'?'Estornar baixa manual':'Registrar baixa manual';
+     td.appendChild(btn);
+   } else if (status==='Parcial'||status==='Pago') {
+     td.textContent='Em conferência';
+   }
    row.appendChild(td);
  });
 }
 
 async function toggle(btn){
- const modal=btn.closest('#recebHistoryModal');if(!modal)return;
- const title=modal.querySelector('.modal-head h3')?.textContent||'';
- const clientName=title.replace(/^Histórico\s*—\s*/i,'').trim();
- const numero=Number(btn.dataset.numero);const paid=btn.dataset.paid==='1';
- if(!clientName||!Number.isInteger(numero))return;
+ const modal=btn.closest('#recebHistoryModal');
+ const row=btn.closest('tr');
+ if(!modal||!row||btn.disabled)return;
+ const {parcelaId,parcelaVersao,parcelaStatus,clienteId}=row.dataset;
+ if(!parcelaId||!/^\d+$/.test(parcelaVersao||''))return;
+ const estorno=parcelaStatus==='Pago';
+ const motivo=estorno?window.prompt('Motivo do estorno da baixa manual (até 500 caracteres):')?.trim():null;
+ if(estorno&&!motivo)return;
+ if(!estorno&&!window.confirm('Confirma a baixa manual pelo valor da parcela mais os encargos registrados?'))return;
+
  btn.disabled=true;
  try{
-   const parcelaId=btn.closest('tr')?.dataset.parcelaId;
-   if(!parcelaId)throw new Error('Reabra a ficha para identificar a parcela.');
-   const p=await sb.from('fin_receb_parcelas').select('*').eq('id',parcelaId).limit(1);if(p.error)throw p.error;if(!p.data?.length)throw new Error('Parcela não encontrada.');
-   const parcel=p.data[0];
-   if(paid&&!confirm(`Desmarcar o pagamento da parcela #${numero}? O valor pago e a data serão apagados e a parcela voltará para Pendente.`))return;
-   if(!paid&&parcel.status==='Parcial'&&!confirm(`A parcela #${numero} tem pagamento parcial de ${Number(parcel.valor_liquidado||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}. Marcar como paga pelo valor total?`))return;
-   const values=paid?{status:'Pendente',pago_em:null,valor_liquidado:0,diferenca:0}:{status:'Pago',pago_em:new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10),valor_liquidado:Number(parcel.valor_previsto||0)+Number(parcel.juros||0)+Number(parcel.multa||0),diferenca:0};
-   const u=await sb.from('fin_receb_parcelas').update(values).eq('id',parcel.id).eq('versao',parcel.versao).select('id,status').single();if(u.error)throw u.error;
-   const row=btn.closest('tr');const cells=row.querySelectorAll('td');
-   const newPaid=!paid;btn.dataset.paid=newPaid?'1':'0';btn.textContent=newPaid?'Desmarcar':'✓ Pago';btn.classList.toggle('is-paid',newPaid);
-   const statusEl=cells[3]?.querySelector('.receb-status');if(statusEl){statusEl.textContent=newPaid?'Pago':'Pendente';statusEl.className=`receb-status ${newPaid?'Pago':'Pendente'}`}
-   cells[5].textContent=newPaid?new Date().toLocaleDateString('pt-BR'):'—';cells[6].textContent=newPaid?cells[4].textContent:'—';
- }catch(e){alert('Não foi possível alterar o pagamento: '+(e.message||e))}finally{btn.disabled=false}
+   const {error}=await sb.rpc('financeiro_baixa_manual',{
+     p_id:parcelaId,p_versao:parcelaVersao,p_status:parcelaStatus,
+     p_acao:estorno?'estornar':'baixar',p_motivo:motivo
+   });
+   if(error)throw error;
+   document.dispatchEvent(new CustomEvent('integral-receivables-changed'));
+   if(modal.isConnected)await window.IntegralReceivablesHistory.show(clienteId);
+ }catch(e){
+   alert('Não foi possível confirmar a alteração: '+(e.message||e)+' Confira a parcela no histórico antes de tentar novamente.');
+   if(modal.isConnected)await window.IntegralReceivablesHistory.show(clienteId);
+ }finally{btn.disabled=false}
 }
 
 document.addEventListener('click',e=>{const b=e.target.closest('.receb-pay-toggle');if(b){e.preventDefault();e.stopPropagation();toggle(b)}});

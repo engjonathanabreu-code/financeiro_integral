@@ -25,11 +25,12 @@ module.exports=async function handler(req,res){
      v:{type:'string'},
      g:{type:'string'},
      n:{type:'number'},
-     l:{type:'number'}
-   },required:['p','d','v','g','n','l']};
+     l:{type:'number'},
+     desconto:{type:['number','null']}
+   },required:['p','d','v','g','n','l','desconto']};
    schema={type:'object',additionalProperties:false,properties:{rows:{type:'array',items:row}},required:['rows']};
    name='integral_receivables_report_compact';
-   prompt='Leia integralmente o relatorio bancario. Extraia SOMENTE registros da secao de LIQUIDACAO, ou seja, titulos efetivamente pagos. Para cada boleto liquidado retorne um objeto com exatamente estas chaves: p = nome do pagador; d = documento ou codigo do boleto; v = data de vencimento no formato YYYY-MM-DD; g = data de pagamento no formato YYYY-MM-DD; n = valor nominal como numero; l = valor efetivamente pago como numero. Preserve cada vencimento separadamente, inclusive vencimentos de meses futuros e multiplos titulos do mesmo pagador: nunca agrupe, some ou deduplique linhas. Use ponto como separador decimal e nao inclua simbolo de moeda. Ignore Entrada Confirmada, TOTAL, subtotais, cabecalhos e rodapes. Se um campo nao existir use string vazia ou zero. Nao invente dados.';
+   prompt='Leia integralmente o relatorio bancario. Extraia SOMENTE registros da secao de LIQUIDACAO, ou seja, titulos efetivamente pagos. Para cada boleto liquidado informe a soma dos descontos e abatimentos explícitos em reais, ou null se não constar. Não confunda pagamento parcial com desconto. Retorne um objeto com estas chaves: p = nome do pagador; d = documento ou codigo do boleto; v = data de vencimento no formato YYYY-MM-DD; g = data de pagamento no formato YYYY-MM-DD; n = valor nominal como numero; l = valor efetivamente pago como numero. Preserve cada vencimento separadamente, inclusive vencimentos de meses futuros e multiplos titulos do mesmo pagador: nunca agrupe, some ou deduplique linhas. Use ponto como separador decimal e nao inclua simbolo de moeda. Ignore Entrada Confirmada, TOTAL, subtotais, cabecalhos e rodapes. Se um campo nao existir use string vazia ou zero. Nao invente dados.';
   }
   const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model,input:[{role:'user',content:[{type:'input_text',text:prompt},{type:'input_file',file_data:file,filename:fileName}]}],text:{format:{type:'json_schema',name,strict:true,schema}}})});
   const raw=await response.text();let data={};try{data=raw?JSON.parse(raw):{}}catch{return res.status(502).json({ok:false,error:'OPENAI_INVALID_RESPONSE',details:'A OpenAI retornou uma resposta inválida.'})}
@@ -45,7 +46,8 @@ module.exports=async function handler(req,res){
     vencimento:String(pick(r,'v',2)||'').slice(0,10),
     pagamento:String(pick(r,'g',3)||'').slice(0,10),
     valor_nominal:Number(pick(r,'n',4)||0),
-    valor_liquidado:Number(pick(r,'l',5)||0)
+    valor_liquidado:Number(pick(r,'l',5)||0),
+    desconto:pick(r,'desconto',6)??null
    })).filter(e=>e.pagador||e.documento);
    return res.status(200).json({ok:true,model:data.model||model,entries});
   }

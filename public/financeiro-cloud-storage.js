@@ -479,7 +479,8 @@ function pushChanged(allowDuringClose=false){
   if(!initialized)return Promise.resolve(false);
   pushing=true;pushAgain=false;
   pushPromise=(async()=>{
-  let allOk=true,transient=false,wrote=false;
+  let allOk=true,transient=false;
+  const confirmed=[];
   try{
     const c=client(),s=await session(),d=state();if(!c||!s||!d){transient=true;return false}
     if(s.user.id!==sessionUid){console.warn('Financeiro: a sessão mudou; alterações não enviadas com a nova identidade.');return false}
@@ -518,7 +519,7 @@ function pushChanged(allowDuringClose=false){
         }
         if(!result)throw Object.assign(Error('Muitas gravações simultâneas; nova tentativa em instantes.'),{code:'FIN_CONCORRENCIA'});
         if(!sameSession())break;
-        cloudKeys.add(k);delete blocked[k];wrote=true;
+        cloudKeys.add(k);delete blocked[k];confirmed.push(k);
         const drafts=readPending(sessionUid);
         if(drafts.keys[k]&&json(drafts.keys[k].local)===localJson){
           delete drafts.keys[k];
@@ -547,7 +548,8 @@ function pushChanged(allowDuringClose=false){
     if(transient){
       clearTimeout(retryTimer);retryTimer=setTimeout(()=>{if(initialized)pushChanged()},5000);
       setStatus(typeof navigator!=='undefined'&&navigator.onLine===false?'pendente':'falha');
-    }else if(allOk&&wrote)setStatus('salvo');
+    }else if(allOk&&confirmed.length)setStatus('salvo');
+    if(confirmed.length){try{document.dispatchEvent(new CustomEvent('integral-finance-modules-saved',{detail:{keys:confirmed}}))}catch{}}
     pushing=false;pushPromise=null;
     if(pushAgain&&!closingBudget){pushAgain=false;schedulePush()}
   }
