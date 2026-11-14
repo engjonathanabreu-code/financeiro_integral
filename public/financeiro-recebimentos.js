@@ -6,8 +6,49 @@ let state={municipios:[],clientes:[],parcelas:[],month:new Date(Date.now()-new D
 const esc=(v='')=>String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),br=v=>v?new Date(v+'T12:00:00').toLocaleDateString('pt-BR'):'—',uid=()=>crypto.randomUUID();
 function modal(title,body,save,label='Salvar'){q('#recebModal')?.remove();const d=document.createElement('div');d.id='recebModal';d.className='modal-backdrop';d.innerHTML=`<section class="modal"><header class="modal-head"><h3>${esc(title)}</h3><button class="btn icon ghost" data-close>×</button></header><div class="modal-body">${body}</div><footer class="modal-foot"><button class="btn ghost" data-close>Fechar</button>${save?`<button class="btn" id="recebSave">${label}</button>`:''}</footer></section>`;document.body.appendChild(d);qa('[data-close]',d).forEach(x=>x.onclick=()=>d.remove());if(save)q('#recebSave').onclick=save}
-async function allRows(table,order){const data=[];for(let offset=0;;offset+=500){let query=sb.from(table).select('*').order(order);if(order!=='id')query=query.order('id');const r=await query.range(offset,offset+499);if(r.error)throw r.error;data.push(...r.data);if(r.data.length<500)break;}return data;}
-async function load(){if(!sb)throw new Error('Supabase não inicializado.');const [municipios,clientes,parcelas]=await Promise.all([allRows('fin_receb_municipios','nome'),allRows('fin_receb_clientes','nome'),allRows('fin_receb_parcelas','vencimento')]);Object.assign(state,{municipios,clientes,parcelas});}
+let receivablesOwner,loadOperation;
+async function sessionUser(){
+  const {data,error}=await sb.auth.getSession();
+  if(error)throw error;
+  return data?.session?.user?.id;
+}
+function clearForeignReceivables(_event,session){
+  if(!receivablesOwner||session?.user?.id===receivablesOwner)return;
+  receivablesOwner=undefined;
+  Object.assign(state,{municipios:[],clientes:[],parcelas:[]});
+  q('#recebModal')?.remove();
+  if(q('#title')?.textContent==='Recebimentos')q('#content')?.replaceChildren();
+}
+sb?.auth.onAuthStateChange?.(clearForeignReceivables);
+async function allRows(table,order){
+  if(!sb)throw Error('Supabase não inicializado.');
+  const actor=await sessionUser();
+  if(!actor)throw Error('Entre novamente para consultar os recebimentos.');
+  const rows=await window.IntegralDREShared.allPages(sb,table,'*');
+  if(await sessionUser()!==actor)throw Error('A sessão mudou. Abra Recebimentos novamente.');
+  if(order!=='id')rows.sort((a,b)=>String(a[order]??'').localeCompare(String(b[order]??''),'pt-BR'));
+  return rows;
+}
+async function load(){
+  if(!sb)throw Error('Supabase não inicializado.');
+  const actor=await sessionUser();
+  if(!actor)throw Error('Entre novamente para consultar os recebimentos.');
+  if(loadOperation?.actor===actor)return loadOperation.promise;
+  if(receivablesOwner&&receivablesOwner!==actor)clearForeignReceivables(null,{user:{id:actor}});
+  receivablesOwner=actor;
+  const pending={actor};
+  pending.promise=(async()=>{
+    const [municipios,clientes,parcelas]=await Promise.all([
+      allRows('fin_receb_municipios','nome'),allRows('fin_receb_clientes','nome'),allRows('fin_receb_parcelas','vencimento')
+    ]);
+    if(await sessionUser()!==actor||receivablesOwner!==actor||loadOperation!==pending){
+      throw Error('A sessão mudou. Abra Recebimentos novamente.');
+    }
+    Object.assign(state,{municipios,clientes,parcelas});
+  })().finally(()=>{if(loadOperation===pending)loadOperation=null});
+  loadOperation=pending;
+  return pending.promise;
+}
 const activeClientIds=()=>{const off=new Set(state.municipios.filter(m=>m.ativo===false).map(m=>m.id));return new Set(state.clientes.filter(c=>c.ativo!==false&&!off.has(c.municipio_id)).map(c=>c.id))};
 const monthRows=()=>{const ids=activeClientIds();return state.parcelas.filter(p=>p.vencimento?.slice(0,7)===state.month&&p.ativo!==false&&ids.has(p.cliente_id))};
 function totals(rows){const a=rows.filter(p=>p.status!=='Cancelado'),paid=a.filter(p=>p.status==='Pago'),late=a.filter(p=>p.status==='Inadimplente'),open=a.filter(p=>!['Pago','Inadimplente'].includes(p.status));return{n:a.length,paid:paid.length,late:late.length,open:open.length,expected:a.reduce((s,p)=>s+(Number(p.valor_previsto||0)+Number(p.juros||0)+Number(p.multa||0)),0),received:a.filter(p=>['Pago','Parcial'].includes(p.status)).reduce((s,p)=>s+Number(p.valor_liquidado??0),0),declaradas:a.filter(p=>p.origem_baixa==='manual').reduce((s,p)=>s+Number(p.valor_liquidado??0),0),pct:a.length?Math.round(paid.length/a.length*100):0}}

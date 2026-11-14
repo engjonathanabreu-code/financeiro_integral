@@ -16,7 +16,6 @@ function currentDb(){
 function isAuthenticated(){return !!currentUserObj()&&!!q('.shell')}
 function isAdmin(){return currentUserObj()?.role==='Administrador'}
 function currentViewName(){try{return window.view||(typeof view!=='undefined'?view:'')}catch{return ''}}
-function persist(){try{if(typeof save==='function')save()}catch(e){console.warn('Financeiro ERP persist:',e)}}
 function rerenderCurrent(){
   try{
     const v=currentViewName();
@@ -31,11 +30,9 @@ async function syncERP(button){
   const oldText=button?.textContent||'Sincronizar ERP';
   if(button){button.disabled=true;button.textContent='Sincronizando...';}
   try{
-    if(!window.IntegralERP?.sync)throw new Error('Integração com o ERP ainda não está disponível.');
-    await window.IntegralERP.sync();
-    if(window.IntegralFinanceERPPlanning?.sync)await window.IntegralFinanceERPPlanning.sync();
-    const d=currentDb();
-    if(d){d.lastErpManualSync=new Date().toISOString();d.lastErpSyncReason='manual';persist();}
+    const sync=window.IntegralFinanceERPPlanning?.sync;
+    if(!sync)throw new Error('Integração com o ERP ainda não está disponível.');
+    await sync();
     if(button)button.textContent='ERP sincronizado';
     updateSyncCaption();
     rerenderCurrent();

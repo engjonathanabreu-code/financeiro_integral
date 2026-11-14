@@ -26,6 +26,15 @@ try{
  await page.locator('#trip26Back').click();await page.locator('[data-trip26-open="1"]').click();await page.locator('#trip26Edit').click();await page.locator('#trip26Form [name="start"]').fill('2026-10-01');await page.locator('#trip26Form [name="end"]').fill('2026-10-02');await page.locator('#trip26Form [name="employee"]').fill('Equipe');await page.locator('#trip26Form [name="status"]').selectOption('Concluída');await page.locator('#trip26Form button').click();await page.locator('#finCompletedTrips [data-trip26-open="1"]').waitFor();assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('persistedTrips'))[0].status),'Concluída');checks++;
  await page.evaluate(()=>{db.budgetRecords=structuredClone(server);budgets()});assert.equal(await page.locator('#finClosedBudgets [data-v9-budget="1"]').count(),1);checks++;
  await page.locator('#finAgentFloat').click();await page.locator('#finAgentPanel textarea').waitFor();await page.locator('#finAgentPanel [data-agent-prompt]').first().click();await page.getByText('Observado: R$ 50. Projeções: dados insuficientes.',{exact:true}).waitFor();checks++;
+ await page.evaluate(()=>{window.fetch=async()=>new Response(JSON.stringify({erro:'Limite diário de IA atingido.'}),{status:429,headers:{'Content-Type':'application/json'}})});
+ await page.locator('#finAgentPanel [data-agent-prompt]').first().click();
+ const denied=page.locator('#finAgentPanel .is-error').last();
+ await denied.getByText(/Limite diário de IA atingido/).waitFor();assert.equal(await denied.locator('[data-agent-pdf]').count(),0);checks++;
+ await page.evaluate(()=>{window.fetch=async()=>new Response(JSON.stringify({type:'delta',text:'Resposta interrompida.'})+'\n',{headers:{'Content-Type':'application/x-ndjson'}})});
+ await page.locator('#finAgentPanel [data-agent-prompt]').first().click();
+ const interrupted=page.locator('#finAgentPanel .is-error').last();
+ await interrupted.getByText(/A análise não foi concluída/).waitFor();assert.equal(await interrupted.locator('[data-agent-pdf]').count(),0);checks++;
+ await page.evaluate(()=>{window.fetch=async()=>({ok:true,json:async()=>({resposta:'Observado: R$ 50. Projeções: dados insuficientes.',base:{periodo:{start:'2026-10-01',end:'2026-10-01'},observado:{recebido:50}},modo:'ia'})})});
  const box=await page.locator('#finAgentPanel').boundingBox();assert.ok(box.x>=0&&box.width<=width);await page.keyboard.press('Escape');assert.equal(await page.locator('#finAgentPanel').count(),0);checks++;
  const order=await page.locator('.nav button').evaluateAll(bs=>bs.map(b=>b.dataset.view));assert.equal(order[order.indexOf('boletos')+1],'financialAgent');await page.locator('[data-view="financialAgent"]').click();await page.locator('#content .fin-agent-chat').waitFor();checks++;
  await page.evaluate(()=>{user={role:'Funcionário',erpId:'staff',sector:'Projetos'};IntegralFinancialAgent.reconcile();budgets()});assert.equal(await page.locator('#finAgentFloat,[data-view="financialAgent"],#finCloseBudget').count(),0);await page.locator('[data-v9-budget="1"]').click();assert.equal(await page.locator('#finCloseBudget').count(),0);checks++;

@@ -44,7 +44,7 @@ A suite Node foi executada novamente na revisão. O teste real mínimo do proved
 
 **PDF.** "Relatório PDF" pede um relatório estruturado (`mode: 'relatorio'`, JSON schema estrito) e monta no navegador com jsPDF: capa com mensagem-chave e indicadores, resumo executivo, diagnóstico, gráficos vetoriais, recomendações, riscos, próximos passos, DRE, maiores saídas, fontes e limitações. Cada resposta do chat também pode virar PDF. Sem IA, o PDF sai com uma leitura automática dos números.
 
-**Desempenho.** Base e parcelas são lidas em paralelo (páginas de parcelas em lotes de 4) e reaproveitadas por 2 minutos por usuário/sessão (`refresh: true` força nova leitura). Chat com `reasoning.effort: low`; relatório com `medium` (só em modelos gpt-5/o*).
+**Desempenho.** Base e parcelas são lidas em paralelo. As parcelas usam um cursor por ID até o fim da leitura, e o conjunto completo é reaproveitado por 2 minutos por usuário/sessão (`refresh: true` força nova leitura). Chat com `reasoning.effort: low`; relatório com `medium` (só em modelos gpt-5/o*).
 
 **Dados.** A base ganhou séries mensais (fluxo, recebimentos, planejamento), composição por natureza, DRE gerencial com as mesmas regras da aba DRE (`public/financeiro-dre-shared.js`, usado no navegador e no servidor) e indicadores (margem de caixa, médias, variações, inadimplência do período). As maiores saídas, com descrições, vão para a tela e o PDF, mas não para a IA.
 
@@ -58,3 +58,13 @@ Caixa, Visão Geral, DRE na fonte sistema, exportações e Agente usam a mesma b
 Agrupamentos novos são visuais. O histórico automático íntegro é lido pelas datas e referências originais dos seus itens. O agrupamento manual e os ajustes históricos de datas ou valores mantêm o total em uso e deixam os itens originais disponíveis. Nenhum agrupamento é regravado ao abrir o Caixa. Uma referência repetida de lote, um nome ou uma coincidência de valor não confirmam identidade bancária.
 
 O resultado realizado e as baixas de Recebimentos aparecem em quadros distintos. A conciliação exige vínculo individual e compatibilidade de data, direção e valor. A DRE preserva baixas parciais, distingue comprovantes do extrato e do retorno Ailos e mostra o saldo atual em aberto pelo vencimento. Um extrato incompleto pode esclarecer alguns vínculos e os demais continuam visíveis para conferência. O vínculo manual no Fluxo usa o ID da parcela em Recebimentos; movimentações detalhadas de agrupamentos históricos ficam disponíveis para revisão.
+
+## Controles das rotas de IA no P2
+
+A API reserva a cota imediatamente antes de chamar o provedor. Indicadores do Agente e consultas de configuração continuam disponíveis sem uma reserva. O banco conta por usuário e função, com renovação à meia-noite em Brasília. Os limites iniciais são 30 análises de comprovantes, 20 leituras de hodômetro, 20 chamadas de chat ou relatório do Agente, 12 análises de contas, 12 lotes de extrato, 8 leituras de Recebimentos, 10 análises administrativas de Veículos e 3 testes de conexão por dia. Chamadas já encaminhadas ao provedor continuam contabilizadas se a resposta falhar. A rota de documentos do Integração conserva seu controle separado.
+
+`GET /api/ai-health` consulta apenas a configuração. `POST /api/ai-health` executa um teste mínimo para administradores autorizados. Os prazos no provedor são de 45 segundos para documentos e Veículos, 85 segundos para o chat, 110 segundos para o relatório e 10 segundos para o teste de conexão. Em falhas, a interface recebe uma mensagem de erro sanitizada e os originais continuam disponíveis para revisão.
+
+Arquivos novos de até 20 MB enviados ao Storage para análise usam caminho próprio por usuário e hash. A API confere autorização do objeto com a sessão, expiração da URL, assinatura validada pelo Storage, tamanho, assinatura dos bytes e hash. As referências do acervo já registrado continuam sujeitas à RLS do Financeiro, com uma nova leitura ao solicitar o original. Arquivos antigos embutidos nos registros autorizados continuam compatíveis.
+
+A migração de cota cria somente uma tabela privada e uma RPC. A reversão da aplicação pode manter ambas, preservando os contadores. Para suspender também novas reservas, reverta as rotas antes de usar `supabase/rollback/financeiro_cotas_ia.sql`, que retira a permissão de execução e conserva os registros.

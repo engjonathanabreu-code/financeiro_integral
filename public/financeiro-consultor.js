@@ -95,9 +95,9 @@ function messageHtml(m,idx){
  const charts=m.base&&m.graficos?.length&&C?m.graficos.map(id=>C.svg(id,m.base)).join(''):'';
  const body=m.pending&&!m.content?`<div class="fin-agent-typing"><i></i><i></i><i></i><span>${E(m.wait||WAIT[0])}</span></div>`:md(stripCharts(m.content));
  /* Gráficos sob demanda: a sugestão abre a lista dos que têm dados no período; nada é desenhado sem pedido. */
- const opcoes=!m.pending&&m.content&&m.base&&C?C.ids.filter(id=>!(m.graficos||[]).includes(id)&&C.hasData(id,m.base)):[];
+ const opcoes=!m.pending&&!m.error&&m.content&&m.base&&C?C.ids.filter(id=>!(m.graficos||[]).includes(id)&&C.hasData(id,m.base)):[];
  const sugestao=opcoes.length?`<div class="fin-agent-chart-suggest">${m.chartMenu?opcoes.map(id=>`<button type="button" class="btn small ghost" data-agent-chart="${idx}:${id}">${E(C.defs[id].titulo)}</button>`).join('')+`<button type="button" class="btn small ghost" data-agent-chart-menu="${idx}">Fechar</button>`:`<button type="button" class="btn small ghost" data-fin-icon="chart-no-axes-combined" data-agent-chart-menu="${idx}">Gerar gráfico</button>`}</div>`:'';
- const tools=!m.pending&&m.content&&!m.intro?`<div class="fin-agent-msg-tools"><button type="button" class="btn small ghost" data-agent-pdf="${idx}">Baixar PDF desta análise</button><button type="button" class="btn small ghost" data-agent-copy="${idx}">Copiar</button></div>`:'';
+ const tools=!m.pending&&!m.error&&m.content&&!m.intro?`<div class="fin-agent-msg-tools"><button type="button" class="btn small ghost" data-agent-pdf="${idx}">Baixar PDF desta análise</button><button type="button" class="btn small ghost" data-agent-copy="${idx}">Copiar</button></div>`:'';
  return `<article class="fin-agent-assistant${m.error?' is-error':''}"><span class="fin-agent-avatar sm" data-fin-icon="bot" aria-hidden="true"></span><div class="fin-agent-bubble"><div class="fin-agent-md">${body}</div>${charts}${sugestao}${tools}</div></article>`;
 }
 function paint(root){
@@ -142,15 +142,15 @@ async function ask(root,question){
   const r=await call({question,history,stream:true,...params(root)},controller.signal);
   const type=r.headers?.get?.('content-type')||'';
   if(!type.includes('ndjson')){const res=await r.json();if(!r.ok)throw Error(res.erro||'Consulta indisponível.');if(state.owner!==owner)return;Object.assign(reply,{content:res.resposta,graficos:res.graficos||[],base:res.base});state.report=res.base;if(res.modo!=='ia')setStatus(root,'Indicadores consultados; a IA ainda não está configurada no servidor.');return}
-  const reader=r.body.getReader(),dec=new TextDecoder();let buf='',last=0;
+  const reader=r.body.getReader(),dec=new TextDecoder();let buf='',last=0,completed=false;
   for(;;){const {done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});let i;
    while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i).trim();buf=buf.slice(i+1);if(!line)continue;let ev;try{ev=JSON.parse(line)}catch{continue}
     if(state.owner!==owner)return;
     if(ev.type==='meta'){reply.base=ev.base;state.report=ev.base}
     else if(ev.type==='delta'){reply.content+=ev.text;if(Date.now()-last>60){last=Date.now();paintAll()}}
-    else if(ev.type==='done'){reply.graficos=ev.graficos||[]}
+    else if(ev.type==='done'){reply.graficos=ev.graficos||[];completed=true}
     else if(ev.type==='error')throw Error(ev.erro)}}
-  if(!reply.content)throw Error('A análise não foi concluída. Tente novamente.');
+  if(!completed||!reply.content)throw Error('A análise não foi concluída. Tente novamente.');
  }catch(error){if(error.name==='AbortError'||state.owner!==owner)return;reply.error=true;reply.content=reply.content?reply.content+`\n\n_${error.message}_`:`Não consegui concluir agora: ${error.message}`}
  finally{clearInterval(ticker);reply.pending=false;if(state.controller===controller){state.busy=false;state.controller=null}paintAll();root.querySelector('textarea')?.focus()}
 }

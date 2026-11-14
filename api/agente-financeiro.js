@@ -1,30 +1,41 @@
 const {period,analyze,forModel}=require('../lib/financial-consultant');
-const ERP=()=>process.env.ERP_SUPABASE_URL||'https://ycdsyilyvaxslkwbkxyo.supabase.co';
-const KEY=()=>process.env.ERP_SUPABASE_KEY||'sb_publishable_A7fw5Et4_bfUnqohpGajCw_nfhT-3a4';
+const {requireProfile,requestERP}=require('../lib/auth');
+const {reserveAIQuota}=require('../lib/ai-quota');
+const {TIMEOUTS,aiError,invalidResponse,outputText,parseOutput,providerData,providerError,requestProvider,sendError}=require('../lib/ai-provider');
 const MODEL=()=>process.env.OPENAI_CONSULTOR_MODEL||'gpt-5-mini';
 const CHARTS=['fluxo_mensal','resultado_mensal','saidas_natureza','entradas_natureza','recebimentos_mensal','dre_resumo','planejado_mensal'];
 const CACHE_MS=120000,cache=new Map();
 async function read(path,authorization,body){
- const r=await fetch(ERP()+path,{method:body?'POST':'GET',headers:{apikey:KEY(),Authorization:authorization,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(25000)});
- if(!r.ok)throw Object.assign(Error(r.status===401?'Sessão expirada.':r.status===403?'Somente administradores podem usar o agente.':'Não foi possível consultar a base autorizada.'),{status:[401,403].includes(r.status)?r.status:503});
+ const r=await requestERP(path,authorization,{method:body?'POST':'GET',body:body?JSON.stringify(body):undefined,timeout:25000});
+ if(!r.ok)throw aiError([401,403].includes(r.status)?r.status:503,'FINANCE_BASE_UNAVAILABLE',
+   'Não foi possível consultar a base autorizada. Confira a sessão e tente novamente.');
  return r.json();
 }
-// Base e parcelas em paralelo; páginas de parcelas em lotes paralelos. Uma
-// conversa reaproveita a mesma leitura por 2 minutos (mesmo usuário e sessão).
+// Consulta base e parcelas em paralelo, e só coloca no cache uma leitura completa.
 async function loadData(auth,userId,refresh){
  const key=userId+'|'+auth;const hit=cache.get(key);if(!refresh&&hit&&Date.now()-hit.at<CACHE_MS)return hit;
- const page=offset=>read('/rest/v1/fin_receb_parcelas?select=id,vencimento,valor_previsto,juros,multa,status,pago_em,valor_liquidado,origem_baixa&ativo=eq.true&status=neq.Cancelado&order=id&limit=1000&offset='+offset,auth);
  const parcelsTask=(async()=>{
-  const parcels=[];let offset=0;
-  for(;;){
-   const offsets=offset===0?[0]:[offset,offset+1000,offset+2000,offset+3000];
-   const batches=await Promise.all(offsets.map(page));
-   for(const b of batches)parcels.push(...b);
-   if(batches.some(b=>b.length<1000))break;
-   offset=offsets.at(-1)+1000;
-   if(offset>=100000)throw Object.assign(Error('Base muito grande para análise completa. Nenhum total parcial foi apresentado.'),{status:503});
+  const parcels=[];
+  const params=new URLSearchParams({
+   select:'id,vencimento,valor_previsto,juros,multa,status,pago_em,valor_liquidado,origem_baixa',
+   ativo:'eq.true',status:'neq.Cancelado',order:'id.asc',limit:'1000'
+  });
+  const error=()=>aiError(503,'FINANCE_BASE_INCOMPLETE','Não foi possível consultar todas as parcelas. Tente novamente.');
+  let cursor='';
+  for(let page=0;page<400;page++){
+   if(cursor)params.set('id','gt.'+cursor);
+   const rows=await read('/rest/v1/fin_receb_parcelas?'+params,auth);
+   if(!Array.isArray(rows))throw error();
+   if(!rows.length)return parcels;
+   for(const row of rows){
+    const id=row?.id;
+    if(typeof id!=='string'||id<=cursor)throw error();
+    cursor=id;
+   }
+   parcels.push(...rows);
+   if(parcels.length>100000)throw error();
   }
-  return parcels;
+  throw error();
  })();
  const [base,parcels]=await Promise.all([read('/rest/v1/rpc/financeiro_consultor_base',auth,{}),parcelsTask]);
  const data={at:Date.now(),base,parcels};
@@ -62,9 +73,6 @@ function aiBody(input,{report,stream}){
  if(stream)body.stream=true;
  return JSON.stringify(body);
 }
-const openai=(body,timeout)=>fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:'Bearer '+process.env.OPENAI_API_KEY,'Content-Type':'application/json'},body,signal:AbortSignal.timeout(timeout)});
-const outputText=ai=>ai.output_text||(ai.output||[]).flatMap(x=>x.content||[]).filter(x=>x.type==='output_text').map(x=>x.text).join('\n');
-
 // Repassa o texto da OpenAI ao navegador em NDJSON, à medida que chega.
 async function streamChat(res,input,metrics){
  res.statusCode=200;res.setHeader('Content-Type','application/x-ndjson; charset=utf-8');res.setHeader('X-Accel-Buffering','no');
@@ -72,12 +80,13 @@ async function streamChat(res,input,metrics){
  send({type:'meta',base:metrics});
  let full='',model='';
  try{
-  const r=await openai(aiBody(input,{stream:true}),100000);
-  if(!r.ok||!r.body)throw Error('A IA está indisponível. Tente novamente.');
+  const r=await requestProvider(aiBody(input,{stream:true}),TIMEOUTS.chat);
+  if(!r.body)throw invalidResponse();
   const reader=r.body.getReader(),dec=new TextDecoder();let buf='',status='';
   for(;;){
    const {done,value}=await reader.read();if(done)break;
    buf+=dec.decode(value,{stream:true});
+   buf=buf.replace(/\r\n/g,'\n');
    let i;while((i=buf.indexOf('\n\n'))>=0){
     const chunk=buf.slice(0,i);buf=buf.slice(i+2);
     const data=chunk.split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join('');
@@ -88,10 +97,10 @@ async function streamChat(res,input,metrics){
     else if(ev.type==='response.incomplete'||ev.type==='response.failed'||ev.type==='error'){status='incomplete'}
    }
   }
-  if(!full||status==='incomplete')throw Error('A análise não foi concluída. Tente uma pergunta mais específica.');
+  if(!full||status!=='completed')throw invalidResponse();
   const {graficos}=chartsFrom(full);
   send({type:'done',modelo:model,graficos});
- }catch(e){send({type:'error',erro:e.message||'Não foi possível concluir a análise. Nenhum dado foi alterado.'})}
+ }catch(error){const e=providerError(error);send({type:'error',erro:e.message,codigo:e.code})}
  res.end();
 }
 
@@ -99,12 +108,14 @@ module.exports=async function handler(req,res){
  res.setHeader('Cache-Control','private, no-store');
  if(req.method!=='POST')return res.status(405).json({erro:'Use POST.'});
  try{
-  if(req.headers.origin&&req.headers.host&&new URL(req.headers.origin).host!==req.headers.host)return res.status(403).json({erro:'Origem não autorizada.'});
-  const auth=req.headers.authorization;if(!/^Bearer \S+$/.test(auth||''))return res.status(401).json({erro:'Autenticação necessária.'});
-  const identity=await read('/auth/v1/user',auth);
-  const profile=await read('/rest/v1/profiles?select=tipo,ativo&id=eq.'+encodeURIComponent(identity.id),auth);
-  if(!profile.some(p=>p.ativo===true&&p.tipo==='Administrador'))return res.status(403).json({erro:'Somente administradores podem usar o Agente Financeiro.'});
-  const body=typeof req.body==='string'?JSON.parse(req.body):req.body||{};
+  const session=await requireProfile(req,res,'admin',{agent:true});
+  if(!session)return;
+  const auth=req.headers.authorization,identity=session.user;
+  let body;
+  try{body=typeof req.body==='string'?JSON.parse(req.body):req.body||{}}catch{
+   throw aiError(400,'INVALID_REQUEST','A solicitação enviada é inválida.');
+  }
+  if(!body||typeof body!=='object'||Array.isArray(body))throw aiError(400,'INVALID_REQUEST','A solicitação enviada é inválida.');
   const mode=['indicadores','relatorio'].includes(body.mode)?body.mode:'chat';
   const question=String(body.question||'').trim();
   if(mode==='chat'&&(question.length<3||question.length>2000))return res.status(400).json({erro:'Escreva uma pergunta de 3 a 2000 caracteres.'});
@@ -114,27 +125,27 @@ module.exports=async function handler(req,res){
   const metrics=analyze(base,parcels,p,today,body);
   if(mode==='indicadores')return res.status(200).json({base:metrics,modo:'indicadores'});
   if(!process.env.OPENAI_API_KEY)return res.status(200).json({base:metrics,resposta:'A conversa com IA ainda não está configurada no servidor (OPENAI_API_KEY). Os indicadores do período estão no topo da tela e o relatório em PDF pode ser gerado com eles; nenhuma recomendação foi gerada.',modo:'indicadores',relatorio:null});
-  const history=(Array.isArray(body.history)?body.history:[]).slice(-10).filter(m=>['user','assistant'].includes(m.role)&&typeof m.content==='string').map(m=>({role:m.role,content:m.content.slice(0,4000)}));
+  const history=(Array.isArray(body.history)?body.history:[]).slice(-10).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.content==='string').map(m=>({role:m.role,content:m.content.slice(0,4000)}));
   const payload={hoje:today,base_autorizada:forModel(metrics)};
+  if(!await reserveAIQuota(req,res,'agente',{agent:true}))return;
   if(mode==='relatorio'){
    const input=[...history,{role:'user',content:JSON.stringify({pedido:'Relatório executivo financeiro do período'+(question?`, com foco em: ${question}`:''),...payload})}];
-   const r=await openai(aiBody(input,{report:true}),130000);
-   if(!r.ok)throw Object.assign(Error('A IA está indisponível. Tente novamente.'),{status:503});
-   const ai=await r.json();let report;
-   try{report=JSON.parse(outputText(ai))}catch{report=null}
-   if(!report||ai.status==='incomplete')throw Object.assign(Error('O relatório não foi concluído. Tente novamente.'),{status:503});
+   const ai=await providerData(aiBody(input,{report:true}),TIMEOUTS.report);
+   const report=parseOutput(ai);
+   if(!Object.keys(REPORT_SCHEMA.properties).every(key=>Object.hasOwn(report,key))||!Array.isArray(report.graficos))throw invalidResponse();
    report.graficos=(report.graficos||[]).filter(id=>CHARTS.includes(id));
    return res.status(200).json({relatorio:report,base:metrics,modelo:ai.model,modo:'relatorio'});
   }
   const input=[...history,{role:'user',content:JSON.stringify({pergunta:question,...payload})}];
   if(body.stream===true&&typeof res.write==='function')return streamChat(res,input,metrics);
-  const r=await openai(aiBody(input,{}),100000);
-  if(!r.ok)throw Object.assign(Error('A IA está indisponível. Tente novamente.'),{status:503});const ai=await r.json();
+  const ai=await providerData(aiBody(input,{}),TIMEOUTS.chat);
   const response=outputText(ai);
-  if(!response||ai.status==='incomplete')throw Object.assign(Error('A análise não foi concluída. Tente uma pergunta mais específica.'),{status:503});
   const {texto,graficos}=chartsFrom(response);
   return res.status(200).json({resposta:texto,graficos,base:metrics,modelo:ai.model,modo:'ia'});
- }catch(e){return res.status(e.status||503).json({erro:e.status?e.message:'Não foi possível concluir a análise. Nenhum dado foi alterado.'})}
+ }catch(error){
+  if(error?.status===400)error=aiError(400,'INVALID_REQUEST',error.message);
+  return sendError(res,error,{agent:true});
+ }
 };
 module.exports.config={maxDuration:150};
 module.exports._test={chartsFrom,cache,INSTRUCTIONS};

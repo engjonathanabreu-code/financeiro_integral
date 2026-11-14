@@ -6,7 +6,7 @@ const V_CLIENTS='institutionalClients',V_PROJECTS='erpProjects';
 const SERVICE_TYPES=['REURB','Plano Diretor','Regularização Fundiária','Topografia','Projetos','Outros'];
 const STATES=['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 let state={clients:[],projects:[],stages:[],payments:[],documents:[],plans:[],loading:false,loaded:false,error:'',projectId:'',search:'',collapsedTypes:new Set()};
-let realtime=null,refreshTimer=null,bootTimer=null;
+let realtime=null,refreshTimer=null,bootTimer=null,loadingOwner;
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
 const sb=()=>window.IntegralERP?.sb||null;
 const E=v=>typeof esc==='function'?esc(String(v??'')):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
@@ -20,17 +20,31 @@ function badge(v){const x=String(v||'—'),c=/Conclu|Pago/i.test(x)?'ok':/Cancel
 function serviceIcon(type){const key=String(type||'Outros').toLocaleLowerCase('pt-BR'),paths=key.includes('reurb')?'<path d="M3 21h18M5 21v-9l7-5 7 5v9M9 21v-5h6v5M4 10l8-6 8 6"/>':key.includes('plano diretor')?'<path d="M4 19.5V6.8L9 4l6 2.8L20 4v13.2L15 20l-6-2.8L4 20zM9 4v13.2M15 6.8V20"/>':key.includes('regulariza')?'<path d="M5 3h10l4 4v14H5zM14 3v5h5M8 13l2.2 2.2L16 10"/>':key.includes('topografia')?'<path d="M3 19h18M7 19l5-14 5 14M9.2 13h5.6M6 8h12"/>':key.includes('projeto')?'<path d="M4 20h16V7l-4-4H4zM14 3v6h6M8 13h8M8 17h5"/>':'<path d="M4 7h6l2 2h8v10H4zM4 7V5h6l2 2"/>';return `<span class="erp-service-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`}
 function progress(p){const rows=state.stages.filter(x=>x.projeto_id===p.id);if(!rows.length)return 0;const weighted=rows.some(x=>Number(x.peso)>0);if(weighted){const total=rows.reduce((s,x)=>s+Number(x.peso||0),0)||100;return Math.round(rows.reduce((s,x)=>s+Number(x.progresso||0)*Number(x.peso||0),0)/total)}return Math.round(rows.reduce((s,x)=>s+Number(x.progresso||0),0)/rows.length)}
 function liveBar(){return `<div class="erp-live-bar"><span class="erp-live-state">Sincronizado em tempo real com a base central da Integral</span><div class="erp-live-actions"><small>${state.loaded?`Atualizado às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:'Carregando…'}</small><button class="btn small secondary" id="erpModuleRefresh">Atualizar</button></div></div>`}
+async function currentUserId(client){
+  const {data,error}=await client.auth.getSession();
+  if(error)throw error;
+  return data?.session?.user?.id;
+}
 async function load(force=false){
   if(state.loading||state.loaded&&!force)return;
   const c=sb();if(!c){state.error='Conexão com a base central indisponível.';renderCurrent();return}
   state.loading=true;state.error='';renderCurrent();
   try{
+    const actor=await currentUserId(c);
+    if(!actor)throw Error('Entre novamente para consultar a base central.');
+    loadingOwner=actor;
+    const read=window.IntegralDREShared.allPages;
     const [clients,projects,stages,payments,documents,plans]=await Promise.all([
-      c.from('clientes').select('*').order('nome'),c.from('projetos').select('*').order('created_at'),c.from('etapas_projeto').select('*').order('ordem'),c.from('pagamentos').select('*').order('vencimento'),c.from('documentos').select('*').order('created_at',{ascending:false}),c.from('planos_trabalho').select('id,projeto_id,titulo,status')
+      read(c,'clientes','*'),read(c,'projetos','*'),read(c,'etapas_projeto','*'),
+      read(c,'pagamentos','*'),read(c,'documentos','*'),read(c,'planos_trabalho','id,projeto_id,titulo,status')
     ]);
-    for(const [result,label] of [[clients,'clientes'],[projects,'projetos'],[stages,'etapas'],[payments,'financeiro dos projetos'],[documents,'documentos'],[plans,'planos']])if(result.error)throw new Error(`Falha ao carregar ${label}: ${result.error.message}`);
-    Object.assign(state,{clients:clients.data||[],projects:projects.data||[],stages:stages.data||[],payments:payments.data||[],documents:documents.data||[],plans:plans.data||[],loaded:true});
-    window.IntegralERP.projects=state.projects;
+    if(await currentUserId(c)!==actor||c!==sb()||loadingOwner!==actor)return;
+    const by=(field)=> (a,b)=>String(a[field]||'').localeCompare(String(b[field]||''),'pt-BR');
+    clients.sort(by('nome'));projects.sort(by('created_at'));
+    stages.sort((a,b)=>(a.ordem||0)-(b.ordem||0));payments.sort(by('vencimento'));
+    documents.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+    Object.assign(state,{clients,projects,stages,payments,documents,plans,loaded:true});
+    window.IntegralERP.projects=projects;
   }catch(e){state.error=e.message||String(e)}finally{state.loading=false;renderCurrent()}
 }
 function renderCurrent(){const v=currentView();if(v===V_CLIENTS)renderClients();else if(v===V_PROJECTS)renderProjects()}
@@ -114,7 +128,13 @@ function installRouter(){
   /* Menu montado antes deste módulo: remonta uma vez para incluir Clientes Institucionais e Projetos. */
   try{if(typeof user!=='undefined'&&user&&user.role==='Administrador'&&document.querySelector('.shell .nav')&&!document.querySelector('.nav [data-view="'+V_PROJECTS+'"]'))app()}catch(e){console.warn('Integração ERP: não foi possível atualizar o menu',e)}
 }
-function installRealtime(){const c=sb();if(!c||realtime)return;realtime=c.channel('financeiro-erp-projects-live');for(const table of ['clientes','projetos','etapas_projeto','pagamentos','documentos','planos_trabalho'])realtime.on('postgres_changes',{event:'*',schema:'public',table},()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>load(true),180)});realtime.subscribe()}
+function clearForeignData(_event,session){
+  if(!loadingOwner||session?.user?.id===loadingOwner)return;
+  loadingOwner=undefined;
+  Object.assign(state,{clients:[],projects:[],stages:[],payments:[],documents:[],plans:[],loaded:false,projectId:''});
+  if(window.IntegralERP)window.IntegralERP.projects=[];
+}
+function installRealtime(){const c=sb();if(!c||realtime)return;c.auth.onAuthStateChange?.(clearForeignData);realtime=c.channel('financeiro-erp-projects-live');for(const table of ['clientes','projetos','etapas_projeto','pagamentos','documentos','planos_trabalho'])realtime.on('postgres_changes',{event:'*',schema:'public',table},()=>{clearTimeout(refreshTimer);refreshTimer=setTimeout(()=>load(true),180)});realtime.subscribe()}
 function boot(){
   if(typeof render!=='function'||typeof app!=='function'||typeof adminNav==='undefined'){clearTimeout(bootTimer);bootTimer=setTimeout(boot,25);return}
   try{installRouter();installRealtime();clearTimeout(bootTimer)}catch(e){console.error('Integração de projetos do ERP:',e)}

@@ -28,7 +28,7 @@ async function storedUrl(file,name){
   const {data,error}=await sb.auth.getUser();
   if(error||!data?.user)throw new Error('Sessão expirada. Entre novamente para enviar o arquivo.');
   const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',await file.arrayBuffer())),b=>b.toString(16).padStart(2,'0')).join('');
-  const safe=String(name||'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120);
+  const safe=String(name||'arquivo').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)||'arquivo';
   const path=`${data.user.id}/financeiro-analise/${hash}-${safe}`,bucket=sb.storage.from('documentos');
   const uploaded=await bucket.upload(path,file,{contentType:file.type||'application/octet-stream',upsert:false});
   // O caminho inclui o hash dos bytes: repetir a análise reutiliza o mesmo original.
@@ -47,16 +47,19 @@ async function request(url,options){
   return nativeFetch(url,{...options,body:JSON.stringify(payload)});
 }
 /* Anexos guardados em financeiro_arquivos: o módulo tem só o arquivoId. */
-const storedCache=new Map();
 function inlineData(x){return x&&typeof x==='object'?[x.dataUrl,x.dataURL,x.fileData,x.base64,x.content].find(v=>typeof v==='string'&&v.startsWith('data:'))||'':''}
 function storedRef(x){return x&&typeof x==='object'&&typeof x.arquivoId==='string'&&x.arquivoId?x.arquivoId:''}
 async function storedContent(arquivoId){
   if(!arquivoId)throw new Error('Arquivo não informado.');
-  if(storedCache.has(arquivoId))return storedCache.get(arquivoId);
   const sb=window.IntegralERP?.sb;if(!sb)throw new Error('Conexão indisponível. Entre novamente no sistema.');
-  const promise=(async()=>{const {data,error}=await sb.from('financeiro_arquivos').select('conteudo').eq('id',arquivoId).maybeSingle();if(error)throw error;if(!data?.conteudo)throw new Error('O arquivo original não foi encontrado.');return data.conteudo})();
-  storedCache.set(arquivoId,promise);promise.catch(()=>storedCache.delete(arquivoId));
-  return promise;
+  const {data:current}=await sb.auth.getUser();
+  if(!current?.user?.id)throw new Error('Sessão expirada. Entre novamente no sistema.');
+  const {data,error}=await sb.from('financeiro_arquivos').select('conteudo').eq('id',arquivoId).maybeSingle();
+  if(error)throw error;
+  const {data:latest}=await sb.auth.getUser();
+  if(latest?.user?.id!==current.user.id)throw new Error('A sessão mudou. Abra o arquivo novamente.');
+  if(!data?.conteudo)throw new Error('O arquivo original não foi encontrado.');
+  return data.conteudo;
 }
 /* Devolve o data URL do anexo, esteja ele embutido (registros antigos/novos ainda não salvos) ou guardado. */
 async function dataUrlOf(...records){

@@ -19,12 +19,13 @@ test('IA receives only authorized metrics; returns sourced analysis and detects 
  global.fetch=async(url,opts)=>{
   if(url.includes('/auth/'))return {ok:true,json:async()=>({id:'actor'})};
   if(url.includes('/profiles?'))return {ok:true,json:async()=>[{tipo:'Administrador',ativo:true}]};
+  if(url.includes('/financeiro_reservar_cota_ia'))return Response.json(true);
   if(url.includes('/rpc/'))return {ok:true,json:async()=>({cashflow:[{date:'2026-10-01',direction:'Entrada',value:100}]})};
   if(url.includes('/fin_receb_'))return {ok:true,json:async()=>[]};
   payload=JSON.parse(opts.body);return {ok:true,json:async()=>({status:incomplete?'incomplete':'completed',model:'fixture',output:[{content:[{type:'output_text',text:'Observado: R$ 100 de entradas. Base: fluxo de caixa em 01/10/2026. Projeções: insuficientes. Recomendação: conciliar recebimentos.'}]}]})};
  };
  const run=async()=>{let status=200,body;await handler({method:'POST',headers:{authorization:'Bearer adm'},body:{question:'Resumo financeiro',start:'2026-10-01',end:'2026-10-01',cashflow:[{value:99999}]}},{setHeader(){},status(v){status=v;return this},json(v){body=v}});return {status,body}};
- try{const r=await run();assert.equal(r.status,200);assert.equal(r.body.modo,'ia');assert.equal(r.body.base.observado.fluxo_caixa.entradas,100);assert.ok(!JSON.stringify(payload).includes('99999'));assert.match(payload.instructions,/Nunca invente/);assert.match(r.body.resposta,/Base:/);incomplete=true;assert.equal((await run()).status,503)}finally{global.fetch=previous;if(key===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=key}
+ try{const r=await run();assert.equal(r.status,200);assert.equal(r.body.modo,'ia');assert.equal(r.body.base.observado.fluxo_caixa.entradas,100);assert.ok(!JSON.stringify(payload).includes('99999'));assert.match(payload.instructions,/Nunca invente/);assert.match(r.body.resposta,/Base:/);incomplete=true;assert.equal((await run()).status,502)}finally{global.fetch=previous;if(key===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=key}
 });
 
 test('consultant cash totals match displayed paid accounts, budgets and overrides without legacy duplication',()=>{
