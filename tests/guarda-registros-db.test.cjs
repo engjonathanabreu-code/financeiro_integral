@@ -46,7 +46,8 @@ async function prepared() {
     'migrations/20261113190000_financeiro_modulos_revisao.sql',
     'migrations/20261113190500_financeiro_solicitacoes_acesso.sql',
     'migrations/20261113191500_financeiro_anexos_acesso.sql',
-    'migrations/20261113192000_financeiro_guarda_registros.sql'
+    'migrations/20261113192000_financeiro_guarda_registros.sql',
+    'migrations/20261114104155_financeiro_recibos_sincronizacao.sql'
   ]) await db.exec(sql(file));
   return db;
 }
@@ -63,6 +64,43 @@ const write = async (db, key, value, revision) => (await db.query(
 )).rows[0].r;
 const save = async (db, key, value) => write(db, key, value, (await read(db, key)).revisao);
 const ids = data => data.map(item => item.id);
+const writeWithReceipt = async (db, value, revision, operation, filtered = true) => (await db.query(
+  'select financeiro_salvar_modulo_com_recibo($1,$2,$3,$4,$5) r',
+  ['trips', JSON.stringify(value), revision, operation, filtered]
+)).rows[0].r;
+
+test('reenvio com recibo confirma a revisão gravada e devolve o estado atual autorizado', async () => {
+  const db = await prepared();
+  try {
+    await login(db, STAFF);
+    const initial = await read(db, 'trips');
+    const operation = id(70);
+    const payload = [{ ...initial.dados[0], report: 'Envio com resposta perdida' }];
+    const committed = await writeWithReceipt(db, payload, initial.revisao, operation);
+    assert.equal(committed.status, 'salvo');
+    const stale = await writeWithReceipt(db, payload, initial.revisao, id(71));
+    assert.equal(stale.status, 'conflito');
+    await assert.rejects(writeWithReceipt(db, [{ ...payload[0], report: 'Outro pedido' }], initial.revisao, operation), /outro conteúdo/);
+
+    await login(db, ADM);
+    const all = await read(db, 'trips');
+    const moved = all.dados.map(item => item.id === 1 ? { ...item, sector: 'Projetos' } : item);
+    assert.equal((await writeWithReceipt(db, moved, all.revisao, operation, false)).status, 'salvo');
+
+    await login(db, STAFF);
+    const replayed = await writeWithReceipt(db, payload, initial.revisao, operation);
+    assert.deepEqual(replayed, {
+      status: 'salvo', repetido: true, revisao_operacao: committed.revisao,
+      revisao: committed.revisao + 1, dados: []
+    });
+    const ownReceipts = await db.query('select revisao::int from financeiro_sincronizacao_privado.recibos');
+    assert.deepEqual(ownReceipts.rows, [{ revisao: committed.revisao }]);
+    await login(db, INATIVO);
+    await assert.rejects(writeWithReceipt(db, payload, initial.revisao, operation), /indisponível/);
+    await login(db, null);
+    await assert.rejects(writeWithReceipt(db, payload, initial.revisao, operation), /permission denied/);
+  } finally { await db.close(); }
+});
 
 test('leitura por registro usa o setor ou atribuição canônica e bloqueia tabela direta', async () => {
   const db = await prepared();

@@ -3,19 +3,36 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const {fakeModules,copy}=require('./fake-modulos-supabase.cjs');
 const source=fs.readFileSync(path.join(__dirname,'../public/financeiro-cloud-storage.js'),'utf8');
+const {webcrypto:crypto}=require('node:crypto');
 const turn=()=>new Promise(r=>setImmediate(r));
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r});return {promise,resolve}};
 
 function shared(server){
- const hooks={},writes=[];
+ const hooks={},writes=[],receiptCalls=[],receipts=new Map();
  const table=fakeModules(server,{beforeWrite:async row=>{writes.push(row);return (await hooks.write?.(row))||null}});
- return {server,table,hooks,writes};
+ async function receipt(args){
+  receiptCalls.push(copy(args));
+  if(receipts.has(args.p_operacao)){
+   const revision=receipts.get(args.p_operacao);
+   const row=table.rows([args.p_chave]).data[0];
+   return {data:{status:'salvo',dados:row.dados,revisao:row.revisao,repetido:true,revisao_operacao:revision},error:null};
+  }
+  const result=await table.save(args);
+  if(result.data?.status==='salvo'){
+   receipts.set(args.p_operacao,result.data.revisao);
+   if(await hooks.loseReply?.(args))return {data:null,error:{message:'Failed to fetch'}};
+  }
+  return result;
+ }
+ return {server,table,receipt,hooks,writes,receiptCalls};
 }
-async function client(world,{uid='u1',admin=false,store=new Map(),local={},versioned=true,modal=false,hidden={},projected=null}={}){
+const drafts=store=>[...store.entries()].filter(([k])=>k.startsWith('integral_fin_pendente_v3:')).map(([,v])=>JSON.parse(v));
+async function client(world,{uid='u1',admin=false,store=new Map(),local={},versioned=true,receipt=true,modal=false,hidden={},projected=null}={}){
  const listeners={};
- const context={console:{log(){},warn(){},error(){}},structuredClone,
+ const context={console:{log(){},warn(){},error(){}},structuredClone,crypto,
   db:copy(local),user:{role:admin?'Administrador':'Funcionário',erpId:uid,name:uid},
-  localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},
+  localStorage:{get length(){return store.size},key:i=>[...store.keys()][i]??null,getItem:k=>store.get(k)??null,
+   setItem:(k,v)=>{if(world.hooks.full?.(k))throw Error('QuotaExceededError');store.set(k,v)},removeItem:k=>store.delete(k)},
   setTimeout(){return 1},clearTimeout(){},setInterval(){return 1},clearInterval(){},
   navigator:{onLine:true},
   document:{dispatchEvent(){},querySelector:q=>modal&&q==='.modal-backdrop'?{}:null,activeElement:null,addEventListener(){}},
@@ -32,6 +49,7 @@ async function client(world,{uid='u1',admin=false,store=new Map(),local={},versi
   },upsert:async rows=>{for(const r of rows){world.writes.push({chave:r.chave,dados:r.dados,legado:true});world.server[r.chave]=copy(r.dados)}return {error:null}}}},
   rpc:async(name,args)=>{
    if(name==='is_admin')return {data:typeof admin==='function'?admin(sessionRef.uid):admin,error:null};
+   if(name==='financeiro_salvar_modulo_com_recibo')return versioned&&receipt?world.receipt(args):{data:null,error:{code:'PGRST202'}};
    if(name==='financeiro_salvar_modulo')return versioned?world.table.save(args):{data:null,error:{code:'PGRST202',message:'Could not find the function public.financeiro_salvar_modulo'}};
    if(name==='financeiro_listar_modulos_visiveis')return projected?projected(args):{data:null,error:{code:'PGRST202'}};
    if(name==='financeiro_salvar_modulo_visivel')return world.table.save(args);
@@ -97,13 +115,13 @@ test('nenhum sucesso sem confirmação do servidor; queda de conexão guarda e r
  a.context.db.trips[0].city='offline';a.context.save();
  assert.equal(await a.api.push(),false,'falha de rede não é sucesso');
  assert.equal(a.api.status(),'falha');assert.equal(world.server.trips[0].city,'A');
- const pend=JSON.parse(store.get('integral_fin_pendente_v2:a'));assert.equal(pend.keys.trips.local[0].city,'offline');
+ assert.equal(drafts(store)[0].local[0].city,'offline');
  // Recarrega a página (mesmo navegador, mesma pessoa) com a conexão de volta.
  delete world.hooks.write;world.server.trips[1].city='B-servidor';
  const again=await client(world,{uid:'a',store,local:JSON.parse(store.get('integral_fin_v1'))});
  assert.equal(await again.api.push(),true);
  assert.deepEqual(world.server.trips.map(t=>t.city),['offline','B-servidor'],'rascunho reaplicado sobre a versão nova');
- assert.equal(store.has('integral_fin_pendente_v2:a'),false,'rascunho apagado depois de confirmado');
+ assert.equal(drafts(store).length,0,'rascunho apagado depois de confirmado');
 });
 
 test('resposta sem confirmação explícita não é tratada como salvo',async()=>{
@@ -127,7 +145,7 @@ test('troca de usuário: cache de outra pessoa não entra na mescla; logout limp
  a.signOut();
  assert.equal(store.has('integral_fin_v1'),false,'cache compartilhado removido no logout');
  assert.deepEqual(copy(a.context.db.trips),[],'dados fora da memória');
- assert.ok(store.get('integral_fin_pendente_v2:a').includes('rascunho de A'),'rascunho guardado para A');
+ assert.equal(drafts(store)[0].local[0].city,'rascunho de A','rascunho guardado para A');
  delete world.hooks.write;
  // Outra pessoa (sem acesso a RH) entra no mesmo navegador, com cache antigo de A ainda presente.
  store.set('integral_fin_v1',JSON.stringify({trips:[{id:1,city:'rascunho de A'}],hrPeople:[{id:9,name:'cache antigo'}],planRevenues:[{id:1}]}));store.set('integral_fin_v1_dono','a');
@@ -161,10 +179,33 @@ test('FIN-02: com formulário aberto a atualização espera; depois aplica',asyn
  a.setModal(false);assert.equal(await a.api.refresh(),true);assert.equal(a.context.db.trips[0].city,'remoto');assert.ok(a.context.renders>before);
 });
 
-test('sem a migration aplicada: continua salvando pelo caminho antigo (compatibilidade de implantação)',async()=>{
- const world=shared(base());const a=await client(world,{uid:'a',versioned:false});
+test('sem a migration de revisão, o rascunho permanece e nenhuma gravação usa UPSERT',async()=>{
+ const world=shared(base()),store=new Map();const a=await client(world,{uid:'a',versioned:false,store});
+ a.context.db.trips[0].city='compat';assert.equal(await a.api.push(),false);
+ assert.equal(world.server.trips[0].city,'A');assert.equal(world.writes.length,0);
+ assert.equal(drafts(store)[0].local[0].city,'compat');
+});
+
+test('transição com RPC antiga ainda exige revisão e só aceita confirmação explícita',async()=>{
+ const world=shared(base());const a=await client(world,{uid:'a',receipt:false});
  a.context.db.trips[0].city='compat';assert.equal(await a.api.push(),true);
- assert.equal(world.server.trips[0].city,'compat');assert.ok(world.writes.at(-1).legado);
+ assert.equal(world.server.trips[0].city,'compat');assert.equal(world.writes.at(-1).legado,undefined);
+});
+
+test('timeout no fallback versionado não reaplica uma mudança que o servidor divergiu depois',async()=>{
+ const world=shared(base()),store=new Map(),a=await client(world,{uid:'a',store,receipt:false});
+ const save=world.table.save;
+ world.table.save=async args=>{await save(args);return {error:{message:'Failed to fetch'}}};
+ a.context.db.trips[0].city='Enviado';
+ assert.equal(await a.api.push(),false);
+ assert.equal(world.server.trips[0].city,'Enviado');
+ world.server.trips[0].city='Alteração posterior';
+ world.table.save=save;
+ assert.equal(await a.api.push(),false);
+ assert.equal(world.server.trips[0].city,'Alteração posterior');
+ assert.equal(world.writes.length,1);
+ assert.equal(drafts(store)[0].operation.mode,'legado');
+ assert.equal(drafts(store)[0].local[0].city,'Enviado');
 });
 
 test('erro permanente: aviso não manda recarregar; descartar volta à versão do servidor',async()=>{
@@ -182,7 +223,7 @@ test('ordem das chaves do jsonb: depois de salvar nada fica pendente nem é regr
  assert.equal(await a.api.push(),true);
  const writes=world.writes.length;
  assert.equal(await a.api.push(),true);assert.equal(world.writes.length,writes,'nada é reenviado');
- assert.equal(store.has('integral_fin_pendente_v2:a'),false,'sem rascunho pendente');
+ assert.equal(drafts(store).length,0,'sem rascunho pendente');
  await b.api.refresh();b.context.db.trips=b.context.db.trips.filter(t=>t.id!==3);assert.equal(await b.api.push(),true);
  assert.equal(await a.api.refresh(),true);await a.api.push();
  assert.deepEqual(world.server.trips.map(t=>t.id),[1,2],'registro excluído por B continua excluído');
@@ -203,7 +244,7 @@ test('Solicitações (gravadas pela RPC própria) nunca ficam pendentes nem vira
  const world=shared({...base(),invoiceRequests:[]});const store=new Map();
  const a=await client(world,{uid:'a',store});
  a.context.db.invoiceRequests=[{id:'r1',status:'Pendente'}];a.context.save();
- assert.equal(store.has('integral_fin_pendente_v2:a'),false);
+ assert.equal(drafts(store).length,0);
  world.server.invoiceRequests=[{id:'r1',status:'Aprovada'}];
  assert.equal(await a.api.refresh(),true);assert.equal(a.context.db.invoiceRequests[0].status,'Aprovada');
  assert.equal(a.api.conflicts().length,0);
@@ -255,8 +296,88 @@ test('revogação de atribuição atualiza a projeção sem reenviar rascunho co
  visible=[world.server.trips[1]];
  assert.equal(await session.api.refresh(),true);
  assert.deepEqual(copy(session.context.db.trips),visible);
- const backup=JSON.parse(store.get('integral_fin_rascunho_acesso_restrito:colaborador:trips'));
- assert.equal(backup[0].local[0].city,'Rascunho preservado');
+ const key=[...store.keys()].find(k=>k.startsWith('integral_fin_rascunho_acesso_restrito_v2:colaborador:trips:'));
+ assert.equal(JSON.parse(store.get(key)).local[0].city,'Rascunho preservado');
  assert.equal(await session.api.push(),true);
  assert.equal(world.writes.length,0);
+});
+
+test('duas abas do mesmo usuário preservam rascunhos independentes antes de recuperar',async()=>{
+ const world=shared(base()),store=new Map();
+ const a=await client(world,{uid:'a',store}),b=await client(world,{uid:'a',store});
+ a.context.db.trips[0].city='Rascunho A';a.context.save();
+ b.context.db.trips[1].city='Rascunho B';b.context.save();
+ assert.equal(drafts(store).length,2);
+ const next=await client(world,{uid:'a',store});
+ assert.deepEqual(copy(next.context.db.trips).map(t=>t.city),['Rascunho A','Rascunho B']);
+ assert.equal(await next.api.push(),true);
+ assert.deepEqual(world.server.trips.map(t=>t.city),['Rascunho A','Rascunho B']);
+});
+
+test('perda da resposta, recarga e edição alheia mantêm a operação confirmada sem reaplicá-la',async()=>{
+ const world=shared(base()),store=new Map(),a=await client(world,{uid:'a',store});
+ world.hooks.loseReply=()=>true;
+ a.context.db.trips[0].city='Primeiro nome';await a.api.push();
+ a.context.db.trips[1].city='Edição depois do envio';a.context.save();
+ delete world.hooks.loseReply;
+ world.server.trips[0].city='Nome posterior do servidor';
+ const recovered=await client(world,{uid:'a',store});
+ assert.equal(await recovered.api.push(),true);
+ assert.equal(world.receiptCalls[1].p_operacao,world.receiptCalls[0].p_operacao);
+ assert.deepEqual(world.server.trips.map(t=>t.city),['Nome posterior do servidor','B']);
+ assert.equal(await recovered.api.push(),true);
+ assert.deepEqual(world.server.trips.map(t=>t.city),['Nome posterior do servidor','Edição depois do envio']);
+ assert.equal(recovered.api.conflicts().length,0);
+});
+
+test('recuperação do recibo também preserva rascunho comum do mesmo módulo criado em outra aba',async()=>{
+ const world=shared(base()),store=new Map();
+ const a=await client(world,{uid:'a',store}),b=await client(world,{uid:'a',store});
+ b.context.db.trips[1].city='Outra aba';b.context.save();
+ world.hooks.loseReply=()=>true;
+ a.context.db.trips[0].city='Confirmado, resposta perdida';
+ assert.equal(await a.api.push(),false);
+ delete world.hooks.loseReply;
+ world.server.trips[0].city='Alteração posterior';
+ const c=await client(world,{uid:'a',store});
+ assert.equal(await c.api.push(),true);
+ assert.equal(await c.api.push(),true);
+ assert.deepEqual(world.server.trips.map(t=>t.city),['Alteração posterior','Outra aba']);
+});
+
+test('falha de quota impede substituir a edição por um conflito sem cópia persistida',async()=>{
+ const world=shared(base()),store=new Map(),a=await client(world,{uid:'a',store});
+ a.context.db.trips[0].city='Edição local';
+ world.server.trips[0].city='Edição remota';
+ world.hooks.full=k=>k.startsWith('integral_fin_conflitos_v3:');
+ assert.equal(await a.api.push(),false);
+ assert.equal(a.api.status(),'rascunho');
+ assert.equal(a.context.db.trips[0].city,'Edição local');
+ assert.equal(drafts(store)[0].local[0].city,'Edição local');
+ delete world.hooks.full;
+ assert.equal(await a.api.push(),true);
+ assert.equal(a.api.conflicts()[0].local,'Edição local');
+});
+
+test('rascunho v2 fica disponível para reversão e é conciliado só uma vez pelo cliente novo',async()=>{
+ const world=shared(base()),store=new Map(),original=JSON.stringify({uid:'a',keys:{
+  trips:{base:JSON.stringify(world.server.trips),revisao:1,local:world.server.trips.map((t,i)=>i? t : {...t,city:'Rascunho v2'})}
+ }});
+ store.set('integral_fin_pendente_v2:a',original);
+ const a=await client(world,{uid:'a',store});
+ assert.equal(await a.api.push(),true);
+ assert.equal(world.server.trips[0].city,'Rascunho v2');
+ assert.equal(store.get('integral_fin_pendente_v2:a'),original);
+ world.server.trips[0].city='Nova revisão';
+ const b=await client(world,{uid:'a',store});
+ assert.equal(b.context.db.trips[0].city,'Nova revisão');
+ assert.equal(b.api.conflicts().length,0);
+});
+
+test('migrar módulo legado ainda não existente preserva IDs repetidos e multiplicidade',async()=>{
+ const world=shared({}),store=new Map(),x={id:1,city:'A'},y={id:1,city:'B'};
+ store.set('integral_fin_v1',JSON.stringify({trips:[x,x]}));
+ store.set('integralFinanceiro',JSON.stringify({trips:[x,y]}));
+ await client(world,{uid:'a',admin:true,local:{trips:[x,x]},store});
+ assert.deepEqual(world.server.trips,[x,x,y]);
 });

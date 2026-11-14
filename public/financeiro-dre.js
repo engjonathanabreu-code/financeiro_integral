@@ -1,6 +1,6 @@
 /* Integral Financeiro — DRE gerencial (regime de caixa).
    Alimentada pelo Fluxo de Caixa (lançamentos manuais, extrato, contas pagas
-   e orçamentos) e por Recebimentos (boletos liquidados). Os meses já fechados
+   e orçamentos), com um quadro separado para Recebimentos. Os meses já fechados
    na planilha "INTEGRAL 2026 Fluxo de caixa ANUAL" (jul–ago/2026) vêm como
    histórico embutido; em cada mês é possível escolher entre planilha e sistema.
    O previsto vem da mesma planilha e do Planejamento; a aba Previsto × Realizado
@@ -18,6 +18,7 @@ const norm=window.IntegralDREShared.norm;
 const DB=()=>{try{return db}catch{return window.db||{}}};
 const persist=()=>{try{save()}catch{try{window.save?.()}catch{}}};
 const isAdmin=()=>{try{return user?.role==='Administrador'}catch{return false}};
+const actor=()=>isAdmin()?user.erpId||user.email||user.name||'adm':null;
 const MONTHS=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const monthKey=(y,i)=>`${y}-${String(i+1).padStart(2,'0')}`;
 
@@ -328,20 +329,20 @@ function planRows(){try{return window.integralPlanningRows?.()||[]}catch{return 
 function sb(){return window.IntegralERP?.sb||null}
 
 async function loadRecebimentos(force){
+  const owner=actor();
+  if(!owner)return;
+  if(recState.owner!==owner)Object.assign(recState,{owner,loading:null,loaded:false,rows:[],error:''});
   if(recState.loading)return recState.loading;
   if(recState.loaded&&!force)return;
-  recState.loading=(async()=>{
+  const loading=(async()=>{
     const c=sb();if(!c){recState.error='Supabase indisponível.';return}
-    const rows=[];let from=0;const size=1000;
     try{
-      for(;;){
-        const {data,error}=await c.from('fin_receb_parcelas').select('id,vencimento,pago_em,valor_previsto,valor_liquidado,status,ativo').range(from,from+size-1);
-        if(error)throw error;rows.push(...(data||[]));if(!data||data.length<size)break;from+=size;
-      }
-      recState.rows=rows.filter(p=>p.ativo!==false);recState.loaded=true;recState.error='';
-    }catch(e){recState.error=String(e?.message||e)}
+      const rows=await SHARED.allPages(c,'fin_receb_parcelas','id,vencimento,pago_em,valor_previsto,valor_liquidado,juros,multa,status,ativo,origem_baixa');
+      if(actor()===owner&&recState.owner===owner)Object.assign(recState,{rows,loaded:true,error:''});
+    }catch(e){if(actor()===owner&&recState.owner===owner)recState.error=String(e?.message||e)}
   })();
-  try{await recState.loading}finally{recState.loading=null}
+  recState.loading=loading;
+  try{await loading}finally{if(recState.loading===loading)recState.loading=null}
 }
 
 /* Fonte de cada mês. Realizado: planilha nos meses fechados (jul–ago/2026).
@@ -354,26 +355,19 @@ function monthSource(m,kind='real'){
   return SEED_MONTHS.has(m)&&seedMonths(kind).has(m)?'planilha':'sistema';
 }
 
-function pusher(items){const d=ensure();return it=>{if(it.month<START_MONTH)return;const ov=d.dreOverrides[it.key];const line=ov&&LINE[ov]?ov:it.auto;items.push({...it,line,reclassified:!!(ov&&ov!==it.auto)})}}
+function pusher(items){const d=ensure();return it=>{if(it.month<START_MONTH)return;const ov=d.dreOverrides[it.key]||d.dreOverrides[it.legacyKey];const line=ov&&LINE[ov]?ov:it.auto;items.push({...it,line,reclassified:line!==it.auto})}}
 
 /* Realizado: {key, month, line, label, value, origin, auto}. */
 function collectReal(){
-  const d=ensure(),items=[],yearPrefix=String(year),push=pusher(items);
+  const items=[],yearPrefix=String(year),push=pusher(items);
   SEED.forEach(([m,line,label,value],i)=>{if(!m.startsWith(yearPrefix)||monthSource(m)!=='planilha')return;push({key:`seed:${m}:${i}`,month:m,auto:line,label,value:+value||0,origin:SEED_SOURCE})});
-  const boletosFromCash=new Set();
   cashRows().forEach(r=>{
     const m=String(r.date||'').slice(0,7);if(!m.startsWith(yearPrefix)||monthSource(m)!=='sistema')return;
     if(!['Entrada','Saída'].includes(r.direction))return;const v=Math.abs(+r.value||0);if(!v)return;
     /* Há ids repetidos em importações antigas; data+valor desambiguam a chave. */
-    const auto=classify(r);const key=`${r._sourceKey||`cash:${r.id}`}|${r.date}|${v}`;
-    push({key,month:m,auto,label:r.description||'(sem descrição)',value:v,origin:`Fluxo de Caixa · ${r.source||'Manual'}`,date:r.date,kind:r.kind});
-    if((d.dreOverrides[key]||auto)==='rec_boletos')boletosFromCash.add(m);
+    const auto=classify(r);const key=SHARED.dreMovementKey(r);
+    push({key,month:m,auto,label:r.description||'(sem descrição)',value:v,legacyKey:r._legacyDreKey,origin:`Fluxo de Caixa · ${r.source||'Manual'}`,date:r.date,kind:r.kind});
   });
-  /* Recebimentos entra como receita de boletos apenas quando o Fluxo do mês
-     ainda não tem a cobrança bancária lançada — evita contar duas vezes. */
-  const recPaid=new Map();
-  recState.rows.forEach(p=>{if(p.status!=='Pago')return;const m=String(p.pago_em||p.vencimento||'').slice(0,7);if(!m.startsWith(yearPrefix))return;recPaid.set(m,(recPaid.get(m)||0)+Number(p.valor_liquidado||p.valor_previsto||0))});
-  recPaid.forEach((v,m)=>{if(monthSource(m)!=='sistema'||boletosFromCash.has(m)||!v)return;push({key:`receb:${m}`,month:m,auto:'rec_boletos',label:'Boletos liquidados (Recebimentos)',value:v,origin:'Recebimentos'})});
   return items;
 }
 
@@ -395,22 +389,35 @@ function compute(items){
   const months=MONTHS.map((_,i)=>monthKey(year,i));
   const byLine={},has=new Set(items.map(x=>x.month));
   LINES.forEach(l=>{byLine[l.id]=Object.fromEntries(months.map(m=>[m,0]))});
-  items.forEach(it=>{if(byLine[it.line]&&it.month in byLine[it.line])byLine[it.line][it.month]+=it.value*LINE[it.line].sign});
-  const groupSum=(g,m)=>LINES.filter(l=>l.group===g).reduce((s,l)=>s+byLine[l.id][m],0);
-  const sumOver=(fn,ms)=>ms.reduce((s,m)=>s+fn(m),0);
+  items.forEach(it=>{if(byLine[it.line]&&it.month in byLine[it.line])byLine[it.line][it.month]+=SHARED.cents(it.value)*LINE[it.line].sign});
+  for(const values of Object.values(byLine))for(const month of months)values[month]/=100;
+  const groupSum=(g,m)=>LINES.filter(l=>l.group===g).reduce((s,l)=>s+SHARED.cents(byLine[l.id][m]),0)/100;
+  const sumOver=(fn,ms)=>ms.reduce((s,m)=>s+SHARED.cents(fn(m)),0)/100;
   return {months,byLine,groupSum,has,sumOver};
 }
 
 function recIndicators(){
   const months=MONTHS.map((_,i)=>monthKey(year,i)),out={};
-  months.forEach(m=>out[m]={expected:0,received:0,n:0,paid:0});
+  months.forEach(m=>out[m]={expected:0,received:0,unmatched:0,unverified:0,open:0,n:0,paid:0});
   const inRange=m=>out[m]&&m>=START_MONTH;
-  recState.rows.forEach(p=>{
-    if(p.status==='Cancelado')return;
+  const today=SHARED.todayISO();
+  for(const p of recState.rows){
+    if(p.ativo===false||SHARED.cancelled(p.status))continue;
     const due=String(p.vencimento||'').slice(0,7);
-    if(inRange(due)){out[due].expected+=Number(p.valor_previsto||0);out[due].n++;if(p.status==='Pago')out[due].paid++}
-    if(p.status==='Pago'){const pm=String(p.pago_em||p.vencimento||'').slice(0,7);if(inRange(pm))out[pm].received+=Number(p.valor_liquidado||p.valor_previsto||0)}
-  });
+    if(!inRange(due))continue;
+    out[due].expected+=SHARED.cents(SHARED.parcelFaceValue(p));
+    out[due].open+=SHARED.cents(SHARED.outstanding(p));
+    out[due].n++;
+    if(SHARED.settled(p.status))out[due].paid++;
+  }
+  for(const p of SHARED.declaredReceipts(recState.rows,cashRows())){
+    const month=p.date.slice(0,7);
+    if(!inRange(month)||p.date>today)continue;
+    out[month].received+=SHARED.cents(p.value);
+    if(!p.matched)out[month].unmatched+=SHARED.cents(p.value);
+    if(!p.evidence)out[month].unverified+=SHARED.cents(p.value);
+  }
+  for(const r of Object.values(out)){r.expected/=100;r.received/=100;r.unmatched/=100;r.unverified/=100;r.open/=100}
   return out;
 }
 
@@ -469,10 +476,11 @@ function cellHtml(v,line,m,has,kind){
 
 async function render(){
   if(!isAdmin())return typeof documents==='function'?documents():null;
+  const owner=actor();
   try{title('DRE')}catch{const t=q('#title');if(t)t.textContent='DRE'}
   const c=q('#content');if(!c)return;ensureStyle();
-  if(!recState.loaded&&!recState.loading){c.innerHTML='<div class="notice">Carregando DRE…</div>';await loadRecebimentos()}
-  draw();
+  if(!recState.loaded||recState.owner!==owner){c.innerHTML='<div class="notice">Carregando DRE…</div>';await loadRecebimentos()}
+  if(actor()===owner&&q('#title')?.textContent==='DRE')draw();
 }
 
 function toolbar(extra=''){
@@ -521,12 +529,15 @@ function drawStatement(c,kind){
   });
   const recRows=`<tr class="dre-group"><td>RECEBIMENTOS (boletos)</td>${vis.map(()=>'<td></td>').join('')}<td class="col-total"></td><td></td></tr>
   <tr class="dre-line"><td>Previsto pelo vencimento</td>${vis.map(m=>`<td>${rec[m].expected?N(rec[m].expected):'<span class="muted">—</span>'}</td>`).join('')}<td class="col-total">${N(months.reduce((s,m)=>s+rec[m].expected,0))}</td><td></td></tr>
-  <tr class="dre-line"><td>Liquidado (baixado em Recebimentos)</td>${vis.map(m=>`<td>${rec[m].received?N(rec[m].received):'<span class="muted">—</span>'}</td>`).join('')}<td class="col-total">${N(months.reduce((s,m)=>s+rec[m].received,0))}</td><td></td></tr>
+  <tr class="dre-line"><td>Baixas declaradas (inclui parciais)</td>${vis.map(m=>`<td>${rec[m].received?N(rec[m].received):'<span class="muted">—</span>'}</td>`).join('')}<td class="col-total">${N(months.reduce((s,m)=>s+rec[m].received,0))}</td><td></td></tr>
+  <tr class="dre-line"><td>Das baixas, sem vínculo confirmado no extrato</td>${vis.map(m=>`<td>${rec[m].unmatched?N(rec[m].unmatched):'<span class="muted">—</span>'}</td>`).join('')}<td class="col-total">${N(months.reduce((s,m)=>s+rec[m].unmatched,0))}</td><td></td></tr>
+  <tr class="dre-line"><td>Das baixas, sem extrato vinculado ou retorno Ailos</td>${vis.map(m=>`<td>${rec[m].unverified?N(rec[m].unverified):'<span class="muted">—</span>'}</td>`).join('')}<td class="col-total">${N(months.reduce((s,m)=>s+rec[m].unverified,0))}</td><td></td></tr>
+  <tr class="dre-line"><td>Saldo atual em aberto por vencimento</td>${vis.map(m=>`<td>${rec[m].open?N(rec[m].open):'<span class="muted">—</span>'}</td>`).join('')}<td class="col-total">${N(months.reduce((s,m)=>s+rec[m].open,0))}</td><td></td></tr>
   <tr class="dre-margin"><td>Adimplência (parcelas pagas / vencendo no mês)</td>${vis.map(m=>`<td>${rec[m].n?Math.round(rec[m].paid/rec[m].n*100)+'%':''}</td>`).join('')}<td class="col-total"></td><td></td></tr>`;
   const prevWord=kind==='prev';
   const legend=prevWord
     ?`<span>Previsto de jul–ago/2026 vem da planilha (Entradas - Previsão e Saídas - Previsto Geral); a partir de set/2026, do Planejamento do sistema (receitas planejadas, contratos do ERP, despesas planejadas, contas cadastradas e folha do RH).</span><span>Set–dez/2026 também podem usar a planilha pelo seletor do mês.</span>`
-    :`<span>Meses jul–ago/2026 podem usar a planilha anual ou os lançamentos do sistema.</span><span>Boletos: usa a cobrança lançada no Fluxo de Caixa; se o mês ainda não tiver, usa o que foi baixado em Recebimentos.</span>`;
+    :`<span>Meses jul–ago/2026 podem usar a planilha anual ou os lançamentos do sistema.</span><span>O resultado do sistema usa os movimentos do Fluxo de Caixa. As baixas de Recebimentos são apresentadas separadamente com a parcela sem vínculo confirmado com o extrato.</span>`;
   c.innerHTML=`${toolbar(`<span class="muted">${monthsWithData} ${monthsWithData===1?'mês':'meses'} com ${prevWord?'previsão':'movimentação'}</span>`)}
   <div class="grid cols-4 dre-kpis"><div class="card metric"><h3>Receita bruta ${prevWord?'prevista':''}</h3><b>${M(rb)}</b><small>Acumulado ${String(year)===START_MONTH.slice(0,4)?`desde ${monthName(START_MONTH).toLowerCase()}`:year}</small></div><div class="card metric"><h3>Resultado operacional (EBITDA)</h3><b class="${ro<0?'kpi-negative':''}">${M(ro)}</b><small>Margem ${av(ro)}</small></div><div class="card metric"><h3>Resultado líquido</h3><b class="${rl<0?'kpi-negative':''}">${M(rl)}</b><small>Margem ${av(rl)}</small></div><div class="card metric"><h3>Geração de caixa</h3><b class="${caixa<0?'kpi-negative':''}">${M(caixa)}</b><small>Após investimentos e sócios</small></div></div>
   ${recState.error?`<div class="notice warn" style="margin-top:14px">Recebimentos não carregado: ${E(recState.error)}</div>`:''}
@@ -630,6 +641,14 @@ function exportXlsx(){
       if(row.group){rowOf(GROUPS[row.group],m=>X.groupSum(row.group,m));LINES.filter(l=>l.group===row.group).forEach(l=>rowOf('   '+l.label,m=>X.byLine[l.id][m]))}
       else rowOf(row.label,m=>row.groups.reduce((s,g)=>s+X.groupSum(g,m),0));
     });
+    if(X===R){
+      const receipts=recIndicators();
+      rowOf('Previsto pelo vencimento',m=>receipts[m].expected);
+      rowOf('Baixas declaradas (inclui parciais)',m=>receipts[m].received);
+      rowOf('Das baixas, sem vínculo confirmado no extrato',m=>receipts[m].unmatched);
+      rowOf('Das baixas, sem extrato vinculado ou retorno Ailos',m=>receipts[m].unverified);
+      rowOf('Saldo atual em aberto por vencimento',m=>receipts[m].open);
+    }
     const ws=XLSX.utils.aoa_to_sheet(aoa);ws['!cols']=[{wch:52},...X.months.map(()=>({wch:13})),{wch:14}];return ws;
   };
   const {pi,ri,P,R,both}=comparisonData();

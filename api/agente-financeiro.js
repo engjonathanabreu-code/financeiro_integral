@@ -13,7 +13,7 @@ async function read(path,authorization,body){
 // conversa reaproveita a mesma leitura por 2 minutos (mesmo usuário e sessão).
 async function loadData(auth,userId,refresh){
  const key=userId+'|'+auth;const hit=cache.get(key);if(!refresh&&hit&&Date.now()-hit.at<CACHE_MS)return hit;
- const page=offset=>read('/rest/v1/fin_receb_parcelas?select=vencimento,valor_previsto,juros,multa,status,pago_em,valor_liquidado&ativo=eq.true&status=neq.Cancelado&order=id&limit=1000&offset='+offset,auth);
+ const page=offset=>read('/rest/v1/fin_receb_parcelas?select=id,vencimento,valor_previsto,juros,multa,status,pago_em,valor_liquidado,origem_baixa&ativo=eq.true&status=neq.Cancelado&order=id&limit=1000&offset='+offset,auth);
  const parcelsTask=(async()=>{
   const parcels=[];let offset=0;
   for(;;){

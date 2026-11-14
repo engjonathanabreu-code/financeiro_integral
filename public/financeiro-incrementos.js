@@ -194,18 +194,22 @@ function cashRowsOf(month){
   let rows=[];try{rows=window.IntegralFinanceCashflowEditor?.allRows?.()||[]}catch{}
   return rows.filter(r=>monthOf(r.date)===month).sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
 }
+function cashCsvCell(value){
+  const text=String(value??'');
+  return csvCell(/^[\s]*[=+@-]/.test(text)?"'"+text:text);
+}
 function exportCashCsv(month){
   const rows=cashRowsOf(month);
-  const lines=[['Data','Descrição','Natureza','Origem','Tipo','Valor'].map(csvCell).join(';'),...rows.map(r=>[D(r.date),r.description,r.kind||'',r.source||'',r.direction||'',Number(r.value||0).toFixed(2).replace('.',',')].map(csvCell).join(';'))];
+  const lines=[['Data','Descrição','Natureza','Origem','Referência','Tipo','Valor'].map(csvCell).join(';'),...rows.map(r=>[D(r.date),r.description,r.kind||'',r.source||'',r.reference||'',r.direction||'',Number(r.value||0).toFixed(2).replace('.',',')].map(cashCsvCell).join(';'))];
   downloadBlob(new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'}),`fluxo-caixa-${month}.csv`);
 }
 function exportCashPdf(month){
   if(!window.jspdf?.jsPDF){alert('A biblioteca de PDF não carregou. Recarregue a página e tente novamente.');return}
-  const rows=cashRowsOf(month),ins=rows.filter(r=>r.direction==='Entrada').reduce((s,r)=>s+Number(r.value||0),0),outs=rows.filter(r=>r.direction==='Saída').reduce((s,r)=>s+Number(r.value||0),0);
+  const rows=cashRowsOf(month),shared=window.IntegralDREShared,ins=shared.sumMoney(rows.filter(r=>r.direction==='Entrada')),outs=shared.sumMoney(rows.filter(r=>r.direction==='Saída'));
   const doc=new window.jspdf.jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
-  doc.setFontSize(16);doc.text(`Fluxo de Caixa — ${monthLabel(month)}`,14,16);doc.setFontSize(10);doc.text(`Entradas: ${M(ins)}   Saídas: ${M(outs)}   Saldo: ${M(ins-outs)}`,14,23);
-  const body=rows.map(r=>[D(r.date),r.description||'',r.kind||'',r.source||'',r.direction||'',M(r.value)]);
-  if(typeof doc.autoTable==='function')doc.autoTable({startY:28,head:[['Data','Descrição','Natureza','Origem','Tipo','Valor']],body,styles:{fontSize:8},headStyles:{fillColor:[17,94,89]},columnStyles:{5:{halign:'right'}}});
+  doc.setFontSize(16);doc.text(`Fluxo de Caixa — ${monthLabel(month)}`,14,16);doc.setFontSize(10);doc.text(`Entradas: ${M(ins)}   Saídas: ${M(outs)}   Saldo: ${M((shared.cents(ins)-shared.cents(outs))/100)}`,14,23);
+  const body=rows.map(r=>[D(r.date),r.description||'',r.kind||'',r.source||'',r.reference||'',r.direction||'',M(r.value)]);
+  if(typeof doc.autoTable==='function')doc.autoTable({startY:28,head:[['Data','Descrição','Natureza','Origem','Referência','Tipo','Valor']],body,styles:{fontSize:8},headStyles:{fillColor:[17,94,89]},columnStyles:{6:{halign:'right'}}});
   else{let y=31;body.forEach(r=>{if(y>195){doc.addPage();y=16}doc.text(r.join(' | ').slice(0,180),14,y);y+=6})}
   doc.save(`fluxo-caixa-${month}.pdf`);
 }

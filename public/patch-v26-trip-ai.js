@@ -9,7 +9,63 @@ const M=v=>typeof money==='function'?money(Number(v||0)):Number(v||0).toLocaleSt
 const F=d=>{if(!d)return'—';try{return typeof fmt==='function'?fmt(d):new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR')}catch{return d}};
 const isAdm=()=>{try{return user?.role==='Administrador'}catch{return false}};
 const files=window.IntegralTripDocuments;
-const tripById=id=>(db.trips||[]).find(t=>same(t.id,id));
+const tripId=t=>t?.id==null?'':String(t.id);
+const tripsWithId=id=>(db.trips||[]).filter(t=>tripId(t)===String(id));
+const repeatedTripId=id=>tripsWithId(id).length>1;
+function tripSignature(trip){
+  return JSON.stringify(trip,(key,value)=>{
+    if(!value||typeof value!=='object'||Array.isArray(value))return value;
+    return Object.fromEntries(Object.keys(value).sort().map(field=>[field,value[field]]));
+  });
+}
+function tripById(id){
+  if(id==null||String(id)==='')return;
+  const matches=tripsWithId(id);
+  if(matches.length<2)return matches[0];
+  const signature=tripSignature(matches[0]);
+  if(matches.every(t=>tripSignature(t)===signature))return matches[0];
+}
+function similarTripKey(trip){
+  const fields=[trip.city,trip.project,trip.start,trip.end,trip.sector].map(value=>
+    String(value??'').trim().replace(/\s+/g,' ').normalize('NFC').toLowerCase());
+  const assigned=Array.isArray(trip.assigned)?[...new Set(trip.assigned.map(String))].sort():[];
+  return fields.every(Boolean)?JSON.stringify([...fields,assigned]):'';
+}
+function visibleTripRows(){
+  const byId=new Map(),rows=[];
+  for(const trip of db.trips||[]){
+    if(!trip||typeof trip!=='object')continue;
+    const id=tripId(trip);
+    if(!id){if(tripVisible(trip))rows.push({trip,id});continue}
+    const signature=tripSignature(trip);
+    if(!byId.has(id))byId.set(id,new Map());
+    byId.get(id).set(signature,trip);
+  }
+  for(const [id,versions] of byId){
+    for(const trip of versions.values()){
+      if(tripVisible(trip))rows.push({trip,id,conflict:versions.size>1});
+    }
+  }
+  const requestIds=new Map(),similarIds=new Map();
+  function addId(groups,key,id){
+    if(!key||!id)return;
+    if(!groups.has(key))groups.set(key,new Set());
+    groups.get(key).add(id);
+  }
+  for(const row of rows){
+    row.request=String(row.trip.invoiceRequestId??'').trim();
+    row.similar=similarTripKey(row.trip);
+    addId(requestIds,row.request,row.id);
+    addId(similarIds,row.similar,row.id);
+  }
+  for(const row of rows){
+    if(!row.id)row.notice='Sem ID de viagem';
+    else if(row.conflict)row.notice='ID de viagem em conflito';
+    else if(requestIds.get(row.request)?.size>1)row.notice='Outra viagem vinculada à mesma solicitação';
+    else if(similarIds.get(row.similar)?.size>1)row.notice='Viagem semelhante com outro ID';
+  }
+  return rows.sort((a,b)=>String(b.trip.start||'').localeCompare(String(a.trip.start||'')));
+}
 const expenses=id=>(db.tripExpenses||[]).filter(e=>same(e.tripId,id));
 const documents=id=>(db.tripDocuments||[]).filter(d=>same(d.tripId,id));
 // A rota pertence ao módulo, não ao HTML: atualizações de dados preservam o detalhe aberto.
@@ -22,6 +78,7 @@ window.IntegralTripVisible=tripVisible;
 function tripForm(id){
   if(!isAdm())return;
   const t=tripById(id),sectors=(db.sectors||[]).filter(s=>s.active!==false).map(s=>s.name),users=(db.usersMvp||[]).filter(u=>u.active!==false),selected=t?.assigned||[];
+  if(id!=null&&(!t||repeatedTripId(id)))return renderTrips();
   const x=v2modal(t?'Editar viagem':'Nova viagem',`<form id="trip26Form"><div class="modal-body"><div class="form-grid"><div class="field"><label>Destino / cidade</label><input name="city" value="${E(t?.city||'')}" required></div><div class="field"><label>Projeto / atividade</label><input name="project" value="${E(t?.project||'')}"></div><div class="field"><label>Data inicial</label><input name="start" type="date" value="${t?.start||''}" required></div><div class="field"><label>Data final</label><input name="end" type="date" value="${t?.end||''}" required></div><div class="field full"><label>Equipe / viajantes</label><input name="employee" value="${E(t?.employee||'')}" required></div><div class="field"><label>Setor</label><select name="sector"><option value="">Selecione</option>${sectors.map(s=>`<option ${s===t?.sector?'selected':''}>${E(s)}</option>`).join('')}</select></div><div class="field"><label>Status</label><select name="status">${['Planejada','Em andamento','Aguardando prestação','Aprovada','Divergência','Concluída'].filter(s=>s!=='Aprovada'||isAdm()||t?.status==='Aprovada').map(s=>`<option ${s===(t?.status||'Planejada')?'selected':''}>${s}</option>`).join('')}</select></div><div class="field full"><label>Objetivo da viagem</label><textarea name="objective">${E(t?.objective||'')}</textarea></div><div class="field full"><label>Relatório / observações</label><textarea name="report">${E(t?.report||'')}</textarea></div><div class="field full"><label>Usuários com acesso individual</label><div class="assignment-grid">${users.map(u=>`<label class="check-line"><input type="checkbox" name="assigned" value="${u.id}" ${selected.map(String).includes(String(u.id))?'checked':''}>${E(u.name)} <small>${E(u.sector||'')}</small></label>`).join('')}</div></div></div></div><div class="modal-foot"><button class="btn">Salvar</button></div></form>`);
   q('#trip26Form',x).onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),start=f.get('start'),end=f.get('end'),o={id:t?.id||uid(),city:String(f.get('city')||'').trim(),project:String(f.get('project')||'').trim(),start,end,period:start&&end?`${F(start)} a ${F(end)}`:'',month:String(start||'').slice(0,7),employee:String(f.get('employee')||'').trim(),sector:f.get('sector')||'',status:f.get('status'),objective:String(f.get('objective')||'').trim(),report:String(f.get('report')||'').trim(),assigned:f.getAll('assigned').map(Number),declared:t?.declared||0,proven:t?.proven||0,issues:t?.issues||[]};t?Object.assign(t,o):(db.trips=db.trips||[],db.trips.push(o));persist();x.remove();renderTrips()};
 }
@@ -36,7 +93,7 @@ function candidatesForTrip(tid){
   return expenses(tid).map(e=>({id:`trip-${e.id}`,date:e.date||'',description:[e.type,e.origin,e.description].filter(Boolean).join(' • '),value:Number(e.value??e.proven??e.declared??0),source:'Viagem'}));
 }
 function uploadWithAI(tid){
-  const t=tripById(tid);if(!t)return;
+  const t=tripById(tid);if(!t||repeatedTripId(tid))return;
   const x=v2modal('Enviar documento • Agente IA',`<form id="trip26AI"><div class="modal-body"><div class="dropzone"><span class="badge ok">Agente IA</span><h3>Envie o documento da despesa</h3><p>NF, cupom, recibo ou comprovante. A IA identificará tipo, fornecedor, data, descrição e valor e registrará a despesa nesta viagem.</p><input id="trip26File" type="file" accept="image/*,.pdf" required></div><div id="trip26AIStatus" class="notice">Aguardando documento.</div></div><div class="modal-foot"><button class="btn" id="trip26Analyze">Analisar e registrar despesa</button></div></form>`);
   const form=q('#trip26AI',x),status=q('#trip26AIStatus',x),btn=q('#trip26Analyze',x);form.onsubmit=async e=>{e.preventDefault();const file=q('#trip26File',x).files[0];if(!file)return;btn.disabled=true;btn.textContent='Analisando...';status.textContent='O agente está lendo o documento e conferindo possíveis duplicidades...';try{const stored=await files.capture(file),ai=await files.analyze({file:stored},t,candidatesForTrip(t.id)),val=Number(ai.value||0),expense={id:uid(),tripId:t.id,date:ai.date||new Date().toISOString().slice(0,10),type:ai.expense_type||ai.type||'Outros',origin:ai.origin||'',description:ai.description||'',value:val,declared:val,proven:val,file:stored,doc:file.name,status:ai.duplicate?'Revisar duplicidade':(Number(ai.confidence||0)<75?'Revisar IA':'Confirmado pela IA'),ai:true,confidence:Number(ai.confidence||0),duplicate:ai.duplicate||null,notes:ai.notes||'',aiModel:ai.model||''};db.tripExpenses=db.tripExpenses||[];db.tripExpenses.push(expense);db.tripDocuments=db.tripDocuments||[];db.tripDocuments.push({id:uid(),tripId:t.id,file:expense.file,note:`Documento analisado pela IA • ${expense.type} • ${M(val)}`,addedAt:new Date().toISOString(),by:user?.name||'',expenseId:expense.id,ai:true});persist();x.remove();tripDetail(t.id)}catch(err){console.error('IA viagem:',err);status.className='notice danger';status.textContent=err.message;btn.disabled=false;btn.textContent='Analisar e registrar despesa'}};
 }
@@ -78,21 +135,33 @@ function deleteExpense(tid,eid){const e=(db.tripExpenses||[]).find(x=>same(x.id,
 
 function tripDetail(id){
   const t=tripById(id);if(!t||!tripVisible(t))return renderTrips();const es=expenses(t.id).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))),docs=documents(t.id).sort((a,b)=>String(b.addedAt||'').localeCompare(String(a.addedAt||'')));const total=es.reduce((s,e)=>s+Number(e.value??e.proven??e.declared??0),0),review=es.filter(e=>/revisar/i.test(e.status||'')).length;
+  const readOnly=repeatedTripId(t.id);
   selectedTripId=t.id;window.IntegralSelectedTripId=t.id;
-  if(typeof title==='function')title(`Viagem • ${t.city||''}`);q('#content').innerHTML=`<div class="toolbar"><button class="btn ghost" id="trip26Back">← Viagens</button><div class="right">${isAdm()?'<button class="btn ghost" id="trip26Edit">Editar viagem</button><button class="btn danger" id="trip26Delete">Excluir viagem</button>':''}<button class="btn ghost" id="trip26Manual">+ Despesa manual</button><button class="btn" id="trip26Upload">Enviar documento com IA</button></div></div><div class="grid cols-4 compact-metrics"><div class="card metric mini"><h3>Total de despesas</h3><b>${M(total)}</b></div><div class="card metric mini"><h3>Documentos analisados</h3><b>${docs.filter(d=>d.ai).length}</b></div><div class="card metric mini"><h3>Itens para revisar</h3><b>${review}</b></div><div class="card metric mini"><h3>Status</h3><b class="metric-status">${E(t.status||'—')}</b></div></div><div class="grid cols-2 trip-info-grid"><div class="card"><h3>Informações da viagem</h3><div class="detail-list"><div><span>Destino</span><b>${E(t.city||'—')}</b></div><div><span>Período</span><b>${E(t.period||((t.start&&t.end)?`${F(t.start)} a ${F(t.end)}`:'—'))}</b></div><div><span>Equipe</span><b>${E(t.employee||'—')}</b></div><div><span>Setor</span><b>${E(t.sector||'—')}</b></div><div><span>Projeto</span><b>${E(t.project||'—')}</b></div></div></div><div class="card"><h3>Objetivo e relatório</h3><p><b>Objetivo:</b> ${E(t.objective||'Não informado.')}</p><p><b>Relatório:</b> ${E(t.report||'Não informado.')}</p></div></div><h3 class="section-title">Despesas da viagem</h3><div class="table-wrap trip-expenses"><table class="table"><thead><tr><th>Data</th><th>Tipo</th><th>Fornecedor / origem</th><th>Descrição</th><th>Valor</th><th>Documento</th><th>IA</th><th>Status</th><th></th></tr></thead><tbody>${es.map(e=>`<tr><td>${F(e.date)}</td><td><b>${E(e.type||'Outros')}</b></td><td>${E(e.origin||'—')}</td><td>${E(e.description||'—')}</td><td><b>${M(e.value??e.proven??e.declared)}</b></td><td>${e.file?.name||e.doc?`<button class="trip-document-link" data-trip26-download="${E(e.id)}">${E(e.file?.name||e.doc)}</button>`:'—'}</td><td>${e.ai?`${Math.round(Number(e.confidence||0))}%`:'Manual'}</td><td>${statusBadge(e)}</td><td class="actions"><button class="btn small ghost" data-trip26-review="${E(e.id)}">Revisar IA</button><button class="btn small ghost" data-trip26-edit-exp="${e.id}">Editar</button>${isAdm()?`<button class="btn small ghost" data-trip26-del-exp="${e.id}">Excluir</button>`:''}</td></tr>`).join('')||'<tr><td colspan="9"><div class="empty">Nenhuma despesa registrada.</div></td></tr>'}</tbody></table></div><h3 class="section-title">Documentos enviados</h3><div class="card">${docs.map(d=>`<div class="file-row"><div><button class="trip-document-link" data-trip26-download-doc="${E(d.id)}">${E(d.file?.name||'Arquivo')}</button><small>${E(d.note||'')}</small></div><span>${d.addedAt?new Date(d.addedAt).toLocaleString('pt-BR'):'—'}</span></div>`).join('')||'<div class="empty">Nenhum documento enviado.</div>'}</div>`;
+  if(typeof title==='function')title(`Viagem • ${t.city||''}`);q('#content').innerHTML=`<div class="toolbar" ${readOnly?'data-trip26-readonly':''}><button class="btn ghost" id="trip26Back">← Viagens</button><div class="right">${isAdm()&&!readOnly?'<button class="btn ghost" id="trip26Edit">Editar viagem</button><button class="btn danger" id="trip26Delete">Excluir viagem</button>':''}${readOnly?'':'<button class="btn ghost" id="trip26Manual">+ Despesa manual</button><button class="btn" id="trip26Upload">Enviar documento com IA</button>'}</div></div>${readOnly?'<p class="notice">Há cópias com o mesmo ID. Esta viagem está disponível para consulta.</p>':''}<div class="grid cols-4 compact-metrics"><div class="card metric mini"><h3>Total de despesas</h3><b>${M(total)}</b></div><div class="card metric mini"><h3>Documentos analisados</h3><b>${docs.filter(d=>d.ai).length}</b></div><div class="card metric mini"><h3>Itens para revisar</h3><b>${review}</b></div><div class="card metric mini"><h3>Status</h3><b class="metric-status">${E(t.status||'—')}</b></div></div><div class="grid cols-2 trip-info-grid"><div class="card"><h3>Informações da viagem</h3><div class="detail-list"><div><span>Destino</span><b>${E(t.city||'—')}</b></div><div><span>Período</span><b>${E(t.period||((t.start&&t.end)?`${F(t.start)} a ${F(t.end)}`:'—'))}</b></div><div><span>Equipe</span><b>${E(t.employee||'—')}</b></div><div><span>Setor</span><b>${E(t.sector||'—')}</b></div><div><span>Projeto</span><b>${E(t.project||'—')}</b></div></div></div><div class="card"><h3>Objetivo e relatório</h3><p><b>Objetivo:</b> ${E(t.objective||'Não informado.')}</p><p><b>Relatório:</b> ${E(t.report||'Não informado.')}</p></div></div><h3 class="section-title">Despesas da viagem</h3><div class="table-wrap trip-expenses"><table class="table"><thead><tr><th>Data</th><th>Tipo</th><th>Fornecedor / origem</th><th>Descrição</th><th>Valor</th><th>Documento</th><th>IA</th><th>Status</th><th></th></tr></thead><tbody>${es.map(e=>`<tr><td>${F(e.date)}</td><td><b>${E(e.type||'Outros')}</b></td><td>${E(e.origin||'—')}</td><td>${E(e.description||'—')}</td><td><b>${M(e.value??e.proven??e.declared)}</b></td><td>${e.file?.name||e.doc?`<button class="trip-document-link" data-trip26-download="${E(e.id)}">${E(e.file?.name||e.doc)}</button>`:'—'}</td><td>${e.ai?`${Math.round(Number(e.confidence||0))}%`:'Manual'}</td><td>${statusBadge(e)}</td><td class="actions">${readOnly?'':`<button class="btn small ghost" data-trip26-review="${E(e.id)}">Revisar IA</button><button class="btn small ghost" data-trip26-edit-exp="${e.id}">Editar</button>${isAdm()?`<button class="btn small ghost" data-trip26-del-exp="${e.id}">Excluir</button>`:''}`}</td></tr>`).join('')||'<tr><td colspan="9"><div class="empty">Nenhuma despesa registrada.</div></td></tr>'}</tbody></table></div><h3 class="section-title">Documentos enviados</h3><div class="card">${docs.map(d=>`<div class="file-row"><div><button class="trip-document-link" data-trip26-download-doc="${E(d.id)}">${E(d.file?.name||'Arquivo')}</button><small>${E(d.note||'')}</small></div><span>${d.addedAt?new Date(d.addedAt).toLocaleString('pt-BR'):'—'}</span></div>`).join('')||'<div class="empty">Nenhum documento enviado.</div>'}</div>`;
   qa('[data-trip26-review]').forEach(b=>b.onclick=()=>reviewExpense(t.id,b.dataset.trip26Review));qa('[data-trip26-download]').forEach(b=>b.onclick=()=>downloadExpense(t.id,b.dataset.trip26Download,b));qa('[data-trip26-download-doc]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await files.download(docs.find(d=>same(d.id,b.dataset.trip26DownloadDoc)))}catch(err){alert(err.message)}finally{b.disabled=false}});q('#trip26Back').onclick=renderTrips;if(q('#trip26Edit'))q('#trip26Edit').onclick=()=>tripForm(t.id);if(q('#trip26Delete'))q('#trip26Delete').onclick=()=>{if(!isAdm())return;const nExp=es.length,nDocs=docs.length;const extra=nExp||nDocs?`
 
 Também serão removidos ${nExp} gasto(s) e ${nDocs} documento(s) desta viagem.`:'';if(!confirm(`Excluir a viagem para ${t.city||'destino não informado'}?${extra}
 
-Esta ação não pode ser desfeita.`))return;db.trips=(db.trips||[]).filter(x=>!same(x.id,t.id));db.tripExpenses=(db.tripExpenses||[]).filter(x=>!same(x.tripId,t.id));db.tripDocuments=(db.tripDocuments||[]).filter(x=>!same(x.tripId,t.id));persist();renderTrips()};q('#trip26Manual').onclick=()=>manualExpense(t.id);q('#trip26Upload').onclick=()=>uploadWithAI(t.id);qa('[data-trip26-edit-exp]').forEach(b=>b.onclick=()=>manualExpense(t.id,b.dataset.trip26EditExp));qa('[data-trip26-del-exp]').forEach(b=>b.onclick=()=>deleteExpense(t.id,b.dataset.trip26DelExp));
+Esta ação não pode ser desfeita.`))return;db.trips=(db.trips||[]).filter(x=>!same(x.id,t.id));db.tripExpenses=(db.tripExpenses||[]).filter(x=>!same(x.tripId,t.id));db.tripDocuments=(db.tripDocuments||[]).filter(x=>!same(x.tripId,t.id));persist();renderTrips()};if(!readOnly){q('#trip26Manual').onclick=()=>manualExpense(t.id);q('#trip26Upload').onclick=()=>uploadWithAI(t.id)}qa('[data-trip26-edit-exp]').forEach(b=>b.onclick=()=>manualExpense(t.id,b.dataset.trip26EditExp));qa('[data-trip26-del-exp]').forEach(b=>b.onclick=()=>deleteExpense(t.id,b.dataset.trip26DelExp));
 }
 
 function renderTrips(){
   selectedTripId=null;
-  if(typeof title==='function')title('Viagens');const list=(db.trips||[]).filter(tripVisible).sort((a,b)=>String(b.start||'').localeCompare(String(a.start||'')));
-  const completed=t=>['concluida','finalizada'].includes(String(t.status||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim());
-  const tableRows=items=>items.map(t=>{const es=expenses(t.id),total=es.reduce((s,e)=>s+Number(e.value??e.proven??e.declared??0),0);return`<tr><td><b>${E(t.city||'')}</b></td><td>${E(t.period||((t.start&&t.end)?`${F(t.start)} a ${F(t.end)}`:'—'))}</td><td>${E(t.employee||'—')}</td><td>${E(t.sector||'—')}</td><td>${E(t.project||'—')}</td><td>${es.length}</td><td><b>${M(total)}</b></td><td>${typeof badgeStatus==='function'?badgeStatus(t.status||'Planejada'):E(t.status||'Planejada')}</td><td><button class="btn small" data-trip26-open="${t.id}">Abrir</button></td></tr>`}).join('')||'<tr><td colspan="9"><div class="empty">Nenhuma viagem cadastrada ou atribuída.</div></td></tr>';
-  q('#content').innerHTML=`<div class="toolbar"><div><b>${list.filter(t=>!completed(t)).length}</b> viagem(ns) visível(is)<div class="muted">Documentos enviados dentro da viagem podem ser analisados automaticamente pela IA e convertidos em despesas.</div></div>${isAdm()?'<button class="btn" id="trip26New">+ Nova viagem</button>':''}</div><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Setor</th><th>Projeto</th><th>Despesas</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${tableRows(list.filter(t=>!completed(t)))}</tbody></table></div><section id="finCompletedTrips"><h3 class="section-title">Viagens concluídas</h3><div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Setor</th><th>Projeto</th><th>Despesas</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${tableRows(list.filter(completed))}</tbody></table></div></section>`;
+  window.IntegralSelectedTripId=null;
+  if(typeof title==='function')title('Viagens');
+  const visible=visibleTripRows(),active=[],history=[];
+  for(const row of visible){
+    const status=String(row.trip.status||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+    (['concluida','finalizada'].includes(status)?history:active).push(row);
+  }
+  const tableRows=items=>items.map(({trip:t,id,notice,conflict})=>{
+    const es=id?expenses(id):[],total=es.reduce((sum,e)=>sum+Number(e.value??e.proven??e.declared??0),0);
+    const identifier=notice?`<small class="muted"><br>${E(notice)}${id?` · ID ${E(id)}`:''}</small>`:'';
+    const action=id&&!conflict?`<button class="btn small" data-trip26-open="${E(id)}">Abrir</button>`:'';
+    return `<tr><td><b>${E(t.city||'')}</b>${identifier}</td><td>${E(t.period||((t.start&&t.end)?`${F(t.start)} a ${F(t.end)}`:'—'))}</td><td>${E(t.employee||'—')}</td><td>${E(t.sector||'—')}</td><td>${E(t.project||'—')}</td><td>${conflict?'—':es.length}</td><td><b>${conflict?'—':M(total)}</b></td><td>${typeof badgeStatus==='function'?badgeStatus(t.status||'Planejada'):E(t.status||'Planejada')}</td><td>${action}</td></tr>`;
+  }).join('')||'<tr><td colspan="9"><div class="empty">Nenhuma viagem cadastrada ou atribuída.</div></td></tr>';
+  const table=rows=>`<div class="table-wrap"><table class="table"><thead><tr><th>Destino</th><th>Período</th><th>Equipe</th><th>Setor</th><th>Projeto</th><th>Despesas</th><th>Valor</th><th>Status</th><th></th></tr></thead><tbody>${tableRows(rows)}</tbody></table></div>`;
+  q('#content').innerHTML=`<div class="toolbar"><div><b>${active.length}</b> viagem(ns) visível(is)<div class="muted">Documentos enviados dentro da viagem podem ser analisados automaticamente pela IA e convertidos em despesas.</div></div>${isAdm()?'<button class="btn" id="trip26New">+ Nova viagem</button>':''}</div>${table(active)}<section id="finCompletedTrips"><h3 class="section-title">Viagens concluídas</h3>${table(history)}</section>`;
   if(q('#trip26New'))q('#trip26New').onclick=()=>tripForm();qa('[data-trip26-open]').forEach(b=>b.onclick=()=>tripDetail(b.dataset.trip26Open));
 }
 
