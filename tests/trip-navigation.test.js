@@ -16,6 +16,35 @@ test('removed trip resets route without a render loop',()=>{const s=setup();s.ap
 test('permission checks still apply after data refresh',()=>{const s=setup();s.api.detail(2);s.context.user={role:'Funcionário',sector:'Projetos'};s.context.trips();assert.equal(s.heading(),'Viagens');assert.ok(!s.content.innerHTML.includes('data-trip26-open="2"'))});
 test('directly assigned employee retains access to open detail',()=>{const s=setup();s.context.db.usersMvp=[{id:10,email:'staff@example.invalid'}];s.context.db.trips[1].assigned=[10];s.context.user={role:'Funcionário',sector:'Projetos',email:'staff@example.invalid'};s.api.detail(2);s.context.trips();assert.equal(s.heading(),'Viagem • Penha')});
 test('route changes do not mutate or persist business records',()=>{const s=setup(),before=JSON.stringify(s.context.db);s.context.save=()=>assert.fail('Navigation must not save');s.api.detail(1);s.context.trips();s.api.list();assert.equal(JSON.stringify(s.context.db),before)});
+test('an approved request protects its trip even when the reciprocal reference is legacy',()=>{
+ const s=setup();
+ s.context.db.invoiceRequests=[{id:'pedido',category:'trip',status:'Aprovada',convertedId:'1'}];
+ s.context.db.tripExpenses=[{id:10,tripId:1,description:'Despesa preservada'}];
+ s.api.detail(1);
+ assert.match(s.content.innerHTML,/exclusão desta viagem está indisponível/);
+ assert.match(s.content.innerHTML,/Despesa preservada/);
+ assert.doesNotMatch(s.content.innerHTML,/trip26Delete/);
+ assert.match(s.content.innerHTML,/trip26Edit/);
+ s.api.detail(2);
+ assert.match(s.content.innerHTML,/trip26Delete/);
+ const staleDelete=s.buttons.get('#trip26Delete').onclick;
+ s.context.db.trips[1].invoiceRequestId='novo-pedido';
+ s.context.save=()=>assert.fail('Linked records must not be deleted');
+ staleDelete();
+ assert.equal(s.context.db.trips.length,2);
+ assert.equal(s.context.db.tripExpenses.length,1);
+});
+test('trip deletion never cascades to expenses or documents',()=>{
+ const s=setup();
+ s.context.db.tripExpenses=[{id:21,tripId:1,value:12}];
+ s.context.db.tripDocuments=[{id:22,tripId:2,file:{name:'arquivo.pdf'}}];
+ for(const id of [1,2]){
+  s.api.detail(id);
+  assert.doesNotMatch(s.content.innerHTML,/trip26Delete/);
+ }
+ assert.equal(s.context.db.tripExpenses.length,1);
+ assert.equal(s.context.db.tripDocuments.length,1);
+});
 test('identical copies of a trip render once without changing records or links',()=>{
  const s=setup();
  s.context.db.trips=[{id:7,city:'Vistoria',status:'Concluída'},{status:'Concluída',city:'Vistoria',id:7}];
