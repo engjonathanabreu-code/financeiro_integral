@@ -40,17 +40,25 @@ function revenueFormCanonical(id){
 function expenseFormCanonical(id){const d=D();d.planExpenses=d.planExpenses||[];const r=d.planExpenses.find(x=>String(x.id)===String(id));const x=popup(r?'Editar despesa planejada':'Nova despesa planejada',`<form id="pcExpense"><div class="modal-body"><div class="form-section"><h4>Despesa planejada</h4><p class="muted">Somente previsão. Este valor não é lançado no Fluxo de Caixa.</p><div class="form-grid"><div class="field full"><label>Descrição / origem</label><input name="origin" value="${E(r?.origin||r?.name||'')}" required></div><div class="field"><label>Valor total</label><input name="total" type="number" min="0" step="0.01" value="${r?.total||r?.value||''}" required></div><div class="field"><label>Ocorrências</label><input name="installments" type="number" min="1" value="${r?.installments||1}" required></div><div class="field"><label>Primeira data</label><input name="start" type="date" value="${r?.start||today()}" required></div><div class="field"><label>Periodicidade</label><select name="cadence">${['Mensal','Trimestral','Semestral','Anual','Personalizado'].map(v=>`<option ${v===(r?.cadence||'Mensal')?'selected':''}>${v}</option>`).join('')}</select></div><div class="field"><label>Intervalo personalizado (meses)</label><input name="interval" type="number" min="1" value="${r?.interval||1}"></div></div></div></div><div class="modal-foot">${r?'<button type="button" class="btn danger" id="pcDelExpense">Excluir</button>':''}<button class="btn">Salvar despesa</button></div></form>`);const f=x.querySelector('#pcExpense');f.onsubmit=e=>{e.preventDefault();const z=new FormData(f),o={id:r?.id||uid(),origin:String(z.get('origin')||'').trim(),total:+z.get('total')||0,installments:+z.get('installments')||1,start:z.get('start'),cadence:z.get('cadence'),interval:+z.get('interval')||1};r?Object.assign(r,o):d.planExpenses.push(o);persist();x.remove();planningCanonical()};if(r)x.querySelector('#pcDelExpense').onclick=()=>{if(confirm('Excluir esta despesa planejada?')){d.planExpenses=d.planExpenses.filter(z=>String(z.id)!==String(r.id));persist();x.remove();planningCanonical()}}}
 function monthDetail(month,items){
   const engine=window.IntegralPlanningAnalysis;
-  const {incoming,outgoing,net}=engine.totals(items,'open');
+  const {incoming,outgoing}=engine.totals(items,'open');
+  const shared=window.IntegralDREShared;
+  const realized=shared.realizedMovements(D(),shared.todayISO()).filter(item=>monthOf(item.date)===month);
+  const realizedTotal=direction=>shared.sumMoney(realized.filter(item=>item.direction===direction));
+  const metric=(title,value)=>`<div class="card metric mini"><h3>${title}</h3><b>${M(value)}</b></div>`;
   const details=direction=>items.filter(item=>item.direction===direction).map(item=>{
     const context=[F(item.date),item.source,item.project,item.category].filter(Boolean).map(E).join(' • ');
     return `<div class="pc-detail-row"><div><b>${E(item.description)}</b><small>${context}</small></div>
       <strong class="${direction==='Entrada'?'kpi-positive':'kpi-negative'}">${M(item.amount/100)}</strong></div>`;
   }).join('')||'<div class="empty">Sem lançamentos neste mês.</div>';
   return popup(`Planejamento • ${label(month)}`,`<div class="modal-body">
+    <div class="grid cols-4 compact-metrics">
+      ${metric('Entradas previstas',incoming/100)}${metric('Saídas previstas',outgoing/100)}
+      ${metric('Entradas realizadas',realizedTotal('Entrada'))}${metric('Saídas realizadas',realizedTotal('Saída'))}
+    </div>
     <div class="pc-month-columns">
-      <section><h3 class="section-title">Entradas · ${M(incoming/100)}</h3><div class="pc-detail-list">${details('Entrada')}</div></section>
-      <section><h3 class="section-title">Saídas · ${M(outgoing/100)}</h3><div class="pc-detail-list">${details('Saída')}</div></section>
-    </div><p class="pc-month-result">Diferença no mês <b class="${net<0?'kpi-negative':'kpi-positive'}">${M(net/100)}</b></p>
+      <section><h3 class="section-title">Entradas previstas</h3><div class="pc-detail-list">${details('Entrada')}</div></section>
+      <section><h3 class="section-title">Saídas previstas</h3><div class="pc-detail-list">${details('Saída')}</div></section>
+    </div>
     </div><div class="modal-foot"><button class="btn" data-v2close data-pclose>Fechar</button></div>`);
 }
 function listRow(r,type){const erp=type==='ERP',entry=Number(r.entry||0),meta=erp?`${E(r.origin||'Recebimento')} • ${r.dueDate?F(r.dueDate):'—'}`:type==='Receita'?`${entry>0?`Entrada ${M(entry)} • `:''}${r.installments||1} parcela(s)${r.installmentValue?` de ${M(r.installmentValue)}`:''} • ${E(r.cadence||'Mensal')}`:`${r.installments||1} ocorrência(s) • ${E(r.cadence||'Mensal')}`,name=erp?(r.project||'Projeto ERP'):(r.origin||r.name||type),value=erp?r.remaining:(r.total??r.value),attr=type==='Receita'?`data-pc-revenue="${E(r.id)}"`:type==='Despesa'?`data-pc-expense="${E(r.id)}"`:'';return `<button class="pc-list-row ${erp?'readonly':''}" ${attr}><span><b>${E(name)}</b><small>${meta}</small></span><strong>${M(value)}</strong></button>`}
@@ -62,11 +70,13 @@ function planLists(data){
   const incomes=data.planRevenues||[],expenses=data.planExpenses||[];
   const erp=(data.erpPlannedRevenues||[]).filter(window.IntegralDREShared.openERP)
     .sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
-  const list=(title,items,type)=>`<section class="card planning-source-card">
-    <div class="section-head"><h3>${title}</h3><span class="badge">${items.length}</span></div>
-    <div class="pc-list">${items.map(row=>listRow(row,type)).join('')||'<div class="empty">Nenhum item cadastrado.</div>'}</div>
+  const list=(title,items,type,empty)=>`<section class="card planning-source-card">
+    <div class="section-head"><h3>${title}</h3><span class="badge${type==='ERP'?' ok':''}">${items.length}</span></div>
+    <div class="pc-list">${items.map(row=>listRow(row,type)).join('')||`<div class="empty">${empty}</div>`}</div>
   </section>`;
-  return `<div class="pc-source-grid">${list('Receitas planejadas manuais',incomes,'Receita')}${list('Entradas programadas do ERP',erp,'ERP')}${list('Despesas planejadas manuais',expenses,'Despesa')}</div>`;
+  return `<div class="pc-source-grid">${list('Receitas planejadas manuais',incomes,'Receita','Nenhuma receita manual cadastrada.')}
+    ${list('Entradas programadas do ERP',erp,'ERP','Nenhuma entrada futura sincronizada do ERP.')}
+    ${list('Despesas planejadas manuais',expenses,'Despesa','Nenhuma despesa manual cadastrada.')}</div>`;
 }
 
 const planButtons=()=>`<button class="btn ghost" id="pcNewExpense">+ Despesa planejada</button>
@@ -140,25 +150,27 @@ function planningCanonical(){
       <div class="planning-month-title"><strong>${E(label(month))}</strong>${index===0?'<span>Atual</span>':''}</div>
       <div class="planning-month-lines">
         ${line('Entradas',incoming,'kpi-positive')}${line('Saídas',outgoing,'kpi-negative')}
-        ${line('Entradas do ERP',sourceTotal('ERP'))}${line('Contas a pagar',sourceTotal('Contas'))}${line('Colaboradores',sourceTotal('RH'))}
+        ${line('Contas',sourceTotal('Contas'))}${line('Colaboradores',sourceTotal('RH'))}
       </div>
-      <div class="planning-month-balance"><span>Diferença no mês</span><b class="${net<0?'kpi-negative':'kpi-positive'}">${M(net/100)}</b></div>
+      <div class="planning-month-balance"><span title="Entradas previstas menos saídas previstas no mês">Saldo previsto</span><b class="${net<0?'kpi-negative':'kpi-positive'}">${M(net/100)}</b></div>
       <div class="planning-month-line pc-accumulated"><span>Acumulado</span><b class="${accumulated<0?'kpi-negative':'kpi-positive'}">${M(accumulated/100)}</b></div>
     </button>`;
   }).join('');
   const metric=(title,value,meta,style)=>`<div class="card planning-summary-card"><span>${title}</span><b class="${style}">${M(value/100)}</b><small>${meta}</small></div>`;
   q('#content').innerHTML=`<div class="planning-refined">
     <div class="planning-refined-head"><div><h3>Planejamento dos próximos 12 meses</h3>
-      <p class="muted">Abra um mês para ver de onde vêm as entradas e para onde vão as saídas.</p></div>
-      <div class="right pc-plan-actions"><button class="btn ghost" id="pcAnalysis">Análise detalhada</button>${planButtons()}</div>
+      <p class="muted">Receitas e despesas manuais são previsões. Contas, RH e parcelas programadas no ERP entram automaticamente no mês correspondente.</p></div>
+      <div class="right pc-plan-actions">${planButtons()}</div>
     </div>
     <div class="planning-summary-grid">
       ${metric('Entradas previstas',incoming,'Contratos do ERP e previsões manuais'+simulationNote,'kpi-positive')}
       ${metric('Saídas previstas',outgoing,'Contas, RH e previsões manuais'+simulationNote,'kpi-negative')}
-      ${metric('Movimentação líquida projetada',net,'Entradas menos saídas, sem saldo inicial',net<0?'kpi-negative':'kpi-positive')}
+      ${metric('Resultado previsto',net,'Projeção acumulada sem saldo inicial',net<0?'kpi-negative':'kpi-positive')}
     </div>
-    ${simulationForm(now,end)}
     <div class="planning-month-grid">${cards}</div>
+    <div class="pc-projection-tools">${simulationForm(now,end)}
+      <button type="button" class="btn ghost" id="pcAnalysis">Análise detalhada</button>
+    </div>
     ${planLists(data)}
   </div>`;
   bindPlans();

@@ -1,25 +1,29 @@
 const assert=require('node:assert/strict');
 const path=require('node:path');
+const {readFileSync}=require('node:fs');
 const {chromium,webkit,devices}=require('playwright');
 
 const root=path.join(__dirname,'../../public');
 const origin='https://menu-financeiro.test/';
-const styles=['financeiro.bundle.css','financeiro-responsive.css','financeiro-icons.css','financeiro-navigation.css','financeiro-design-system.css','financeiro-theme-dark.css'];
+const styles=[...readFileSync(path.join(root,'index.html'),'utf8').matchAll(/rel="stylesheet" href="([a-z][\w.-]+\.css)(?:\?[^"]*)?"/g)].map(match=>match[1]);
 const shell=(admin)=>`<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<div id="app"><div class="shell"><aside class="sidebar"><div class="brand">Integral Financeiro</div>
+<div id="app"><div class="shell"><aside class="sidebar"><div class="brand"><img class="fin-logo fin-logo-light" src="marca/logo-financeiro.svg" alt="Integral Financeiro"><img class="fin-logo fin-logo-dark" src="marca/logo-financeiro-escuro.svg" alt=""></div>
 <nav class="nav"><button class="active" data-view="documents">Documentos</button><button data-view="trips">Viagens</button>
-${admin?'<button data-view="planning">Planejamento</button><button data-view="users">Usuários</button>':''}</nav>
+${admin?'<button data-view="institutionalClients">Clientes Institucionais</button><button data-view="erpProjects">Projetos</button><button data-view="accounts">Contas</button><button data-view="receivables">Recebimentos</button><button data-view="cashflow">Fluxo de Caixa</button><button data-view="dre">DRE</button><button data-view="budgets">Orçamentos</button><button data-view="vehicles">Veículos</button><button data-view="invoices">Solicitações</button><button data-view="hr">RH</button><button data-view="boletos">Gerar Boletos</button><button data-view="financialAgent">Agente Financeiro</button><button data-view="planning">Planejamento</button><button data-view="users">Usuários</button>':''}</nav>
 <div class="sidebar-foot"><div class="user-mini">Perfil sintético</div><button class="btn" id="logout">Sair</button></div>
 </aside><section class="main"><header class="topbar"><h2 id="title">Documentos</h2><span class="badge">${admin?'Administrador':'Funcionário'}</span></header>
-<div id="content" class="content"><form><label>Documento<input id="form-test"></label></form></div></section></div></div></html>`;
+<div id="content" class="content"><form><label>Documento<input id="form-test"></label></form></div></section></div></div>${admin?'<button id="finAgentFloat" aria-label="Abrir Agente Financeiro"></button>':''}</html>`;
 
 async function load(browser,config,admin){
-  const context=await browser.newContext(config);
+  const context=await browser.newContext({reducedMotion:'reduce',...config});
   await context.route('**/*',route=>route.request().url()===origin
     ?route.fulfill({body:shell(admin),contentType:'text/html'})
-    :route.abort());
+    :new URL(route.request().url()).pathname.startsWith('/marca/')
+      ?route.fulfill({path:path.join(root,new URL(route.request().url()).pathname),contentType:'image/svg+xml'})
+      :route.abort());
   const page=await context.newPage();
   await page.goto(origin);
+  await page.evaluate(()=>{document.documentElement.dataset.theme='dark';});
   await page.evaluate(administrator=>{
     window.view='documents';
     window.user={role:administrator?'Administrador':'Funcionário'};
@@ -56,6 +60,21 @@ async function mobile(browser,label,config,admin){
     assert.equal(await page.evaluate(()=>document.activeElement.className.includes('fin-drawer-close')),true);
     assert.ok(await drawer.getByRole('button',{name:'Documentos'}).getAttribute('aria-current'));
     assert.equal(await drawer.locator('[data-view="planning"]').count(),admin?1:0);
+    const layout=await drawer.evaluate(sidebar=>{
+      const nav=sidebar.querySelector(':scope > .nav');
+      const panel=sidebar.getBoundingClientRect(), list=nav.getBoundingClientRect();
+      const brand=sidebar.querySelector('.brand').getBoundingClientRect();
+      const longLabel=nav.querySelector('[data-view="institutionalClients"]');
+      let labelRight=0;
+      if(longLabel){const label=document.createRange();label.selectNodeContents(longLabel);labelRight=label.getBoundingClientRect().right;}
+      return {panelWidth:panel.width,listWidth:list.width,listLeft:list.left,brandLeft:brand.left,
+        listRight:list.right,panelRight:panel.right,labelRight,scrollWidth:nav.scrollWidth,clientWidth:nav.clientWidth};
+    });
+    assert.ok(layout.listLeft<=layout.brandLeft+12&&layout.listWidth>=layout.panelWidth-64&&layout.listRight<=layout.panelRight,
+      'Marca e navegação devem ocupar uma única coluna: '+JSON.stringify(layout));
+    assert.ok(layout.labelRight<=layout.listRight&&layout.scrollWidth<=layout.clientWidth+1, 'Rótulos devem caber na navegação');
+    if(admin)assert.ok(!await page.locator('#finAgentFloat').isVisible(),'Botão flutuante fora da camada do menu');
+
     await page.keyboard.press('Shift+Tab');
     assert.equal(await page.evaluate(()=>document.activeElement.id),'finConfigurationToggle');
     await page.keyboard.press('Tab');

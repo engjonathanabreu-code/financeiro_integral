@@ -88,11 +88,15 @@ async function exportBytes(page,format){
       const november=page.locator('[data-pc-month="2026-11"]');
       const december=page.locator('[data-pc-month="2026-12"]');
       const january=page.locator('[data-pc-month="2027-01"]');
+      assert.ok(await page.locator('.planning-month-grid + .pc-projection-tools').isVisible());
+      assert.match(await november.locator('.planning-month-lines').innerText(),/Entradas[\s\S]+Saídas[\s\S]+Contas[\s\S]+Colaboradores/);
       assert.match(await november.locator('.planning-month-balance').innerText(),/-R\$\s*90,00/);
       assert.match(await december.locator('.pc-accumulated').innerText(),/R\$\s*5,00/);
       assert.match(await january.locator('.pc-accumulated').innerText(),/-R\$\s*20,00/);
       await december.click();
       const breakdown=page.locator('.pc-month-columns');
+      assert.deepEqual(await page.locator('.compact-metrics h3').allTextContents(),
+        ['Entradas previstas','Saídas previstas','Entradas realizadas','Saídas realizadas']);
       assert.match(await breakdown.innerText(),/Parcela de dezembro[\s\S]+ERP[\s\S]+Contrato sintético/);
       assert.match(await breakdown.innerText(),/Colaborador sintético[\s\S]+RH/);
       await page.locator('.modal-head [data-pclose]').click();
