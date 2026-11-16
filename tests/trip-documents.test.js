@@ -2,10 +2,11 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const vm=require('node:vm');
 const fs=require('node:fs');
+const {webcrypto:crypto}=require('node:crypto');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../public/financeiro-trip-documents.js'),'utf8');
 function setup(overrides={}){
   class FileReader{async readAsDataURL(file){try{this.result=`data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString('base64')}`;this.onload()}catch{this.onerror()}}}
-  const context={window:{},FileReader,fetch,URL,document:{},setTimeout,...overrides};context.window.IntegralFileUploads={fetch:context.fetch};vm.runInNewContext(source,context);return context.window.IntegralTripDocuments;
+  const context={window:{},FileReader,fetch,URL,document:{},setTimeout,crypto,...overrides};context.window.IntegralFileUploads={fetch:context.fetch};vm.runInNewContext(source,context);return context.window.IntegralTripDocuments;
 }
 const receipt=()=>new File(['original bytes'],'recibo.pdf',{type:'application/pdf'});
 test('preserves original PDF bytes and filename',async()=>{const api=setup(),file=await api.capture(receipt());assert.equal(file.name,'recibo.pdf');assert.equal(await (await api.blob({file})).text(),'original bytes')});
@@ -21,3 +22,25 @@ test('analysis sends original bytes and travel context without mutating the reco
 test('analysis accepts files above the old 3 MB limit',async()=>{let called=false;const api=setup({fetch:async(url)=>{if(url.startsWith('data:'))return fetch(url);called=true;return {ok:true,json:async()=>({ok:true})}}});const file=await api.capture(new File([new Uint8Array(3*1024*1024+1)],'large.pdf',{type:'application/pdf'}));await api.analyze({file},{},[]);assert.ok(called)});
 test('analysis reports service errors',async()=>{const api=setup({fetch:async(url)=>url.startsWith('data:')?fetch(url):{ok:false,json:async()=>({error:'Serviço indisponível'})}});const file=await api.capture(receipt());await assert.rejects(api.analyze({file},{},[]),/Serviço indisponível/)});
 test('download uses original filename and revokes its temporary URL',async()=>{let clicked=false,revoked=false,anchor;const api=setup({URL:{createObjectURL:()=> 'blob:receipt',revokeObjectURL:()=>{revoked=true}},setTimeout:fn=>fn(),document:{body:{append(){}},createElement:()=>anchor={click(){clicked=true},remove(){}}}});const file=await api.capture(receipt());await api.download({file});assert.equal(anchor.download,'recibo.pdf');assert.equal(anchor.href,'blob:receipt');assert.ok(clicked&&revoked)});
+
+test('upload perdido pode ser retomado no mesmo caminho e a referência não inclui bytes locais',async()=>{
+ const objects=new Map(),paths=[];
+ let lost=true;
+ const bucket={upload:async(path,file,options)=>{
+  paths.push(path);
+  assert.equal(options.upsert,false);
+  if(objects.has(path))return {error:{statusCode:'409'}};
+  objects.set(path,file);
+  if(lost){lost=false;throw Error('conexão perdida após o upload')}
+  return {};
+ },download:async path=>({data:objects.get(path)})};
+ const api=setup({window:{IntegralERP:{sb:{auth:{getSession:async()=>({data:{session:{user:{id:'dono'}}}})},storage:{from:name=>{
+  assert.equal(name,'documentos');return bucket;
+ }}}}}});
+ await assert.rejects(api.store(receipt()),/conexão perdida/);
+ const result=await api.store(receipt());
+ assert.equal(paths[0],paths[1]);assert.equal(objects.size,1);
+ assert.match(result.storagePath,/^dono\/financeiro-viagens\/[0-9a-f]{64}\.pdf$/);
+ assert.equal(result.dataUrl,undefined);
+ assert.equal(await (await api.blob({file:result})).text(),'original bytes');
+});

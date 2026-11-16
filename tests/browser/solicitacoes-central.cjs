@@ -7,6 +7,7 @@ const { chromium } = require('playwright');
 const { setup, id } = require('../veiculos-fixtures.cjs');
 
 const root = path.join(__dirname, '../..');
+const assets = process.env.SOLICITACOES_ASSETS || path.join(root, 'public');
 const sql = name => fs.readFileSync(path.join(root, 'supabase/migrations', name), 'utf8');
 const fixtureUrl = 'https://fixture.test/';
 const people = {
@@ -26,8 +27,8 @@ async function setupSolicitacoes() {
       alter table storage.objects enable row level security;
       grant usage on schema storage to authenticated;
       grant select,insert on storage.objects to authenticated;
-      create function storage.allow_only_operation(text) returns boolean language sql stable as
-        $$select coalesce(current_setting('storage.operation',true)=$1,false)$$;`);
+      create function storage.allow_any_operation(text[]) returns boolean language sql stable as
+        $$select coalesce(current_setting('storage.operation',true)=any($1),false)$$;`);
     await db.exec(sql('20261116151615_financeiro_solicitacoes_anexos.sql'));
     return db;
   } catch (error) {
@@ -126,10 +127,10 @@ async function browserSession(browser, db, actor, width) {
     } };
   }, people[actor]);
   for (const file of ['financeiro.bundle.css', 'financeiro-design-system.css', 'financeiro-invoices.css']) {
-    await page.addStyleTag({ path: path.join(root, 'public', file) });
+    await page.addStyleTag({ path: path.join(assets, file) });
   }
   for (const file of ['financeiro-solicitacoes-anexos.js', 'financeiro-invoices.js']) {
-    await page.addScriptTag({ path: path.join(root, 'public', file) });
+    await page.addScriptTag({ path: path.join(assets, file) });
   }
   await page.evaluate(() => app());
   return { context, page, faults, pageErrors };
@@ -351,6 +352,38 @@ async function run() {
       const financialLinks = await relatedAccounts(db, requestId);
       assert.equal(financialLinks.length, 2);
       await card(admin.page, 'Dois equipamentos para vistoria').getByText('Aprovada', { exact: true }).waitFor();
+
+      for(const [role,session,widths] of [['adm',admin,[1440,390]],['colaborador',employee,[390,1440]]]){
+        for(const width of widths){
+          await session.page.setViewportSize({width,height:940});
+          await session.page.evaluate(rows=>{
+            db.accountPayments=rows.filter(row=>row.chave==='accountPayments').map(row=>row.item);
+            window.v2PaymentModal=(payment,account)=>{window.openedInvoiceLink=[payment,account]};
+            render();
+          },financialLinks);
+          await card(session.page,'Dois equipamentos para vistoria').getByText('Aprovada',{exact:true}).waitFor();
+          await card(session.page,'Dois equipamentos para vistoria').click();
+          const detail=session.page.getByRole('dialog',{name:'Detalhes da solicitação'});
+          await detail.getByRole('button',{name:'Baixar comprovante-sintetico.pdf'}).waitFor();
+          await detail.getByText(/Registros vinculados/).waitFor();
+          if(process.env.SOLICITACOES_SCREENSHOTS){
+            await fs.promises.mkdir(process.env.SOLICITACOES_SCREENSHOTS,{recursive:true});
+            await session.page.screenshot({path:path.join(process.env.SOLICITACOES_SCREENSHOTS,role+'-'+width+'-detalhe.png'),fullPage:true});
+          }
+          const linked=detail.getByRole('button',{name:'Abrir registro vinculado'});
+          if(role==='adm'){
+            await linked.click();
+            assert.deepEqual(await session.page.evaluate(()=>window.openedInvoiceLink),[approved.request.convertedPaymentId,approved.request.convertedId]);
+          }else{
+            assert.equal(await linked.count(),0);
+            assert.equal(await card(session.page,otherTitle).count(),0);
+            await detail.locator('[data-invoice-close]').click();
+          }
+          await assertFits(session.page);
+        }
+      }
+      await admin.page.setViewportSize({width:1440,height:940});
+      await employee.page.setViewportSize({width:390,height:940});
 
       await choose(admin.page, requestId, 'archive');
       await sendAction(admin.page);

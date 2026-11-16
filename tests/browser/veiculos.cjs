@@ -1,10 +1,11 @@
 /* QA isolado: navegador -> RPC real em PGlite. Toda rede é interceptada, sem credenciais. */
 const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {setup,login,rpc,id,foto,approve}=require('../veiculos-fixtures.cjs');
-const root=path.join(__dirname,'../..'),output=path.join(root,'docs/qa-veiculos-agendamento');fs.mkdirSync(output,{recursive:true});
+const root=path.join(__dirname,'../..'),output=process.env.VEICULOS_OUTPUT||path.join(root,'docs/qa-veiculos-agendamento');fs.mkdirSync(output,{recursive:true});
 const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
 (async()=>{
- const browser=await chromium.launch({headless:true,channel:'chrome'});
+ const executablePath=process.env.BROWSER_EXECUTABLE_PATH;
+ const browser=await chromium.launch({headless:true,...(executablePath?{executablePath}:{channel:'chrome'})});
  try{
  for(const width of [1440,834,390]){
   const db=await setup();await login(db,1);await approve(db);await login(db,2);
@@ -25,7 +26,14 @@ const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
   await page.evaluate(driver=>{user={name:'Motorista sintético',role:'Funcionário',sector:'Projetos',erpId:driver,email:'a@fixture.test'};db={accounts:[],docs:[],budgets:[],budgetRecords:[{id:11,name:'Viagem de campo',sector:'Projetos',limit:1000,active:true}],budgetExpenses:[],trips:[{id:21,city:'Destino sintético',sector:'Projetos',assigned:[2]}],tripExpenses:[],tripDocuments:[],usersMvp:[{id:2,erpId:driver,name:'Motorista sintético',email:'a@fixture.test'}],sectors:[],plans:[],revenues:[]};view='budgets';app()},id(2));
   for(const f of ['financeiro-trip-documents.js','financeiro-canonical-router.js','financeiro-finance-sector-access.js','financeiro-navigation.js','financeiro-veiculos-metrics.js','financeiro-veiculos.js'])await page.addScriptTag({path:path.join(root,'public',f)});
   await page.evaluate(()=>{window.IntegralFileUploads={fetch:async()=>({ok:false,json:async()=>({details:'IA sintética indisponível. Preencha manualmente.'})})}});
-  await page.locator('[data-view=vehicles]').click();await page.locator('[data-start=gol]').waitFor();checks++;
+  async function navigate(target){
+    const button=page.locator('[data-view='+target+']');
+    const drawer=page.locator('.fin-drawer-toggle');
+    await drawer.waitFor({state:'attached'});
+    if(await drawer.isVisible()&&await drawer.getAttribute('aria-expanded')==='false')await drawer.click();
+    await button.click();
+  }
+  await navigate('vehicles');await page.locator('[data-start=gol]').waitFor();checks++;
   assert.equal(await page.locator('[data-requests]').count(),1);assert.equal(await page.getByText('Painel administrativo',{exact:true}).count(),0);checks++;
   await page.locator('[data-start=gol]').click();await page.locator('[name=km_inicial]').fill('100');await page.locator('[name=destino]').fill('Destino de QA');await page.locator('[name=foto]').setInputFiles({name:'painel-sintetico.png',mimeType:'image/png',buffer:body});
   await page.locator('[data-read]').click();await page.getByText('IA sintética indisponível. Preencha manualmente.').waitFor();assert.equal(await page.locator('[name=km_inicial]').inputValue(),'100');checks++;
@@ -35,9 +43,9 @@ const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
   await page.evaluate(()=>window.fixtureFail=true);await page.locator('#vehicleDialog [type=submit]').click();await page.getByText('Falha sintética de upload/transação').waitFor();assert.equal((await rpc(db,'painel')).usos.length,0);checks++;await page.evaluate(()=>window.fixtureFail=false);
   await page.locator('#vehicleDialog [type=submit]').click();await page.locator('[data-finish]').first().waitFor();assert.equal((await rpc(db,'painel')).usos.length,1);checks++;
   await page.evaluate(()=>app());await page.locator('[data-finish]').first().waitFor();assert.equal(await page.evaluate(()=>view),'vehicles');checks++;
-  await page.locator('[data-view=trips]').click();await page.locator('[data-view=vehicles]').click();await page.locator('[data-finish]').first().waitFor();checks++;
+  await navigate('trips');await navigate('vehicles');await page.locator('[data-finish]').first().waitFor();checks++;
   await page.locator('[data-finish]').first().click();await page.locator('[name=km_final]').fill('120');await page.locator('[name=foto]').setInputFiles({name:'devolucao.png',mimeType:'image/png',buffer:body});await page.locator('[name=conferencia]').check();await page.locator('#vehicleDialog [type=submit]').click();await page.getByText('20 km reais',{exact:false}).first().waitFor();checks++;
-  await page.locator('[data-link]').first().click();await page.locator('[data-open-trip]').click();assert.equal(await page.evaluate(()=>view),'trips');await page.locator('[data-view=vehicles]').click();await page.locator('[data-link]').first().waitFor();checks++;
+  await page.locator('[data-link]').first().click();await page.locator('[data-open-trip]').click();assert.equal(await page.evaluate(()=>view),'trips');await navigate('vehicles');await page.locator('[data-link]').first().waitFor();checks++;
   const fuel={id:91,tripId:21,type:'Combustível',date:new Date().toISOString().slice(0,10),value:120,origin:'Posto sintético',file:{arquivoId:id(91),name:'recibo-sintetico.pdf'}};
   await db.exec('reset role');await db.query("update financeiro_estado_modulos set dados=$1 where chave='tripExpenses'",[JSON.stringify([fuel])]);await login(db,2);
   await page.locator('[data-refresh]').click();await page.locator('[data-link]').first().click();await page.locator('[name=litros]').fill('20');await page.locator('[name=revisado]').check();await page.locator('#vehicleDialog [type=submit]').click();await page.getByText('R$ 120,00',{exact:true}).first().waitFor();assert.equal((await rpc(db,'painel')).despesas.length,1);checks++;
@@ -53,6 +61,6 @@ const body=Buffer.from(foto.dataUrl.split(',')[1],'base64');let checks=0;
   await context.close();await db.close();
  }
  fs.writeFileSync(path.join(output,'browser-result.json'),JSON.stringify({checks,viewports:[1440,834,390],network:'interceptada integralmente; sem chamadas externas',database:'PGlite com migração real',result:'passed'},null,2));
- console.log(`${checks} verificações de navegador passaram; screenshots em docs/qa-veiculos-agendamento.`);
+ console.log(`${checks} verificações de navegador passaram; capturas em ${output}.`);
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exitCode=1});
