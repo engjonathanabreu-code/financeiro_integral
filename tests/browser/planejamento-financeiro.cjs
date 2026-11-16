@@ -43,7 +43,9 @@ async function exportBytes(page,format){
           accountMasters:[{id:70,name:'Fornecedor A',category:'Comunicação'},{id:71,name:'Fornecedor B',category:'Material'}],
           accountPayments:[{id:100,accountId:70,status:'Paga',due:'2026-11-04',paidAt:'2026-11-04',value:40},
             ...Array.from({length:28},(_,i)=>({id:101+i,accountId:71,status:'Pendente',due:'2026-11-19',value:5}))],
-          planRevenues:[{id:200,origin:'Previsão manual de teste',start:'2026-11-25',total:50}]
+          planRevenues:[{id:200,origin:'Previsão manual de teste',start:'2026-11-25',total:50}],
+          erpPlannedRevenues:[{id:300,project:'Contrato sintético',origin:'Parcela de dezembro',dueDate:'2026-12-12',total:160,remaining:120}],
+          hrPeople:[{id:400,name:'Colaborador sintético',start:'2026-12-01',currentValue:25}]
         };
         window.snapshot=JSON.stringify(db);
         window.documents=()=>{document.querySelector('#content').textContent='Perfil colaborador';};
@@ -78,10 +80,53 @@ async function exportBytes(page,format){
           await page.addScriptTag({path:path.join(process.env.PLANEJAMENTO_PDF_QA,filename)});
         }
       }
-      for(const filename of ['financeiro.bundle.css','financeiro-planning-canonical.css','financeiro-responsive.css','financeiro-design-system.css']){
+      for(const filename of ['financeiro.bundle.css','financeiro-planning-canonical.css','financeiro-targeted-ui.css','financeiro-responsive.css','financeiro-design-system.css']){
         await page.addStyleTag({content:source(filename)});
       }
       await page.evaluate(()=>{IntegralDREShared.todayISO=()=> '2026-11-16';planning();});
+      assert.equal(await page.locator('[data-pc-month]').count(),12);
+      const november=page.locator('[data-pc-month="2026-11"]');
+      const december=page.locator('[data-pc-month="2026-12"]');
+      const january=page.locator('[data-pc-month="2027-01"]');
+      assert.ok(await page.locator('.planning-month-grid + .pc-projection-tools').isVisible());
+      assert.match(await november.locator('.planning-month-lines').innerText(),/Entradas[\s\S]+Saídas[\s\S]+Contas[\s\S]+Colaboradores/);
+      assert.match(await november.locator('.planning-month-balance').innerText(),/-R\$\s*90,00/);
+      assert.match(await december.locator('.pc-accumulated').innerText(),/R\$\s*5,00/);
+      assert.match(await january.locator('.pc-accumulated').innerText(),/-R\$\s*20,00/);
+      await december.click();
+      const breakdown=page.locator('.pc-month-columns');
+      assert.deepEqual(await page.locator('.compact-metrics h3').allTextContents(),
+        ['Entradas previstas','Saídas previstas','Entradas realizadas','Saídas realizadas']);
+      assert.match(await breakdown.innerText(),/Parcela de dezembro[\s\S]+ERP[\s\S]+Contrato sintético/);
+      assert.match(await breakdown.innerText(),/Colaborador sintético[\s\S]+RH/);
+      await page.locator('.modal-head [data-pclose]').click();
+      await page.locator('#pcSimulation summary').click();
+      const simulation=page.locator('#pcSimulationForm');
+      async function simulate(direction,description,date,value){
+        await simulation.getByLabel('Tipo').selectOption(direction);
+        await simulation.getByLabel('Origem ou destino').fill(description);
+        await simulation.getByLabel('Data').fill(date);
+        await simulation.getByLabel('Valor (R$)').fill(value);
+        await simulation.getByRole('button',{name:'Adicionar à projeção'}).click();
+      }
+      await simulate('Entrada','Teste receita','2026-12-20','200');
+      await simulate('Saída','Teste despesa','2027-01-20','75');
+      assert.match(await december.locator('.pc-accumulated').innerText(),/R\$\s*205,00/);
+      assert.match(await january.locator('.pc-accumulated').innerText(),/R\$\s*105,00/);
+      await january.click();
+      assert.match(await breakdown.innerText(),/Teste despesa[\s\S]+Simulação/);
+      await page.locator('.modal-head [data-pclose]').click();
+      await page.getByRole('button',{name:'Remover simulação: Teste receita'}).click();
+      assert.match(await january.locator('.pc-accumulated').innerText(),/-R\$\s*95,00/);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      await page.getByRole('button',{name:'+ Receita planejada',exact:true}).click();
+      await page.getByRole('heading',{name:'Nova receita planejada'}).waitFor();
+      await page.locator('.modal-head [data-pclose]').click();
+      if(process.env.PLANEJAMENTO_SCREENSHOTS){
+        await fs.promises.mkdir(process.env.PLANEJAMENTO_SCREENSHOTS,{recursive:true});
+        await page.screenshot({path:path.join(process.env.PLANEJAMENTO_SCREENSHOTS,'projecao-'+width+'.png'),fullPage:true});
+      }
+      await page.getByRole('button',{name:'Análise detalhada'}).click();
       await page.getByText(/Recebimentos consultado às/).waitFor();
       assert.match(await page.locator('[data-pp-kpi="expected"][data-direction="Entrada"]').innerText(),/100,00/);
       assert.match(await page.locator('[data-pp-kpi="overdue"][data-direction="Entrada"]').innerText(),/65,00/);
@@ -135,7 +180,8 @@ async function exportBytes(page,format){
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
       await page.locator('[data-pp-action="manual"]').click();
       await page.getByText('Previsão manual de teste',{exact:true}).waitFor();
-      await page.getByRole('button',{name:'Painel de planejamento'}).click();
+      await page.getByRole('button',{name:'Projeção mensal'}).click();
+      assert.equal(await page.locator('[data-pc-month]').count(),12);
       await page.evaluate(()=>{leave();user={erpId:'staff-fixture',role:'Funcionário'};planning();});
       assert.equal(await page.locator('[data-planning-panel]').count(),0);
       assert.equal(await page.getByText('Perfil colaborador').count(),1);

@@ -1,5 +1,9 @@
 # Planejamento Financeiro
 
+A tela inicial mostra os quadros do mês corrente e dos onze meses seguintes. Cada quadro abre a composição das entradas e saídas com data, descrição e fonte. A projeção usa parcelas abertas de Contas, saldo em aberto de contratos do ERP, previsões manuais e RH. Recebimentos têm visão própria na análise detalhada, pois podem representar as mesmas entradas dos contratos. O acumulado soma as diferenças mensais a partir de zero. Ele representa movimentação projetada, sem saldo bancário inicial.
+
+Para testar uma entrada ou saída, use **Simular entrada ou saída**, informe a origem ou o destino, a data e o valor. O teste altera os quadros e a composição mensal apenas na página atual. Remova o item pelo botão ao lado ou recarregue a página. **Receita planejada** e **Despesa planejada** continuam disponíveis para cadastrar previsões no sistema.
+
 A aba Planejamento usa as fontes autorizadas do ERP, mantém o cadastro de previsões manuais e limita a consulta a administradores. O painel analítico consulta Recebimentos por páginas sob a sessão do ERP e usa os módulos financeiros que o aplicativo já carregou. Atualizar dados no painel refaz a consulta de parcelas. O retrato dos contratos usa a última sincronização do ERP registrada no sistema.
 
 | Visão | Fonte e critério |
@@ -18,4 +22,4 @@ Os cenários simulam percentuais, deslocamento de datas e ocorrências mensais h
 
 A fila de lançamento mostra o identificador original em um detalhe de leitura. Quando a origem está disponível na navegação atual, o detalhe também encaminha à aba correspondente. Os filtros de centro de custo, cliente, categoria e demais dimensões aparecem à medida que os dados da fonte oferecem esses campos.
 
-O painel não exige migração. Para reverter, restaurar a versão anterior dos dois arquivos canônicos e retirar os dois scripts do painel da lista de ativos do site. As preferências do navegador usam uma chave própria.
+O painel não exige migração. Para reverter, restaurar a versão anterior dos dois arquivos canônicos e retirar os dois scripts do painel da lista de ativos do site. As preferências do navegador usam uma chave própria. Os testes rápidos dos quadros existem apenas em memória durante a sessão da página.

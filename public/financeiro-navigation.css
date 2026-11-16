@@ -40,6 +40,7 @@
 #app .fin-drawer-toggle,#app .fin-drawer-close,.fin-drawer-group,.fin-drawer-overlay {display:none}
 @media (max-width:740px), (max-width:960px) and (max-height:540px) and (pointer:coarse) {
   html.fin-drawer-lock {overflow:hidden}
+  html.fin-drawer-lock #finAgentFloat {display:none}
   #app .shell:has(> .fin-navigation) {display:block!important;min-height:100dvh}
   #app .shell:has(> .fin-navigation) > .main {width:100%;min-width:0;padding-bottom:max(18px,env(safe-area-inset-bottom))}
   #app .shell:has(> .fin-navigation) > .main .topbar {
@@ -53,7 +54,8 @@
   }
   #app .shell > .sidebar.fin-navigation {
     position:fixed!important;inset:0 auto 0 0!important;z-index:1050;
-    display:flex!important;flex-direction:column!important;align-items:stretch;gap:8px;
+    display:grid!important;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto minmax(0,1fr) auto;
+    align-items:stretch;gap:8px;
     width:min(320px,calc(100vw - 48px))!important;height:100dvh!important;max-height:100dvh;
     padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));
     box-sizing:border-box;overflow:hidden!important;
@@ -62,12 +64,12 @@
     transition:transform .2s ease;
   }
   #app .shell > .sidebar[data-fin-drawer-open] {transform:translateX(0);visibility:visible}
-  #app .fin-drawer-close {align-self:flex-end;margin:0;order:0}
-  #app .fin-navigation > .brand {display:flex!important;align-items:center;max-width:100%;min-width:0;padding:0 8px 8px;order:1}
+  #app .fin-drawer-close {grid-area:1 / 2;align-self:center;margin:0}
+  #app .fin-navigation > .brand {grid-area:1 / 1;display:flex!important;align-items:center;min-width:0;padding:0 0 0 4px}
   #app .fin-navigation > .brand img {max-width:180px;max-height:40px}
   #app .fin-navigation > .nav {
-    display:flex!important;flex-direction:column!important;flex:1 1 auto;min-height:0;
-    width:100%!important;max-width:100%;margin:0!important;gap:4px;overflow-x:hidden!important;overflow-y:auto!important;order:2!important;
+    grid-area:2 / 1 / auto / -1;display:flex!important;flex-direction:column!important;min-width:0;min-height:0;
+    width:100%!important;margin:0!important;gap:4px;overflow-x:hidden!important;overflow-y:auto!important;
     overscroll-behavior-y:contain;scrollbar-width:thin;
   }
   #app .fin-navigation > .nav button {
@@ -78,8 +80,8 @@
   #app .fin-navigation > .nav button.active::after {left:0;right:auto;top:8px;bottom:8px;width:3px;height:auto;border-radius:0 3px 3px 0}
   .fin-drawer-group {display:block;padding:10px 10px 3px;color:var(--ds-muted,#607875);font-size:12px;font-weight:700}
   #app .fin-navigation .sidebar-foot,#app .fin-navigation .sidebar-foot:has(#erpSyncControl) {
-    position:relative!important;inset:auto!important;display:flex!important;flex:0 0 auto;
-    width:100%;margin:0;padding:8px 0 0;border-top:1px solid var(--ds-border,#d9e6e4);order:3!important;
+    grid-area:3 / 1 / auto / -1;position:relative!important;inset:auto!important;display:flex!important;
+    width:100%;margin:0;padding:8px 0 0;border-top:1px solid var(--ds-border,#d9e6e4);
   }
   #app .fin-navigation .sidebar-foot > .user-mini {display:block!important}
   #app .fin-navigation .sidebar-foot > #finConfigurationToggle {min-height:44px!important;width:44px;height:44px}
