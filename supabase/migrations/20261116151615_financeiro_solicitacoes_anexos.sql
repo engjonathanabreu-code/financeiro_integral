@@ -56,7 +56,7 @@ create policy financeiro_solicitacao_objeto_ler on storage.objects for select to
 using (bucket_id='financeiro-solicitacoes' and public.financeiro_permite_objeto_solicitacao(name,false));
 create policy financeiro_solicitacao_objeto_limitar_leitura on storage.objects as restrictive for select to authenticated
 using (case when bucket_id='financeiro-solicitacoes'
-  then storage.allow_only_operation('object.get_authenticated')
+  then storage.allow_any_operation(array['object.get_authenticated_info','object.get_authenticated'])
     and public.financeiro_permite_objeto_solicitacao(name,false)
   else true end);
 create policy financeiro_solicitacao_objeto_enviar on storage.objects for insert to authenticated

@@ -36,8 +36,8 @@ test('Anexos validam vínculo, autor, original, estado, retry e acesso ao objeto
       create schema storage;
       create schema financeiro_solicitacoes_privado;
       grant usage on schema auth,storage to anon,authenticated;
-      create function storage.allow_only_operation(text) returns boolean language sql stable as
-        $$select coalesce(current_setting('storage.operation',true)=$1,false)$$;
+      create function storage.allow_any_operation(text[]) returns boolean language sql stable as
+        $$select coalesce(current_setting('storage.operation',true)=any($1),false)$$;
       create function auth.uid() returns uuid language sql stable as
         $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
       create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -85,6 +85,8 @@ test('Anexos validam vínculo, autor, original, estado, retry e acesso ao objeto
     assert.ok(confirmed.confirmedAt);
     assert.deepEqual(await confirm(),[{a:confirmed}]);
     assert.deepEqual(await list(),[{a:[confirmed]}]);
+    assert.deepEqual(await storageNames(),[{name:objectPath}]);
+    await operation('object.get_authenticated_info');
     assert.deepEqual(await storageNames(),[{name:objectPath}]);
     await operation('object.sign');
     assert.deepEqual(await storageNames(),[]);
