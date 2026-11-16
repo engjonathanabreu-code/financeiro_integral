@@ -3,7 +3,7 @@ const { readFileSync } = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const migration = readFileSync(path.join(__dirname, '../supabase/migrations/20261116144015_erp_proteger_provisao_perfis.sql'), 'utf8');
+const migration = readFileSync(path.join(__dirname, '../supabase/migrations/20261116145402_erp_proteger_provisao_perfis.sql'), 'utf8');
 
 // Imagem do gatilho anterior para exercitar a guarda de catálogo da migração.
 const legacy = `CREATE OR REPLACE FUNCTION public.handle_new_user()
