@@ -106,7 +106,7 @@ for(const [sector,width] of cases){
   await page.locator('#invoiceDescriptionEditor').fill('Teste rejeição');
   await page.locator('[type="submit"]').click();
   await page.waitForFunction(()=>document.querySelectorAll('[data-invoice-id]').length===2);
-  await page.getByRole('button',{name:/Pedido para rejeitar/}).click();
+  await page.locator('[data-invoice-id]').filter({hasText:'Pedido para rejeitar'}).click();
   await page.locator('#invoiceResponse').fill('Rejeitado para teste');
   await page.locator('#invoiceReject').click();
   await page.waitForFunction(()=>server[1].status==='Rejeitada');
