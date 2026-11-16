@@ -30,6 +30,7 @@ async function setupSolicitacoes() {
       create function storage.allow_any_operation(text[]) returns boolean language sql stable as
         $$select coalesce(current_setting('storage.operation',true)=any($1),false)$$;`);
     await db.exec(sql('20261116151615_financeiro_solicitacoes_anexos.sql'));
+    await db.exec(sql('20261116194500_financeiro_conferir_viagem_repetida.sql'));
     return db;
   } catch (error) {
     await db.close();
@@ -49,7 +50,8 @@ async function queryAs(db, actor, name, args) {
   const parameters = {
     financeiro_listar_solicitacoes: [],
     financeiro_save_invoice_request: ['p_request', 'p_expected'],
-    financeiro_revisar_solicitacao: ['p_id', 'p_esperado', 'p_aprovar', 'p_resposta'],
+    financeiro_revisar_solicitacao: ['p_id', 'p_esperado', 'p_aprovar', 'p_resposta',
+      ...(args?.p_viagens_conferidas ? ['p_viagens_conferidas'] : [])],
     financeiro_central_solicitacoes: ['p_id'],
     financeiro_acao_solicitacao: ['p_id', 'p_revisao', 'p_acao', 'p_dados', 'p_operacao', 'p_esperado'],
     financeiro_categoria_solicitacao: ['p_nome'],
@@ -95,7 +97,7 @@ async function browserSession(browser, db, actor, width) {
       if (faults.lose?.(name, args)) return { lost: true };
       return { data };
     } catch (error) {
-      return { error: { message: error.message, code: error.code } };
+      return { error: { message: error.message, code: error.code, details: error.detail } };
     }
   });
   await page.goto(fixtureUrl);
@@ -136,10 +138,10 @@ async function browserSession(browser, db, actor, width) {
   return { context, page, faults, pageErrors };
 }
 
-async function syntheticRequest(db, actor, requestId, title) {
+async function syntheticRequest(db, actor, requestId, title, fields = {}) {
   return queryAs(db, actor, 'financeiro_save_invoice_request', { p_request: {
     id: requestId, requesterId: id(actor), category: 'purchase', status: 'Pendente',
-    title, description: 'Descrição sintética para verificação', estimatedValue: 49.95,
+    title, description: 'Descrição sintética para verificação', estimatedValue: 49.95, ...fields,
   } });
 }
 
@@ -457,9 +459,39 @@ async function run() {
       await assertFits(employee.page);
       await employee.page.setViewportSize({ width: 390, height: 940 });
 
+      const fields={category:'trip',destination:'São José',neededAt:'2099-01-01',vehicleId:'gol',createdAt:new Date().toISOString()};
+      await syntheticRequest(db, 2, id(600), 'Viagem existente sintética', fields);
+      await syntheticRequest(db, 2, id(601), 'Outra viagem sintética', {...fields,vehicleId:'hb20'});
+      const firstTrip=(await readItem(db, 2, id(600))).request;
+      await queryAs(db, 1, 'financeiro_revisar_solicitacao', {
+        p_id:firstTrip.id,p_esperado:firstTrip,p_aprovar:true,p_resposta:'Primeira viagem',
+      });
+      const mobileReview=await browserSession(browser,db,1,390);
+      try {
+        await card(mobileReview.page,'Outra viagem sintética').click();
+        await mobileReview.page.locator('#invoiceResponse').fill('Viagem realmente distinta');
+        await mobileReview.page.locator('#invoiceApprove').click();
+        const related=mobileReview.page.getByRole('button',{name:'Ver pedido: Viagem existente sintética'});
+        await related.waitFor();
+        assert.equal((await readItem(db, 1, id(601))).request.status,'Pendente');
+        await related.click();
+        await mobileReview.page.getByRole('heading',{name:'Viagem existente sintética',exact:true}).waitFor();
+        await mobileReview.page.locator('[data-invoice-close]').click();
+        await card(mobileReview.page,'Outra viagem sintética').click();
+        await mobileReview.page.locator('#invoiceApprove').click();
+        await mobileReview.page.getByRole('button',{name:'Aprovar como viagem distinta'}).click();
+        await mobileReview.page.locator('#invoiceApprove').waitFor({state:'hidden'});
+        const distinct=await readItem(db, 1, id(601));
+        assert.equal(distinct.request.status,'Aprovada');
+        assert.ok(distinct.events.some(event=>event.action==='approve_distinct_trip'));
+        assert.deepEqual(mobileReview.pageErrors,[]);
+      } finally {
+        await mobileReview.context.close();
+      }
+
       assert.deepEqual(admin.pageErrors, []);
       assert.deepEqual(employee.pageErrors, []);
-      console.log('PASS UI: 51 solicitações, filtros e menus, retry e conflito, anexos, comentários, devolução e revisão, arquivamento e recuperação, vínculos preservados (1440/768/390 px).');
+      console.log('PASS UI: filtros, menus, retry, conflito, anexos, devolução, revisão, vínculos e conferência de viagens semelhantes (1440/768/390 px).');
     } finally {
       await employee.context.close();
       await admin.context.close();

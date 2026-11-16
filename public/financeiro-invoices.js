@@ -157,12 +157,19 @@ function createModal(item=null, mode='new'){
   category.disabled=editing;
   function setType(){
     const trip=category.value==='trip';
+    q('label[for="invoice-estimate"]',form).textContent=trip?'Orçamento estimado da viagem':'Valor estimado';
+    const note=q('.invoice-trip-scope',form);
+    note.hidden=!trip;
     q('.invoice-destination',form).hidden=!trip;
     q('.invoice-vehicle',form).hidden=!trip;
     form.elements.vehicleId.required=trip;
     form.elements.vehicleId.disabled=!trip;
     form.elements.neededAt.required=trip;
   }
+  const tripScope=document.createElement('p');
+  tripScope.className='notice invoice-trip-scope';
+  tripScope.textContent='Informe o veículo e o orçamento no mesmo pedido de viagem.';
+  q('.invoice-compose-grid',form).before(tripScope);
   category.addEventListener('change',setType);
   setType();
   if(seed.descriptionHtml)editor.innerHTML=safeRich(seed.descriptionHtml);
@@ -349,16 +356,38 @@ function detailModal(req,item=detailFor(req)){
   if(canReview){
     const input=q('#invoiceResponse',el),status=q('#invoiceReviewStatus',el);
     const approve=q('#invoiceApprove',el),reject=q('#invoiceReject',el);
-    let busy=false,stale=false;
+    let busy=false,stale=false,related=null;
     function controls(){
       const attempt=draft?.attempt;
       input.value=draft?.response||'';
       input.readOnly=busy||stale||Boolean(attempt);
       approve.disabled=busy||stale||attempt?.p_aprovar===false;
       reject.disabled=busy||stale||attempt?.p_aprovar===true;
-      approve.textContent=attempt?.p_aprovar?'Confirmar decisão anterior':'Aprovar e converter';
+      approve.textContent=attempt?.p_aprovar?'Confirmar decisão anterior':related?'Aprovar como viagem distinta':'Aprovar e converter';
       reject.textContent=attempt?.p_aprovar===false?'Confirmar decisão anterior':'Rejeitar';
       status.textContent=attempt?'A decisão anterior aguarda confirmação.':'';
+      if(related&&!attempt){
+        status.textContent='Já existe viagem aprovada para este solicitante, destino e data. Confira o pedido existente antes de criar outra viagem.';
+        for(const request of related.pedidos){
+          const link=document.createElement('button');
+          link.type='button';
+          link.className='btn ghost small';
+          link.textContent='Ver pedido: '+(request.title||request.id);
+          link.onclick=async()=>{
+            link.disabled=true;
+            try{
+              const existing=await currentDetail(request.id);
+              if(userKey()!==actor||!el.isConnected)return;
+              if(!existing)throw Error('Não foi possível abrir o pedido relacionado.');
+              el.dismiss(false);
+              detailModal(existing.request,existing);
+            }catch(error){
+              if(el.isConnected)link.after(document.createTextNode(error.message));
+            }finally{link.disabled=false;}
+          };
+          status.append(' ',link);
+        }
+      }
     }
     controls();
     input.oninput=()=>{
@@ -374,8 +403,11 @@ function detailModal(req,item=detailFor(req)){
       if(!attempt){
         const response=input.value.trim();
         if(!response)return alert('Escreva uma resposta para o solicitante.');
-        if(approved&&!confirm(`Aprovar e criar ${categoryLabel[req.category]||'o registro financeiro'}?`))return;
+        const approvalMessage=related?'Você conferiu os pedidos existentes e confirmou que esta é outra viagem?':
+          `Aprovar e criar ${categoryLabel[req.category]||'o registro financeiro'}?`;
+        if(approved&&!confirm(approvalMessage))return;
         attempt={p_id:String(req.id),p_esperado:structuredClone(req),p_aprovar:approved,p_resposta:response};
+        if(approved&&related)attempt.p_viagens_conferidas=related.conferencia;
         draft={response,attempt};
         storeReview(key,draft);
       }
@@ -392,6 +424,17 @@ function detailModal(req,item=detailFor(req)){
         // A atualização do armazenamento usa a mescla de revisões e preserva edições de outros módulos.
         void window.IntegralFinanceCloudStorage?.refresh?.();
       }catch(error){
+        if(error?.code==='PT409'&&attempt.p_aprovar&&req.category==='trip'){
+          try{
+            const details=JSON.parse(error.details);
+            if(typeof details.conferencia==='string'&&Array.isArray(details.pedidos)&&details.pedidos.length){
+              related=details;
+              draft={response:attempt.p_resposta};
+              storeReview(key,draft);
+              return;
+            }
+          }catch{}
+        }
         if(['40001','22023','42501','P0001'].includes(error?.code)){
           draft={response:attempt.p_resposta};
           storeReview(key,draft);
@@ -465,7 +508,7 @@ const eventLabels={
   organize:'Organização atualizada',archive:'Arquivada',unarchive:'Desarquivada',comment:'Comentário',
   internal_comment:'Comentário interno',request_change:'Pedido de alteração enviado',
   request_cancel:'Pedido de cancelamento enviado',decide_review:'Pedido de revisão analisado',
-  create:'Solicitação enviada',submit:'Solicitação enviada',attach:'Anexo enviado',approve:'Solicitação aprovada',reject:'Solicitação rejeitada',
+  create:'Solicitação enviada',submit:'Solicitação enviada',attach:'Anexo enviado',approve:'Solicitação aprovada',approve_distinct_trip:'Viagem distinta conferida',reject:'Solicitação rejeitada',
   created:'Solicitação enviada',approved:'Solicitação aprovada',rejected:'Solicitação rejeitada',
   start_review:'Análise iniciada',release_review:'Análise liberada'
 };

@@ -8,6 +8,7 @@ const sql = file => readFileSync(join(__dirname, '../supabase', file), 'utf8');
 const migration = 'migrations/20261116151526_financeiro_central_solicitacoes.sql';
 const access = 'migrations/20261113190500_financeiro_solicitacoes_acesso.sql';
 const integrity = 'migrations/20261114135633_financeiro_integridade_solicitacoes.sql';
+const repeatedTrip = 'migrations/20261116194500_financeiro_conferir_viagem_repetida.sql';
 
 async function buildFixture(withLegacy) {
   const db = await setup();
@@ -23,6 +24,7 @@ async function buildFixture(withLegacy) {
   await db.exec(sql(integrity));
   if (withLegacy) await withLegacy(db);
   await db.exec(sql(migration));
+  await db.exec(sql(repeatedTrip));
   return db;
 }
 
@@ -58,6 +60,55 @@ async function review(db, request, approve, answer) {
     request.id, request, approve, answer,
   ])).rows[0].data.find(item => item.id === request.id);
 }
+
+test('aprovação pede conferência de viagem já vinculada antes de converter outro pedido', async () => {
+  const db = await buildFixture();
+  try {
+    await login(db, 2);
+    const fields = { category: 'trip', neededAt: '2099-01-01', destination: 'São José / SC', vehicleId: 'gol' };
+    const first = await submit(db, 50, { ...fields, title: 'Veículo e orçamento' });
+    const second = await submit(db, 51, { ...fields, title: 'Outro pedido', destination: 'sao jose-sc', vehicleId: 'hb20' });
+    const nextDay = await submit(db, 52, { ...fields, neededAt: '2099-01-02' });
+    await assert.rejects(review(db, first, true, 'Usuário sem autorização'), { code: '42501' });
+    await login(db, 1);
+    const approved = await review(db, first, true, 'Primeira aprovação');
+    assert.deepEqual(await review(db, first, true, 'Primeira aprovação'), approved);
+
+    let confirmation;
+    await assert.rejects(review(db, second, true, 'Conferido'), error => {
+      assert.equal(error.code, 'PT409');
+      const details = JSON.parse(error.detail);
+      assert.deepEqual(details.pedidos, [{ id: first.id, title: first.title }]);
+      confirmation = details.conferencia;
+      return true;
+    });
+    assert.equal((await item(db, second.id)).request.status, 'Pendente');
+    const confirm = token => db.query('select financeiro_revisar_solicitacao($1,$2,$3,$4,$5) data', [
+      second.id, second, true, 'Conferido', token,
+    ]);
+    await assert.rejects(confirm('token desatualizado'), { code: 'PT409' });
+    assert.equal((await review(db, nextDay, true, 'Outra data')).status, 'Aprovada');
+    await confirm(confirmation);
+    await confirm(confirmation);
+    const verified = await item(db, second.id);
+    assert.equal(verified.request.status, 'Aprovada');
+    assert.notEqual(verified.request.convertedId, approved.convertedId);
+    assert.equal(verified.events.filter(event => event.action === 'approve_distinct_trip').length, 1);
+
+    await db.exec('reset role');
+    const trips = async () => (await db.query("select dados from financeiro_estado_modulos where chave='trips'")).rows[0].dados;
+    const beforeRollback = await trips();
+    assert.equal(beforeRollback.filter(trip => trip.invoiceRequestId === second.id).length, 1);
+    assert.equal(beforeRollback.filter(trip => trip.invoiceRequestId === first.id).length, 1);
+    await db.exec(sql('rollback/financeiro_conferir_viagem_repetida.sql'));
+    assert.deepEqual(await trips(), beforeRollback);
+    await login(db, 1);
+    assert.ok((await item(db, second.id)).events.some(event => event.action === 'approve_distinct_trip'));
+    assert.equal((await review(db, second, true, 'Conferido')).convertedId, verified.request.convertedId);
+  } finally {
+    await db.close();
+  }
+});
 
 test('solicitante edita com histórico e reenvio idempotente, respeitando revisão e acesso', async () => {
   const db = await buildFixture();
