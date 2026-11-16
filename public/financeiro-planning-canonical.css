@@ -66,3 +66,22 @@ dialog[data-planning-detail]::backdrop{background:#0b172c80}
  .pp-head>div{width:100%}
 }
 @media(max-width:350px){.pp-kpis{grid-template-columns:1fr}.pp-chart li>div{grid-template-columns:2.75rem minmax(.2rem,1fr) minmax(4rem,max-content)}}
+
+.pc-plan-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.pc-simulation{margin-bottom:16px;padding:14px 16px}
+.pc-simulation summary{cursor:pointer;font-weight:700;padding:4px 0}
+.pc-simulation p{margin:8px 0}
+.pc-simulation-fields{display:grid;grid-template-columns:1fr 2fr 1.2fr 1fr auto;align-items:end;gap:10px}
+.pc-simulation-fields label{display:grid;gap:4px;min-width:0}
+.pc-simulation-fields input,.pc-simulation-fields select{width:100%;min-width:0}
+.pc-simulation-items{list-style:none;padding:0;margin:10px 0 0}
+.pc-simulation-items li{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--border);padding:7px 0}
+.pc-simulation-items span{overflow-wrap:anywhere}
+.pc-accumulated{margin-top:6px}
+.pc-month-result{margin:12px 0 0}
+.pc-month-result b{margin-left:6px}
+@media(max-width:900px){.pc-simulation-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){
+  .pc-plan-actions{justify-content:flex-start}
+  .pc-simulation-fields{grid-template-columns:1fr}
+}

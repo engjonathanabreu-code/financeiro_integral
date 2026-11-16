@@ -446,7 +446,10 @@
     }else if(name==='load-favorite'){
       state.criteria={...state.favorite};state.page=0;
     }else if(name==='chart')state.chart=!state.chart;
-    else if(name==='manual'){
+    else if(name==='projection'){
+      window.planningCanonical();
+      return;
+    }else if(name==='manual'){
       window.IntegralPlanningManual?.render();
       return;
     }else if(name==='reload'){
@@ -474,6 +477,7 @@
     const knownScope=criteria.scope==='operational'?Boolean(state.response||scopeRows.length):Boolean(scopeRows.length);
     const dispositions={summary:()=>overview(rows,prior),entries:()=>entries(rows),calendar:()=>calendar(rows),scenarios:()=>scenarios(data.rows)};
     host.innerHTML=`<div class="pp-toolbar"><p>Compare vencimentos, registros e projeções das fontes autorizadas.</p><div>
+      <button class="btn ghost" data-pp-action="projection">← Projeção mensal</button>
       <button class="btn ghost" data-pp-action="manual">Gerenciar previsões</button>
       <button class="btn ghost" data-pp-action="reload"${state.loading?' disabled':''}>Atualizar dados</button>
     </div></div>
