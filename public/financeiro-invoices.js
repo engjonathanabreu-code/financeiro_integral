@@ -843,16 +843,21 @@ function reviewPanel(item){
 function linkedAccess(req){
   const trip=(db.trips||[]).find(row=>String(row.id)===String(req.convertedId)&&String(row.invoiceRequestId)===String(req.id));
   const budget=(db.budgetRecords||[]).find(row=>String(row.id)===String(req.convertedId)&&String(row.invoiceRequestId)===String(req.id));
-  const payment=(db.accountPayments||[]).find(row=>String(row.id)===String(req.convertedPaymentId)&&String(row.invoiceRequestId)===String(req.id));
   if(req.category==='trip'&&trip&&(admin()||ownsApprovedTrip(trip))&&window.IntegralFinanceTripsAI?.detail){
     return {view:'trips',open:()=>window.IntegralFinanceTripsAI.detail(trip.id)};
   }
   if(req.category==='budget'&&budget&&(admin()||window.IntegralFinanceScope?.canAccessBudget(budget))&&window.IntegralFinanceV9?.budgetDetail){
     return {view:'budgets',open:()=>window.IntegralFinanceV9.budgetDetail(budget.id)};
   }
-  if(req.category==='purchase'&&payment&&String(payment.accountId)===String(req.convertedId)&&
+  if(req.category==='purchase'&&req.convertedId!=null&&
     (admin()||window.IntegralFinanceSectorAccess?.canOperateAccounts?.())&&typeof v2PaymentModal==='function'){
-    return {open:()=>v2PaymentModal(payment.id,payment.accountId)};
+    const payments=(db.accountPayments||[]).filter(row=>row.id!=null&&
+      String(row.accountId)===String(req.convertedId)&&String(row.invoiceRequestId)===String(req.id)&&
+      (req.convertedPaymentId==null||String(row.id)===String(req.convertedPaymentId)));
+    if(payments.length===1){
+      const [payment]=payments;
+      return {open:()=>v2PaymentModal(payment.id,payment.accountId)};
+    }
   }
   return null;
 }

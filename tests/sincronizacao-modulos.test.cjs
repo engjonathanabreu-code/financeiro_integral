@@ -136,6 +136,21 @@ test('persistência após recarga: a outra pessoa vê o dado gravado',async()=>{
  const b=await client(world,{uid:'b'});assert.deepEqual(copy(b.context.db.tripExpenses).map(e=>e.id),[10,11]);
 });
 
+test('quota local esgotada não bloqueia recibo de despesa e reenvio após perder resposta',async()=>{
+ const world=shared(base()),a=await client(world,{uid:'a'});
+ world.hooks.full=()=>true;
+ let lost=false;
+ world.hooks.loseReply=()=>{if(lost)return false;lost=true;return true};
+ const item={id:'despesa-test',tripId:1,value:7,file:{storageBucket:'documentos',storagePath:'a/financeiro-viagens/sintetico.pdf'}};
+ a.context.db.tripExpenses.push(item);
+ assert.equal(await a.api.syncNow(),false);
+ assert.equal(a.api.tripRecordConfirmed('tripExpenses',item.id,item),false);
+ assert.equal(await a.api.syncNow(),true);
+ assert.equal(a.api.tripRecordConfirmed('tripExpenses',item.id,item),true);
+ assert.equal(world.receiptCalls[0].p_operacao,world.receiptCalls[1].p_operacao);
+ assert.equal(world.server.tripExpenses.filter(row=>row.id===item.id).length,1);
+});
+
 test('troca de usuário: cache de outra pessoa não entra na mescla; logout limpa e guarda rascunho só para o dono',async()=>{
  const world=shared(base());const store=new Map();
  const a=await client(world,{uid:'a',store,admin:true,local:{hrPeople:[{id:1,name:'Pessoa sintética'}]}});

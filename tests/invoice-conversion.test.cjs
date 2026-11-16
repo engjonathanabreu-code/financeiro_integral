@@ -41,10 +41,27 @@ function load(storage = new Map()) {
     }] };
   } } };
   const source = fs.readFileSync(path.join(__dirname, '../public/financeiro-invoices.js'), 'utf8')
-    .replace('boot();', 'window.test={detailModal,ownsApprovedTrip};');
+    .replace('boot();', 'window.test={detailModal,ownsApprovedTrip,linkedAccess};');
   vm.runInNewContext(source, context);
   return { context, api: context.window.test, elements };
 }
+
+test('compra legada abre uma parcela recíproca única somente para perfil autorizado', () => {
+  const { context, api } = load();
+  const purchase={ id: id(10), category: 'purchase', convertedId: 88 };
+  const opened=[];
+  context.v2PaymentModal=(...args)=>opened.push(args);
+  context.db.accountPayments=[{ id: 89, accountId: 88, invoiceRequestId: purchase.id },
+    { id: 90, accountId: 88, invoiceRequestId: id(11) }];
+  api.linkedAccess(purchase).open();
+  assert.deepEqual(opened,[[89,88]]);
+  assert.equal(api.linkedAccess({...purchase,convertedPaymentId:90}),null);
+  context.db.accountPayments.push({ id: 91, accountId: 88, invoiceRequestId: purchase.id });
+  assert.equal(api.linkedAccess(purchase),null);
+  assert.ok(api.linkedAccess({...purchase,convertedPaymentId:89}));
+  context.user={ role:'Funcionário', erpId:id(2) };
+  assert.equal(api.linkedAccess({...purchase,convertedPaymentId:89}),null);
+});
 
 test('decisão manda versão esperada e usa somente o retorno confirmado', async () => {
   for (const approve of [true, false]) {

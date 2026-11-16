@@ -30,6 +30,63 @@ let sessionUid=null, signedOutUid=null, sessionEpoch=0;
 const ownDrafts=new Map();
 const operations=new Map();
 const deferredDrafts=new Map();
+const TRIP_MODULES=new Set(['trips','tripExpenses','tripDocuments']);
+const flightDrafts=new Map();
+const draftFileBytes=new WeakMap();
+let draftDatabase,legacyBackupInIndexedDb=false;
+
+function openDraftDatabase(){
+  if(!globalThis.indexedDB)return Promise.resolve(null);
+  if(!draftDatabase)draftDatabase=new Promise(resolve=>{
+    try{
+      const request=indexedDB.open('integral-finance-drafts',1);
+      request.onupgradeneeded=()=>request.result.createObjectStore('drafts');
+      request.onsuccess=()=>resolve(request.result);
+      request.onerror=request.onblocked=()=>resolve(null);
+    }catch{resolve(null)}
+  });
+  return draftDatabase;
+}
+async function journal(mode,key,value){
+  const db=await openDraftDatabase();
+  if(!db)return null;
+  return new Promise(resolve=>{
+    try{
+      const tx=db.transaction('drafts',mode==='get'||mode==='entries'?'readonly':'readwrite');
+      const store=tx.objectStore('drafts');
+      let data=true;
+      tx.oncomplete=()=>resolve(data);
+      tx.onerror=tx.onabort=()=>resolve(null);
+      if(mode==='entries'){
+        data=[];
+        const req=store.openCursor();
+        req.onsuccess=()=>{
+          const cursor=req.result;
+          if(!cursor)return;
+          if(typeof cursor.key==='string'&&cursor.key.startsWith(key))data.push([cursor.key,cursor.value]);
+          cursor.continue();
+        };
+      }else if(mode==='put')store.put(value,key);
+      else{
+        const req=store.get(key);
+        req.onsuccess=()=>{
+          if(mode==='get')data=req.result;
+          else if(req.result===value||mode==='clearBlob'&&req.result?.token===value?.token)store.delete(key);
+        };
+      }
+    }catch{resolve(null)}
+  });
+}
+function journalPut(key,raw){
+  flightDrafts.set(key,raw);
+  return journal('put',key,raw);
+}
+function journalClear(key,raw){
+  const saved=lsGet(key);
+  if(saved===raw||key.startsWith(PENDING_PREFIX)&&saved&&parse(saved)?.at<parse(raw)?.at)lsDel(key);
+  if(flightDrafts.get(key)===raw)flightDrafts.delete(key);
+  return journal('clear',key,raw);
+}
 
 function operationId(){
   if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
@@ -120,12 +177,21 @@ function pendingKeys(){
 function storageFailure(){
   return Object.assign(Error('O navegador está sem espaço para guardar o rascunho. Mantenha esta aba aberta.'),{code:'FIN_RASCUNHO'});
 }
-function readDrafts(uid){
+async function readDrafts(uid){
   const prefix=PENDING_PREFIX+encodeURIComponent(uid)+':';
   const list=[];
-  for(let i=0;i<localStorage.length;i++){
-    const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;
-    const raw=lsGet(key),draft=parse(raw);
+  const candidates=new Map();
+  const add=(key,raw)=>{
+    const previous=candidates.get(key);
+    if(!previous||String(parse(raw)?.at||'')>=String(parse(previous)?.at||''))candidates.set(key,raw);
+  };
+  try{for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);if(key?.startsWith(prefix))add(key,lsGet(key));
+  }}catch{}
+  for(const [key,raw] of await journal('entries',prefix)||[])add(key,raw);
+  for(const [key,raw] of flightDrafts)if(key.startsWith(prefix))add(key,raw);
+  for(const [key,raw] of candidates){
+    const draft=parse(raw);
     if(draft?.uid===uid&&validKey(draft.chave)&&!RPC_ONLY.has(draft.chave)&&has(draft,'local'))
       list.push({key,raw,draft});
   }
@@ -144,17 +210,19 @@ function keepDraft(k,local,base=snapshot[k],revision=revisions[k]){
   const operation=operations.get(k)||null;
   const value={uid,chave:k,base,revisao:revision??null,local,operation};
   const previous=ownDrafts.get(k);
-  if(previous&&same(previous.value,value)&&lsGet(previous.key)===previous.raw)return;
+  if(previous&&same(previous.value,value)&&(lsGet(previous.key)===previous.raw||flightDrafts.get(previous.key)===previous.raw))return;
   const key=previous?.key||PENDING_PREFIX+encodeURIComponent(uid)+':'+operationId();
   const raw=JSON.stringify({...value,at:new Date().toISOString()});
-  if(!lsSet(key,raw))throw storageFailure();
+  const saved=lsSet(key,raw);
+  if(!saved&&!TRIP_MODULES.has(k))throw storageFailure();
+  if(!saved||flightDrafts.has(key))void journalPut(key,raw);
   ownDrafts.set(k,{key,raw,value:clone(value)});
 }
 function clearConfirmedDrafts(){
   const needsSave=new Set(pendingKeys());
   for(const [k,draft] of ownDrafts){
     if(needsSave.has(k))continue;
-    lsDel(draft.key);ownDrafts.delete(k);
+    void journalClear(draft.key,draft.raw);ownDrafts.delete(k);
   }
 }
 function preserveRestrictedDraft(uid,k,draft){
@@ -166,13 +234,26 @@ function lostProjectedAccess(k,before,after){
   const visible=new Set(after.map(itemKey));
   return before.some(item=>!visible.has(itemKey(item)));
 }
-function preserveLegacyCache(){
-  if(lsGet(LEGACY_BACKUP)||lsGet(OWNER_KEY))return;
+function legacyCacheSnapshot(){
+  if(legacyBackupInIndexedDb||lsGet(LEGACY_BACKUP)||lsGet(OWNER_KEY))return null;
   const values=Object.fromEntries([CACHE_KEY,...LEGACY_KEYS].map(k=>[k,lsGet(k)]).filter(([,v])=>v!==null));
-  if(!Object.keys(values).length)return;
-  if(!lsSet(LEGACY_BACKUP,JSON.stringify({at:new Date().toISOString(),values}))){
-    throw Error('Sem espaço para preservar o rascunho legado. Exporte-o antes de continuar.');
+  return Object.keys(values).length?JSON.stringify({at:new Date().toISOString(),values}):null;
+}
+function legacyStorageError(){
+  return Object.assign(Error('Sem espaço para preservar o rascunho legado. Exporte-o antes de continuar.'),{code:'FIN_RASCUNHO'});
+}
+function preserveLegacyCache(){
+  const raw=legacyCacheSnapshot();
+  if(raw&&!lsSet(LEGACY_BACKUP,raw))throw legacyStorageError();
+}
+async function recoverLegacyBackup(){
+  const raw=legacyCacheSnapshot();
+  if(!raw||lsSet(LEGACY_BACKUP,raw))return;
+  if(await journal('get',LEGACY_BACKUP)||await journal('put',LEGACY_BACKUP,raw)){
+    legacyBackupInIndexedDb=true;
+    return;
   }
+  throw legacyStorageError();
 }
 function cacheAll(){
   const d=state();if(!d)return;
@@ -465,7 +546,7 @@ async function initialize(){
     try{
       const s=await session();if(!s||epoch!==sessionEpoch)return false;
       const uid=s.user.id;
-      preserveLegacyCache();
+      await recoverLegacyBackup();
       const data=await readRows(null);
       const isAdmin=await detectAdmin(c),current=await session();
       if(epoch!==sessionEpoch||current?.user?.id!==uid)return false;
@@ -473,7 +554,8 @@ async function initialize(){
       const cloud=new Map(data.map(r=>[r.chave,r.dados])),revs=new Map(data.map(r=>[r.chave,r.revisao]));
       cloudKeys=new Set(cloud.keys());
       const local=mergeLocalSources(localCandidates(uid));
-      const drafts=readDrafts(uid),handled=new Set();
+      const drafts=await readDrafts(uid),handled=new Set();
+      if(epoch!==sessionEpoch)return false;
       sessionUid=uid;
       const keys=new Set([...Object.keys(local),...cloud.keys(),...drafts.map(x=>x.draft.chave)]);
       const merged={},found=[],created=[];
@@ -529,10 +611,10 @@ async function initialize(){
         // Só substitui o rascunho legado inteiro se todas as suas entradas foram recuperadas.
         for(const {key,raw,legacy} of handled){
           if(legacy&&drafts.some(x=>x.key===key&&!handled.has(x)))continue;
-          if(lsGet(key)!==raw)continue;
           if(legacy){
+            if(lsGet(key)!==raw)continue;
             if(!lsSet(HANDLED_LEGACY_PREFIX+uid,raw))throw storageFailure();
-          }else lsDel(key);
+          }else void journalClear(key,raw);
         }
       }
       signedOutUid=null;
@@ -713,7 +795,7 @@ function pushChanged(allowDuringClose=false){
         snapshot[k]=json(stored);revisions[k]=result.revisao??undefined;
         cloudKeys.add(k);delete blocked[k];confirmed.push(k);
         applyInPlace(d,k,clone(next));
-        for(const {key,raw,legacy} of recovered){if(!legacy&&lsGet(key)===raw)lsDel(key)}
+        for(const {key,raw,legacy} of recovered){if(!legacy)void journalClear(key,raw)}
         deferredDrafts.delete(k);
         if(!same(next,stored))pushAgain=true;
       }catch(e){
@@ -829,9 +911,19 @@ const cloudSave=function(){
   try{
     preserveLegacyCache();
     if(initialized)cacheAll();
-    if(legacySave)legacySave();
+    if(legacySave){
+      try{legacySave()}catch(error){
+        const storageDenied=['QuotaExceededError','SecurityError','NS_ERROR_DOM_QUOTA_REACHED'].includes(error.name)
+          ||/QuotaExceededError|NS_ERROR_DOM_QUOTA_REACHED/.test(String(error.message||''));
+        if(!storageDenied||!initialized||!pendingKeys().some(k=>TRIP_MODULES.has(k)))throw error;
+      }
+    }
     if(initialized)cacheAll();
-  }catch(error){setStatus('rascunho',error.message);return}
+  }catch(error){
+    setStatus('rascunho',error.message);
+    if(error.code==='FIN_RASCUNHO'&&!initialized)void initialize().then(ok=>{if(ok)schedulePush()});
+    return;
+  }
   if(!initialized)initialize().then(ok=>{if(ok)schedulePush()});else schedulePush();
 };
 try{save=cloudSave}catch{window.save=cloudSave}
@@ -908,7 +1000,51 @@ function forgetSession(){
   const d=state();if(d)for(const k of Object.keys(d))if(validKey(k))d[k]=emptyLike(d[k]);
   sessionUid=null;sessionEpoch++;
 }
-window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged,closeBudget,refresh,
+async function tripFormDraft(actor,id,value){
+  if(!actor)return null;
+  const key='integral_fin_viagem_form:'+encodeURIComponent(actor)+':'+encodeURIComponent(String(id??'nova'));
+  if(value===undefined)return parse(flightDrafts.get(key)||await journal('get',key)||lsGet(key));
+  if(value===null){
+    const raw=flightDrafts.get(key)||await journal('get',key)||lsGet(key);
+    if(raw)await journalClear(key,raw);
+    return true;
+  }
+  const raw=JSON.stringify(value);
+  const saved=lsSet(key,raw);
+  return Boolean(await journalPut(key,raw)||saved);
+}
+async function tripUploadDraft(actor,name,value){
+  if(!actor)return null;
+  const key='integral_fin_viagem_anexo:'+encodeURIComponent(actor)+':'+encodeURIComponent(name);
+  if(value===undefined){
+    const stored=flightDrafts.get(key)||await journal('get',key);
+    if(!stored?.filePayload)return stored;
+    const {filePayload,...draft}=stored;
+    return {...draft,file:new File([filePayload.bytes],filePayload.name,{
+      type:filePayload.type,lastModified:filePayload.lastModified
+    })};
+  }
+  if(value===null){
+    const previous=flightDrafts.get(key)||await journal('get',key);
+    if(previous){flightDrafts.delete(key);await journal('clearBlob',key,previous)}
+    return true;
+  }
+  if(!value.file)return Boolean(await journalPut(key,value));
+  const {file,...draft}=value;
+  // WebKit pode reter apenas a referência temporária a um File do seletor.
+  // Grave os bytes antes da suspensão ou da recarga da aba.
+  let data=draftFileBytes.get(file);
+  if(!data){data=file.arrayBuffer();draftFileBytes.set(file,data)}
+  const filePayload={name:file.name,type:file.type,lastModified:file.lastModified,bytes:await data};
+  return Boolean(await journalPut(key,{...draft,filePayload}));
+}
+function tripRecordConfirmed(module,id,expected){
+  if(!TRIP_MODULES.has(module)||!initialized)return false;
+  const canonical=(parse(snapshot[module])||[]).find(row=>String(row.id)===String(id));
+  const local=(state()?.[module]||[]).find(row=>String(row.id)===String(id));
+  return Boolean(canonical&&local&&same(canonical,local)&&(!expected||same(canonical,expected)));
+}
+window.IntegralFinanceCloudStorage={initialize,syncNow,push:pushChanged,closeBudget,refresh,tripFormDraft,tripUploadDraft,tripRecordConfirmed,
   conflicts:()=>readConflicts(),resolveConflict,openConflicts,status:()=>saveState,forgetSession};
 
 let attempts=0;const boot=setInterval(async()=>{attempts++;if(await initialize()||attempts>120)clearInterval(boot)},500);
