@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "codex/orcamentos-organizacao-20261119": false
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
