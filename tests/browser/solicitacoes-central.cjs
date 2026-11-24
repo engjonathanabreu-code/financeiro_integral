@@ -31,7 +31,7 @@ async function setupSolicitacoes() {
         $$select coalesce(current_setting('storage.operation',true)=any($1),false)$$;`);
     await db.exec(sql('20261116151615_financeiro_solicitacoes_anexos.sql'));
     await db.exec(sql('20261116194500_financeiro_conferir_viagem_repetida.sql'));
-    await db.exec(sql('20261124185717_financeiro_vinculo_solicitante_aprovacao.sql'));
+    await db.exec(sql('20261124191435_financeiro_vinculo_solicitante_aprovacao.sql'));
     return db;
   } catch (error) {
     await db.close();

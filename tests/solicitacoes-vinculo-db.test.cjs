@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { setup, login, id } = require('./veiculos-fixtures.cjs');
 const read = name => fs.readFileSync(path.join(__dirname, '../supabase', name), 'utf8');
-const migration = 'migrations/20261124185717_financeiro_vinculo_solicitante_aprovacao.sql';
+const migration = 'migrations/20261124191435_financeiro_vinculo_solicitante_aprovacao.sql';
 const rollback = 'rollback/financeiro_vinculo_solicitante_aprovacao.sql';
 const localId = uuid => [...uuid].reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) >>> 0, 0) || 1;
 
