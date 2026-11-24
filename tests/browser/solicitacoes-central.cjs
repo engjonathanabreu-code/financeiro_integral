@@ -31,6 +31,7 @@ async function setupSolicitacoes() {
         $$select coalesce(current_setting('storage.operation',true)=any($1),false)$$;`);
     await db.exec(sql('20261116151615_financeiro_solicitacoes_anexos.sql'));
     await db.exec(sql('20261116194500_financeiro_conferir_viagem_repetida.sql'));
+    await db.exec(sql('20261124191435_financeiro_vinculo_solicitante_aprovacao.sql'));
     return db;
   } catch (error) {
     await db.close();
@@ -489,8 +490,55 @@ async function run() {
         await mobileReview.context.close();
       }
 
+      // Aprovação editada de solicitante ativo que ainda não tem espelho financeiro.
+      await db.query('insert into profiles values ($1,$2,$3,$4,$5,true)',
+        [id(7),'Motorista C','c@fixture.test','Projetos','Projetos']);
+      for (const [width,actor] of [[1440,3],[390,7]]) {
+        const requestId=id(700+actor), title=`Viagem editada sem espelho ${width}`;
+        await syntheticRequest(db,actor,requestId,title,{
+          category:'trip',destination:`Destino novo ${width}`,neededAt:'2099-11-25',vehicleId:'hb20',
+          estimatedValue:60,createdAt:new Date().toISOString(),
+        });
+        const current=await readItem(db,actor,requestId);
+        await queryAs(db,actor,'financeiro_acao_solicitacao',{
+          p_id:requestId,p_revisao:current.revision,p_acao:'edit',
+          p_dados:{neededAt:'2099-11-26',vehicleId:'gol'},p_operacao:crypto.randomUUID(),p_esperado:current.request,
+        });
+        const session=await browserSession(browser,db,1,width);
+        try {
+          let lose=true;
+          session.faults.lose=(name,args)=>{
+            if(lose&&name==='financeiro_revisar_solicitacao'&&args.p_id===requestId){lose=false;return true;}
+            return false;
+          };
+          await card(session.page,title).click();
+          await session.page.locator('#invoiceResponse').fill('Aprovado');
+          await session.page.locator('#invoiceApprove').click();
+          await session.page.getByRole('button',{name:'Confirmar decisão anterior'}).waitFor();
+          await waitForRpc(session.page);
+          assert.equal((await readItem(db,1,requestId)).request.status,'Aprovada');
+          await session.page.getByRole('button',{name:'Confirmar decisão anterior'}).click();
+          await session.page.locator('#invoiceApprove').waitFor({state:'hidden'});
+          await card(session.page,title).getByText('Aprovada',{exact:true}).waitFor();
+          const users=(await db.query("select dados from financeiro_estado_modulos where chave='usersMvp'")).rows[0].dados;
+          const mirrors=users.filter(u=>u.erpId===id(actor));
+          assert.equal(mirrors.length,1);
+          const trips=(await db.query("select dados from financeiro_estado_modulos where chave='trips'")).rows[0].dados
+            .filter(t=>t.invoiceRequestId===requestId);
+          assert.equal(trips.length,1);
+          assert.equal(trips[0].start,'2099-11-26');
+          assert.equal(trips[0].vehicleId,'gol');
+          assert.deepEqual(trips[0].assigned,[mirrors[0].id]);
+          assert.deepEqual(session.pageErrors,[]);
+          await assertFits(session.page);
+          if(process.env.SOLICITACOES_SCREENSHOTS)
+            await session.page.screenshot({path:path.join(process.env.SOLICITACOES_SCREENSHOTS,`viagem-editada-${width}.png`),fullPage:true});
+        } finally { await session.context.close(); }
+      }
+
       assert.deepEqual(admin.pageErrors, []);
       assert.deepEqual(employee.pageErrors, []);
+      console.log('PASS UI: aprovação de viagem editada sem espelho e retry sem duplicação (1440/390 px).');
       console.log('PASS UI: filtros, menus, retry, conflito, anexos, devolução, revisão, vínculos e conferência de viagens semelhantes (1440/768/390 px).');
     } finally {
       await employee.context.close();
