@@ -315,16 +315,34 @@ function applyRequestList(data,id,confirms=()=>true){
   db.invoiceRequests=data;
   return matches[0];
 }
+async function reviewDeadline(operation,milliseconds,message,onTimeout){
+  let timer;
+  const expired=new Promise((_,reject)=>{
+    timer=setTimeout(()=>{
+      reject(Object.assign(Error(message),{code:'FIN_REVIEW_TIMEOUT'}));
+      onTimeout?.();
+    },milliseconds);
+  });
+  try{return await Promise.race([operation(),expired])}
+  finally{clearTimeout(timer)}
+}
 async function reviewRequest(attempt,actor){
   const sb=window.IntegralERP?.sb;
   if(!sb)throw Error('Conexão com Supabase indisponível.');
-  const {data:auth,error:authError}=await sb.auth.getUser();
+  const {data:auth,error:authError}=await reviewDeadline(()=>sb.auth.getUser(),10000,
+    'A validação da sessão não respondeu. Sua decisão foi preservada. Se continuar, reabra o sistema.');
   if(authError||!auth?.user?.id||user?.erpId!==actor||auth.user.id!==actor||!admin()){
     throw Error('A sessão mudou. Abra Solicitações para consultar a decisão.');
   }
-  const {data,error}=await sb.rpc('financeiro_revisar_solicitacao',attempt);
+  invalidateCentralRead();
+  const controller=new AbortController();
+  const {data,error}=await reviewDeadline(()=>{
+    const request=sb.rpc('financeiro_revisar_solicitacao',attempt);
+    return typeof request?.abortSignal==='function'?request.abortSignal(controller.signal):request;
+  },20000,'Não recebemos a confirmação no tempo esperado. Sua decisão foi preservada.',()=>controller.abort());
   if(error)throw error;
   if(userKey()!==actor||!admin())throw Error('A sessão mudou. Abra Solicitações para consultar a decisão.');
+  invalidateCentralRead();
   const {p_id:id,p_aprovar:approved,p_resposta:response}=attempt;
   return applyRequestList(data,id,item=>item.status===(approved?'Aprovada':'Rejeitada')
     &&item.response===response&&item.reviewedAt&&String(item.reviewedById)===actor
@@ -356,16 +374,16 @@ function detailModal(req,item=detailFor(req)){
   if(canReview){
     const input=q('#invoiceResponse',el),status=q('#invoiceReviewStatus',el);
     const approve=q('#invoiceApprove',el),reject=q('#invoiceReject',el);
-    let busy=false,stale=false,related=null;
+    let busy=false,stale=false,related=null,reviewError='';
     function controls(){
       const attempt=draft?.attempt;
       input.value=draft?.response||'';
       input.readOnly=busy||stale||Boolean(attempt);
       approve.disabled=busy||stale||attempt?.p_aprovar===false;
       reject.disabled=busy||stale||attempt?.p_aprovar===true;
-      approve.textContent=attempt?.p_aprovar?'Confirmar decisão anterior':related?'Aprovar como viagem distinta':'Aprovar e converter';
-      reject.textContent=attempt?.p_aprovar===false?'Confirmar decisão anterior':'Rejeitar';
-      status.textContent=attempt?'A decisão anterior aguarda confirmação.':'';
+      approve.textContent=busy&&attempt?.p_aprovar?'Confirmando decisão…':attempt?.p_aprovar?'Confirmar decisão anterior':related?'Aprovar como viagem distinta':'Aprovar e converter';
+      reject.textContent=busy&&attempt?.p_aprovar===false?'Confirmando decisão…':attempt?.p_aprovar===false?'Confirmar decisão anterior':'Rejeitar';
+      status.textContent=busy?'Confirmando a decisão. Aguarde a resposta do servidor.':reviewError||(attempt?'A decisão anterior aguarda confirmação.':'');
       if(related&&!attempt){
         status.textContent='Já existe viagem aprovada para este solicitante, destino e data. Confira o pedido existente antes de criar outra viagem.';
         for(const request of related.pedidos){
@@ -412,6 +430,7 @@ function detailModal(req,item=detailFor(req)){
         storeReview(key,draft);
       }
       busy=true;
+      reviewError='';
       controls();
       try{
         await reviewRequest(attempt,actor);
@@ -443,6 +462,7 @@ function detailModal(req,item=detailFor(req)){
           void loadCentral();
         }
         const next=stale?' Reabra a solicitação para conferir.':' Use o mesmo botão para confirmar a decisão.';
+        reviewError=error.message+next;
         alert('Não foi possível confirmar a decisão: '+error.message+next);
       }finally{
         busy=false;

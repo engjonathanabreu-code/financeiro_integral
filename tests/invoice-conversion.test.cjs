@@ -8,7 +8,7 @@ const { id } = require('./veiculos-fixtures.cjs');
 const request = () => ({ id: id(10), requesterId: id(2), category: 'trip', status: 'Pendente',
   title: 'Vistoria', vehicleId: 'hb20', neededAt: '2099-01-01', estimatedValue: 10 });
 
-function load(storage = new Map()) {
+function load(storage = new Map(), timers = { setTimeout, clearTimeout }) {
   const elements = new Map();
   const root = {
     remove() {},
@@ -23,7 +23,7 @@ function load(storage = new Map()) {
     user: { role: 'Administrador', erpId: id(1) },
     window: {},
     document: { createElement: () => root, body: { append() {} }, querySelector: () => root.querySelector('#content'), querySelectorAll: () => [] },
-    structuredClone, alerts: [], calls: [], confirm: () => true, title() {},
+    structuredClone, AbortController, ...timers, alerts: [], calls: [], confirm: () => true, title() {},
     sessionStorage: {
       getItem: key => storage.get(key),
       setItem: (key, value) => storage.set(key, value),
@@ -161,6 +161,7 @@ test('duplo clique e outra sessão não enviam ou exibem a revisão em andamento
   const first=elements.get('#invoiceApprove').onclick();
   await elements.get('#invoiceApprove').onclick();
   await elements.get('#invoiceReject').onclick();
+  await new Promise(setImmediate);
   assert.equal(calls,1);
 
   const another=load(storage);
@@ -196,6 +197,92 @@ test('troca de usuário enquanto o Supabase confirma a sessão impede o envio', 
   release({data:{user:{id:id(1)}}});
   await result;
   assert.equal(context.calls.length,0);
+});
+
+function controlledTimers() {
+  const pending = new Map();
+  let next = 0;
+  return {
+    setTimeout(callback) { const key = ++next; pending.set(key, callback); return key; },
+    clearTimeout(key) { pending.delete(key); },
+    expire() { const callbacks = [...pending.values()]; pending.clear(); callbacks.forEach(callback => callback()); },
+    count: () => pending.size,
+  };
+}
+
+test('autenticação sem resposta libera a tela, preserva a tentativa e não envia após expirar', async () => {
+  const timers = controlledTimers(), storage = new Map();
+  const { context, api, elements } = load(storage, timers);
+  const normalAuth = context.window.IntegralERP.sb.auth.getUser;
+  let release;
+  context.window.IntegralERP.sb.auth.getUser = () => new Promise(resolve => { release = resolve; });
+  api.detailModal(request());
+  elements.get('#invoiceResponse').value = 'Aprovado e pago';
+  const waiting = elements.get('#invoiceApprove').onclick();
+  assert.equal(elements.get('#invoiceApprove').disabled, true);
+  timers.expire();
+  await waiting;
+  assert.equal(elements.get('#invoiceApprove').disabled, false);
+  assert.equal(elements.get('#invoiceReject').disabled, true);
+  assert.equal(elements.get('#invoiceResponse').value, 'Aprovado e pago');
+  assert.equal(context.calls.length, 0);
+  assert.match(elements.get('#invoiceReviewStatus').textContent, /sessão não respondeu/);
+  release(await normalAuth());
+  await new Promise(setImmediate);
+  assert.equal(context.calls.length, 0, 'resposta tardia não inicia escrita');
+  context.window.IntegralERP.sb.auth.getUser = normalAuth;
+  await elements.get('#invoiceApprove').onclick();
+  assert.equal(context.calls.length, 1);
+  assert.equal(context.db.invoiceRequests[0].status, 'Aprovada');
+  assert.equal(storage.size, 0);
+  assert.equal(timers.count(), 0);
+});
+
+test('RPC sem resposta é abortada e o retry preserva payload; retorno tardio não reescreve a lista', async () => {
+  const timers = controlledTimers(), storage = new Map();
+  const { context, api, elements } = load(storage, timers);
+  const normalRpc = context.window.IntegralERP.sb.rpc;
+  const payloads = [];
+  let release, signal;
+  context.window.IntegralERP.sb.rpc = (name, args) => {
+    payloads.push(structuredClone(args));
+    if (payloads.length > 1) return normalRpc(name, args);
+    const waiting = new Promise(resolve => { release = resolve; });
+    const builder = { then: (yes, no) => waiting.then(yes, no), abortSignal(value) { signal = value; return builder; } };
+    return builder;
+  };
+  api.detailModal(request());
+  elements.get('#invoiceResponse').value = 'Aprovado e pago';
+  const waiting = elements.get('#invoiceApprove').onclick();
+  await new Promise(setImmediate);
+  timers.expire();
+  await waiting;
+  assert.equal(signal.aborted, true);
+  assert.equal(elements.get('#invoiceApprove').disabled, false);
+  assert.equal(elements.get('#invoiceReject').disabled, true);
+  assert.equal(context.db.invoiceRequests.length, 0);
+  await elements.get('#invoiceApprove').onclick();
+  assert.deepEqual(payloads[0], payloads[1]);
+  const canonical = context.db.invoiceRequests;
+  release({ data: [{ ...request(), status: 'Pendente' }] });
+  await new Promise(setImmediate);
+  assert.equal(context.db.invoiceRequests, canonical);
+  assert.equal(canonical[0].status, 'Aprovada');
+  assert.equal(storage.size, 0);
+  assert.equal(timers.count(), 0);
+});
+
+test('falha síncrona da autenticação limpa o prazo sem bloquear a reconfirmação', async () => {
+  const timers = controlledTimers();
+  const { context, api, elements } = load(new Map(), timers);
+  context.window.IntegralERP.sb.auth.getUser = () => { throw Error('Sessão indisponível'); };
+  api.detailModal(request());
+  elements.get('#invoiceResponse').value = 'Resposta preservada';
+  await elements.get('#invoiceApprove').onclick();
+  assert.equal(timers.count(), 0);
+  assert.equal(elements.get('#invoiceApprove').disabled, false);
+  assert.equal(elements.get('#invoiceResponse').value, 'Resposta preservada');
+  assert.equal(context.calls.length, 0);
 });
 
 test('solicitante histórico é identificado por pedido recíproco e UUID, sem setor ou espelho local', () => {
