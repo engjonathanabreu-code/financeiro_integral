@@ -32,6 +32,12 @@ async function setupSolicitacoes() {
     await db.exec(sql('20261116151615_financeiro_solicitacoes_anexos.sql'));
     await db.exec(sql('20261116194500_financeiro_conferir_viagem_repetida.sql'));
     await db.exec(sql('20261124191435_financeiro_vinculo_solicitante_aprovacao.sql'));
+    await db.exec(fs.readFileSync(path.join(root, 'supabase/financeiro_consultor.sql'), 'utf8'));
+    await db.exec(`select set_config('request.jwt.claim.sub','${id(1)}',false);
+      select financeiro_close_budget('11',(select dados->0 from financeiro_estado_modulos where chave='budgetRecords'));
+      select set_config('request.jwt.claim.sub','',false);`);
+    await db.exec(sql('20261124202434_financeiro_revisao_conflito_sem_retry.sql'));
+    await db.exec(sql('20261124202455_financeiro_converter_orcamento_fechados.sql'));
     return db;
   } catch (error) {
     await db.close();

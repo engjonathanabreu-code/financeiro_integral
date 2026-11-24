@@ -454,7 +454,7 @@ function detailModal(req,item=detailFor(req)){
             }
           }catch{}
         }
-        if(['40001','22023','42501','P0001'].includes(error?.code)){
+        if(['40001','PT409','22023','42501','P0001'].includes(error?.code)){
           draft={response:attempt.p_resposta};
           storeReview(key,draft);
           stale=true;
