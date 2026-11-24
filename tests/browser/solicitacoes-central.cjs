@@ -550,4 +550,5 @@ async function run() {
   }
 }
 
-run().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = { setupSolicitacoes, browserSession, syntheticRequest, readItem, queryAs, card, assertFits, id };
+if (require.main === module) run().catch(error => { console.error(error); process.exitCode = 1; });
