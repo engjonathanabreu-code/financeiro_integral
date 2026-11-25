@@ -120,10 +120,11 @@ test('resposta perdida mantém a revisão e repete os mesmos dados após recarre
 });
 
 test('conflito confirmado pede nova conferência e preserva o texto para a versão atual', async () => {
+ for (const code of ['40001','PT409']) {
   const storage = new Map();
   const { context, api, elements }=load(storage);
   const item=request();
-  context.window.IntegralERP.sb.rpc=async()=>({error:{code:'40001',message:'Solicitação atualizada.'}});
+  context.window.IntegralERP.sb.rpc=async()=>({error:{code,message:'Solicitação atualizada.'}});
   api.detailModal(item);
   elements.get('#invoiceResponse').value='Resposta preservada';
   await elements.get('#invoiceApprove').onclick();
@@ -132,6 +133,7 @@ test('conflito confirmado pede nova conferência e preserva o texto para a vers�
   api.detailModal({ ...item, vehicleId:'gol' });
   assert.equal(elements.get('#invoiceResponse').value,'Resposta preservada');
   assert.equal(elements.get('#invoiceResponse').readOnly,false);
+ }
 });
 
 test('retorno sem confirmação da conversão mantém a solicitação e o diário locais', async () => {

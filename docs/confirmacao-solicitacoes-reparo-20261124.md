@@ -1,5 +1,7 @@
 # Confirmação de decisões na Central de Solicitações — 24/11/2026
 
+Atualização posterior: a causa da espera persistente foi reproduzida com a guarda real de orçamentos fechados e PostgREST 14.5. Consulte [diagnóstico e correção do conflito](aprovacao-orcamento-fechado-20261124.md). As conclusões abaixo registram a investigação anterior; o limite de espera do PR #31 não resolveu a falha no banco.
+
 Repositório: `engjonathanabreu-code/financeiro_integral`. Base publicada `5db6bf5e93262faa1256e6e2fafab20bf4071ce1`. Branch: `codex/corrigir-confirmacao-solicitacoes`. Correção de interface, sem migração ou gravação remota nesta etapa.
 
 ## Diagnóstico e limites
