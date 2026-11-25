@@ -2,8 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { setup, login, id } = require('./veiculos-fixtures.cjs');
 const read = name => fs.readFileSync(path.join(__dirname, '../supabase', name), 'utf8');
-const phase1 = 'migrations/20261124202434_financeiro_revisao_conflito_sem_retry.sql';
-const phase2 = 'migrations/20261124202455_financeiro_converter_orcamento_fechados.sql';
+const phase1 = 'migrations/20261125110649_financeiro_revisao_conflito_sem_retry.sql';
+const phase2 = 'migrations/20261125113632_financeiro_converter_orcamento_fechados.sql';
 
 async function fixture({ externalDb, fixed = true } = {}) {
   const db = await setup(externalDb);

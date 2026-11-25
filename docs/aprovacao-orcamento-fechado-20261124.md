@@ -14,8 +14,8 @@ A [orientação oficial do Supabase](https://supabase.com/kb/troubleshooting/hig
 
 ## Alteração
 
-1. `20261124202434_financeiro_revisao_conflito_sem_retry.sql`: a RPC pública traduz `serialization_failure` em `PT409`, sem repetição automática da decisão. Mantém segurança, configuração e ACLs da função.
-2. `20261124202455_financeiro_converter_orcamento_fechados.sql`: somente para `budgetRecords`, atualiza a linha já bloqueada com a lista completa, preservando a guarda de fechamento. Se o módulo ainda não existe, inicializa-o. Demais categorias conservam a escrita anterior. Nenhuma migration altera dados ao instalar.
+1. `20261125110649_financeiro_revisao_conflito_sem_retry.sql`: a RPC pública traduz `serialization_failure` em `PT409`, sem repetição automática da decisão. Mantém segurança, configuração e ACLs da função.
+2. `20261125113632_financeiro_converter_orcamento_fechados.sql`: somente para `budgetRecords`, atualiza a linha já bloqueada com a lista completa, preservando a guarda de fechamento. Se o módulo ainda não existe, inicializa-o. Demais categorias conservam a escrita anterior. Nenhuma migration altera dados ao instalar.
 3. A interface reconhece PT409 como conflito definitivo e preserva a resposta para revisão; o fluxo específico de viagens semelhantes permanece prioritário.
 
 As migrations verificam o hash do corpo conhecido e a unicidade do trecho substituído. Uma versão divergente interrompe a instalação. Não há dependência nova nem alteração em pagamentos, anexos ou status de aprovação durante a instalação.
@@ -40,3 +40,13 @@ A sequência obrigatória é: instalar somente a fase 1; identificar novamente a
 O risco principal é uma tentativa antiga sobreviver e concluir depois da correção; por isso a ordem acima é obrigatória. A operação de encerramento interrompe apenas as conexões confirmadas e reverte suas transações. Qualquer divergência de dados, função ou identidade interrompe a publicação.
 
 Rollback preferencial: `supabase/rollback/financeiro_converter_orcamento_fechados.sql`, conservando a proteção PT409 da fase 1 e todos os dados, além de retornar a interface ao deployment `dpl_3sqCXTWi2feXzf9e82eGPVdVQjiE`. A reversão opcional da fase 1 pode reintroduzir repetição e só deve ocorrer após limpar as tentativas antigas. Não restaurar tabelas para reverter este lote. A regra de revisão continua obrigatória; exceções anteriores eram exclusivas dos PRs #30 e #31.
+
+## Aplicação em produção — 25/11/2026
+
+As duas migrations foram aplicadas com autorização específica para cada uma e os arquivos foram renomeados para as versões registradas no Supabase: `20261125110649` (fase 1) e `20261125113632` (fase 2). O conteúdo SQL não mudou.
+
+- Fase 1, 11:06:49 UTC: as três tentativas antigas em repetição receberam `PT409` uma vez cada e terminaram sozinhas; não foi necessário encerrar conexões. O contador de transações desfeitas ficou parado nos 39 segundos seguintes.
+- Antes da fase 2: nenhuma tentativa ativa, pedido pendente e sem conversão, orçamentos idênticos.
+- Fase 2, 11:36:32 UTC: os hashes dos corpos das duas funções em produção são iguais aos gerados por estas migrations na fixture de teste; ACL, dono, `security definer` e `search_path` inalterados; a guarda de fechamento não foi alterada; orçamentos idênticos (8 registros, 4 fechados). Nenhuma aprovação foi enviada ao pedido real.
+
+Pendente: publicar a interface (merge deste PR) e a aprovação do pedido pelo usuário. As demais funções que ainda levantam `40001` em recusas de negócio, inclusive a guarda de fechamento em gravações diretas do módulo, serão tratadas em lote separado.

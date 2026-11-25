@@ -36,8 +36,8 @@ async function setupSolicitacoes() {
     await db.exec(`select set_config('request.jwt.claim.sub','${id(1)}',false);
       select financeiro_close_budget('11',(select dados->0 from financeiro_estado_modulos where chave='budgetRecords'));
       select set_config('request.jwt.claim.sub','',false);`);
-    await db.exec(sql('20261124202434_financeiro_revisao_conflito_sem_retry.sql'));
-    await db.exec(sql('20261124202455_financeiro_converter_orcamento_fechados.sql'));
+    await db.exec(sql('20261125110649_financeiro_revisao_conflito_sem_retry.sql'));
+    await db.exec(sql('20261125113632_financeiro_converter_orcamento_fechados.sql'));
     return db;
   } catch (error) {
     await db.close();

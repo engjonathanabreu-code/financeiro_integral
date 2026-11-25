@@ -35,7 +35,7 @@ with concurrent.futures.ThreadPoolExecutor() as pool:
   stuck=c.execute("select pid,backend_start from pg_stat_activity where usename='authenticator' and state='active' and query like '%financeiro_revisar_solicitacao%'").fetchall()
   assert stuck,'PostgREST 14.5 não reproduziu a espera de 40001'
   assert c.execute("select dados from financeiro_estado_modulos where chave='budgetRecords'").fetchone()[0]==before
-  c.execute((repo/'supabase/migrations/20261124202434_financeiro_revisao_conflito_sem_retry.sql').read_text())
+  c.execute((repo/'supabase/migrations/20261125110649_financeiro_revisao_conflito_sem_retry.sql').read_text())
   # A orientação oficial exige encerrar os backends antigos: aqui isso é somente local.
   for pid,start in stuck:
    c.execute('select pg_terminate_backend(pid) from pg_stat_activity where pid=%s and backend_start=%s and usename=%s',(pid,start,'authenticator'))
@@ -47,7 +47,7 @@ assert elapsed<2,elapsed
 with db() as c:
  assert c.execute("select dados from financeiro_estado_modulos where chave='budgetRecords'").fetchone()[0]==before
  assert c.execute("select r->>'status' from financeiro_estado_modulos m cross join lateral jsonb_array_elements(m.dados) r where chave='invoiceRequests' and r->>'id'=%s",(req['id'],)).fetchone()[0]=='Pendente'
- c.execute((repo/'supabase/migrations/20261124202455_financeiro_converter_orcamento_fechados.sql').read_text())
+ c.execute((repo/'supabase/migrations/20261125113632_financeiro_converter_orcamento_fechados.sql').read_text())
 status,data,elapsed=post('financeiro_revisar_solicitacao',payload)
 assert status==200,(status,data)
 approved=next(r for r in data if r['id']==req['id'])
