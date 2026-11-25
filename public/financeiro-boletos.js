@@ -125,7 +125,7 @@ function returnForm(){
    let out;
    try{out=await rpc('retorno',{...entrada,revisao});}
    catch(e){
-    if(e.code==='40001'){
+    if(['40001','PT409'].includes(e.code)){
      q('#ailosApply')?.remove();
      const aviso=document.createElement('p');aviso.setAttribute('role','status');
      aviso.textContent='O histórico mudou desde a prévia. Use Conferir arquivo para atualizar. A seleção continua disponível.';
