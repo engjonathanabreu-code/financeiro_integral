@@ -22,7 +22,7 @@ const C=require('../../public/ailos-cnab');
    const pending={...rem,ambiente:'homologacao',pronta:false};
    const raw=retorno(rem,'06',7000);
    const events=C.retorno(raw,rem.config);
-   await page.evaluate(({pending,ready,events,readyFile,pendingFile})=>{
+   await page.evaluate(({pending,ready,events,readyFile,pendingFile,conflito})=>{
     window.view='boletos';
     window.ERP_SUPABASE={};
     window.IntegralRecebimentosAccess={allowed:()=>true};
@@ -45,11 +45,13 @@ const C=require('../../public/ailos-cnab');
      }
      if(acao==='previa_retorno')return {data:{eventos:events,ambiente:'homologacao',revisao:String(++version)}};
      if(acao==='retorno')return dados.revisao==='1'
-      ?{error:{code:'40001',message:'Refaça a conferência do retorno antes de importar'}}
+      ?{error:{code:conflito,message:'Refaça a conferência do retorno antes de importar'}}
       :{data:{processados:1}};
      return {error:{message:'Ação inesperada'}};
     }})};
-   },{pending,ready,events,readyFile:C.remessa(ready).arquivo,pendingFile:C.remessa(pending).arquivo});
+   },{pending,ready,events,readyFile:C.remessa(ready).arquivo,pendingFile:C.remessa(pending).arquivo,
+      // Banco anterior (40001) em uma largura e banco corrigido (PT409) na outra.
+      conflito:width===390?'40001':'PT409'});
    const assets=path.join(__dirname,'../../public');
    for(const file of ['ailos-cnab.js','financeiro-boletos.js'])await page.addScriptTag({path:path.join(assets,file)});
    await page.evaluate(()=>IntegralBoletos.render());

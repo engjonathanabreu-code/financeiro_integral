@@ -230,6 +230,24 @@ test('erro permanente: aviso não manda recarregar; descartar volta à versão d
  assert.equal(a.api.status(),'falha');assert.equal(a.context.db.trips[0].status,'Aprovada','alteração local preservada até a pessoa decidir');
 });
 
+test('recusa de orçamento fechado (40001 ou PT409) bloqueia o módulo com aviso, sem nova tentativa automática',async()=>{
+ for(const code of ['40001','PT409']){
+  const world=shared({...base(),budgetRecords:[{id:1,name:'Orçamento sintético',status:'Fechado'}]});const a=await client(world,{uid:'a'});
+  const timers=[];a.context.setTimeout=(_fn,ms)=>{timers.push(ms);return 1};
+  world.hooks.write=row=>row.chave==='budgetRecords'?{code,message:'Um orçamento foi fechado. Atualize a tela antes de salvar.'}:null;
+  a.context.db.budgetRecords[0].name='Edição sobre versão antiga';a.context.db.trips[0].city='A-editado';
+  assert.equal(await a.api.push(),false);
+  assert.equal(a.api.status(),'falha');
+  assert.ok(!timers.includes(5000),'sem repetição a cada 5 s: '+code);
+  assert.equal(world.server.trips[0].city,'A-editado','os demais módulos continuam sendo salvos');
+  assert.equal(a.context.db.budgetRecords[0].name,'Edição sobre versão antiga','alteração local preservada até a pessoa decidir');
+  const writes=world.writes.length;
+  assert.equal(await a.api.push(),false);
+  assert.equal(world.writes.length,writes,'módulo bloqueado não é reenviado sem nova edição');
+  assert.equal(world.server.budgetRecords[0].name,'Orçamento sintético');
+ }
+});
+
 // ---- Regressões da revisão de 21/10/2026 ----
 test('ordem das chaves do jsonb: depois de salvar nada fica pendente nem é regravado; exclusão alheia não ressuscita',async()=>{
  const world=shared(base());const store=new Map();

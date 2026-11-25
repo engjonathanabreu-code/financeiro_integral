@@ -669,7 +669,7 @@ async function writeModule(k,operation,sameSession){
 /* Erros que repetir não resolve (permissão, proteção do banco, dados inválidos): para de insistir
    naquele módulo, avisa na tela e segue salvando os demais. */
 const blocked={};
-function permanentError(e){const code=String(e?.code||'');return ['42501','22023','P0001','23514','23502','22P02','FIN_ENVIO_INCERTO'].includes(code)||/FINANCEIRO_PROTECAO|Somente ADM|row-level security|violates|Versão desatualizada|sem permissão/i.test(String(e?.message||''))}
+function permanentError(e){const code=String(e?.code||'');return ['42501','40001','PT409','22023','P0001','23514','23502','22P02','FIN_ENVIO_INCERTO'].includes(code)||/FINANCEIRO_PROTECAO|Somente ADM|row-level security|violates|Versão desatualizada|sem permissão/i.test(String(e?.message||''))}
 async function discardLocal(k){
   const d=state();if(!d||snapshot[k]===undefined)return;
   if(pushPromise)return;

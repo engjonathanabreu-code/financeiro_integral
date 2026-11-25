@@ -277,7 +277,7 @@ function createModal(item=null, mode='new'){
       if(editing)detailModal(saved.request,saved);
       else void loadCentral();
     }catch(error){
-      const conflict=editing&&error?.code==='40001';
+      const conflict=editing&&['40001','PT409'].includes(error?.code);
       const sameId=!editing&&attempt?.request&&error?.code==='P0001'&&/identificador/i.test(error.message||'');
       if(sameId&&centralEnabled()){
         const previous=await currentDetail(attempt.request.id).catch(()=>null);
@@ -538,7 +538,7 @@ const labels={
   categoryId:'Categoria',assigneeId:'Responsável',deadline:'Prazo de análise',priority:'Prioridade',
   status:'Status',archivedAt:'Arquivamento',deletedAt:'Remoção'
 };
-const definitive=error=>['40001','22023','42501','P0001','23505','23514'].includes(error?.code);
+const definitive=error=>['40001','PT409','22023','42501','P0001','23505','23514'].includes(error?.code);
 function announce(message){
   pageMessage=message;
   const node=q('#invoiceStatus');
@@ -1078,7 +1078,7 @@ function runAction(item,action,origin=null){
         attempt=null;
         retain();
       }
-      if(error?.code==='40001'){
+      if(['40001','PT409'].includes(error?.code)){
         stale=true;
         void loadCentral();
         status.textContent='A solicitação mudou. Reabra o pedido para conferir. Seu rascunho foi preservado.';

@@ -136,6 +136,41 @@ test('conflito confirmado pede nova conferência e preserva o texto para a vers�
  }
 });
 
+test('PT409 com viagens semelhantes pede conferência; sem os detalhes é conflito de versão', async () => {
+  const details=JSON.stringify({conferencia:'conferencia-sintetica',pedidos:[{id:id(11),title:'Viagem anterior'}]});
+  const start=(error)=>{
+    const storage=new Map(),loaded=load(storage);
+    loaded.elements.set('#invoiceReviewStatus',{append(){},addEventListener(){}});
+    loaded.context.window.IntegralERP.sb.rpc=async(name,args)=>{loaded.context.calls.push({name,args});return {error}};
+    loaded.api.detailModal(request());
+    loaded.elements.get('#invoiceResponse').value='Resposta preservada';
+    return loaded;
+  };
+  const similar=start({code:'PT409',message:'Já existe viagem aprovada.',details});
+  await similar.elements.get('#invoiceApprove').onclick();
+  assert.deepEqual(similar.context.alerts,[]);
+  assert.equal(similar.elements.get('#invoiceApprove').disabled,false);
+  assert.equal(similar.elements.get('#invoiceApprove').textContent,'Aprovar como viagem distinta');
+  assert.match(similar.elements.get('#invoiceReviewStatus').textContent,/Já existe viagem aprovada/);
+  await similar.elements.get('#invoiceApprove').onclick();
+  assert.equal(similar.context.calls.at(-1).args.p_viagens_conferidas,'conferencia-sintetica');
+
+  // Sem detalhes, com detalhes inválidos, em rejeição ou com o código antigo: a versão mudou.
+  for (const [error,button] of [
+    [{code:'PT409',message:'Solicitação atualizada.'},'#invoiceApprove'],
+    [{code:'PT409',message:'Solicitação atualizada.',details:'{"pedidos":[]}'},'#invoiceApprove'],
+    [{code:'PT409',message:'Solicitação atualizada.',details},'#invoiceReject'],
+    [{code:'40001',message:'Solicitação atualizada.',details},'#invoiceApprove'],
+  ]) {
+    const stale=start(error);
+    await stale.elements.get(button).onclick();
+    assert.match(stale.context.alerts[0],/Solicitação atualizada\. Reabra a solicitação/);
+    assert.equal(stale.elements.get('#invoiceApprove').disabled,true);
+    assert.equal(stale.elements.get('#invoiceReject').disabled,true);
+    assert.equal(stale.context.calls.filter(call=>call.name==='financeiro_revisar_solicitacao').length,1);
+  }
+});
+
 test('retorno sem confirmação da conversão mantém a solicitação e o diário locais', async () => {
   const storage = new Map();
   const { context, api, elements }=load(storage);
