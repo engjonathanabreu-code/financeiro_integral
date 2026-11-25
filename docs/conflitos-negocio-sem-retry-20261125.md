@@ -14,7 +14,7 @@ Na tela, `financeiro-cloud-storage.js` não tratava `40001` nem `PT409` como rec
    - `financeiro-invoices.js`: edição de solicitação, lista de recusas definitivas e modal de ações. Na aprovação de viagem, `PT409` com `details` em JSON (`conferencia` e `pedidos`) continua significando viagem semelhante e tem prioridade; sem esses detalhes é conflito de versão.
    - `financeiro-boletos.js`: importação de retorno pede nova prévia.
    - `financeiro-cloud-storage.js`: os dois códigos entram em `permanentError`. O módulo recusado fica bloqueado com o aviso e a opção de descartar a alteração local; os demais módulos continuam sendo salvos.
-2. **Migration** `20261125123450_financeiro_conflitos_negocio_sem_retry.sql` (o prefixo será trocado pela versão registrada ao aplicar): para cada função, confere a existência, o `md5(prosrc)` conhecido e o número de ocorrências do literal `'40001'`, e recria a função a partir de `pg_get_functiondef` trocando apenas esse literal por `'PT409'`. Mensagens, lógica, ACL, dono, `security definer`, `search_path` e dados não mudam. Uma função ausente ou divergente interrompe tudo.
+2. **Migration** `20261125140644_financeiro_conflitos_negocio_sem_retry.sql` (o prefixo será trocado pela versão registrada ao aplicar): para cada função, confere a existência, o `md5(prosrc)` conhecido e o número de ocorrências do literal `'40001'`, e recria a função a partir de `pg_get_functiondef` trocando apenas esse literal por `'PT409'`. Mensagens, lógica, ACL, dono, `security definer`, `search_path` e dados não mudam. Uma função ausente ou divergente interrompe tudo.
 
 | Função | `md5(prosrc)` antes | Ocorrências |
 | --- | --- | --- |
@@ -53,3 +53,7 @@ Limites: cada ambiente de teste tem só parte do esquema; as funções que falta
 ## Reversão
 
 `supabase/rollback/financeiro_conflitos_negocio_sem_retry.sql` confere que cada função está exatamente na versão corrigida e devolve o literal `'40001'`, restaurando `prosrc` idêntico ao original; qualquer divergência interrompe tudo. Reverter reintroduz a repetição indefinida dessas recusas. A tela não precisa ser revertida: ela aceita os dois códigos. Não restaurar tabelas para reverter este lote.
+
+## Aplicação em produção — 25/11/2026
+
+A tela foi publicada primeiro (merge do PR #33) e a migration foi aplicada em seguida, com autorização específica. O arquivo foi renomeado para a versão registrada no Supabase (`20261125140644`); o SQL não mudou. Conferido no banco após a aplicação: as dez funções sem o literal `'40001'`, com a quantidade esperada de `'PT409'` e corpo igual ao original com o literal trocado; dono, ACL, `security definer` e `search_path` inalterados; guarda de fechamento ativa; orçamentos idênticos; as duas funções de revisão do PR #32 com os mesmos hashes.
